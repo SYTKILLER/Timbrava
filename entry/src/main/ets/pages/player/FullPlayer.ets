@@ -203,7 +203,7 @@ export struct FullPlayerDest {
           min: 0,
           max: Math.max(1, this.durMs()),
           step: 1,
-          style: SliderStyle.Outset
+          style: SliderStyle.OutSet
         })
           .selectedColor($r('app.color.accent'))
           .trackColor($r('app.color.divider'))
@@ -422,4 +422,10 @@ export struct FullPlayerDest {
     }
     return $r('sys.symbol.repeat');
   }
+}
+
+
+@Builder
+export function FullPlayerBuilder() {
+  FullPlayerDest()
 }

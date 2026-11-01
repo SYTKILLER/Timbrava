@@ -42,6 +42,6 @@ export class BasicDataSource<T> implements IDataSource {
   }
 
   notifyMove(from: number, to: number): void {
-    this.listeners.forEach((l: DataChangeListener): void => l.onDataMove(from, to, 1));
+    this.listeners.forEach((l: DataChangeListener): void => l.onDataMove(from, to));
   }
 }

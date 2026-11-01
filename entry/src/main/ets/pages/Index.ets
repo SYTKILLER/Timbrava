@@ -1,5 +1,7 @@
 // 应用根:Navigation + 底部 HdsTabs(音乐库/队列/设置)+ 迷你播放条(悬浮)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { HdsTabs } from '@kit.UIDesignKit';
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../service/PlayerController';
 import { AppTheme, SafeAreaResult } from '../common/Theme';
@@ -23,7 +25,7 @@ struct Index {
   @StorageProp('playerVer') playerVer: number = 0;
   @StorageProp('posVer') posVer: number = 0;
   @StorageProp('themeVer') themeVer: number = 0;
-  @State tabIndex: number = 0;
+  @State activeTab: number = 0;
   @State topSafe: number = 36;
   @State bottomSafe: number = 28;
 
@@ -45,26 +47,26 @@ struct Index {
   build() {
     Navigation(this.navStack) {
       Stack({ alignContent: Alignment.Bottom }) {
-        HdsTabs({ barPosition: BarPosition.End, index: this.tabIndex }) {
+        HdsTabs({ barPosition: BarPosition.End, index: this.activeTab }) {
           TabContent() {
             LibraryTab()
           }
-          .tabBar(new BottomTabBarStyle(new SymbolGlyphModifier($r('sys.symbol.music_note_list')), '音乐库'))
+          .tabBar(new BottomTabBarStyle(this.tabSymbol($r('sys.symbol.music_note_list')), '音乐库'))
 
           TabContent() {
             QueueTab()
           }
-          .tabBar(new BottomTabBarStyle(new SymbolGlyphModifier($r('sys.symbol.list_bullet')), '队列'))
+          .tabBar(new BottomTabBarStyle(this.tabSymbol($r('sys.symbol.list_bullet')), '队列'))
 
           TabContent() {
             SettingsTab()
           }
-          .tabBar(new BottomTabBarStyle(new SymbolGlyphModifier($r('sys.symbol.gearshape')), '设置'))
+          .tabBar(new BottomTabBarStyle(this.tabSymbol($r('sys.symbol.gearshape')), '设置'))
         }
         .vertical(false)
         .scrollable(true)
         .onChange((index: number) => {
-          this.tabIndex = index;
+          this.activeTab = index;
         })
         .width('100%')
         .height('100%')
@@ -151,6 +153,13 @@ struct Index {
     .onClick(() => {
       this.navStack.pushPathByName('FullPlayer', null);
     })
+  }
+
+  private tabSymbol(res: Resource): TabBarSymbol {
+    const sym = new TabBarSymbol();
+    sym.normal = new SymbolGlyphModifier(res);
+    sym.selected = new SymbolGlyphModifier(res);
+    return sym;
   }
 
   private hasSong(): boolean {

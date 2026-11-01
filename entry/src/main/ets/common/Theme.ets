@@ -1,6 +1,6 @@
 // 主题应用:跟随系统/浅色/深色/纯黑。纯黑 = 深色 + 页面背景 token 覆盖 #000000。
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { window } from '@kit.ArkUI';
+import { window, display } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SettingsService, ThemeMode } from '../service/SettingsService';
 
@@ -42,7 +42,7 @@ export class AppTheme {
       const win = await window.getLastWindow(ctx);
       const sys = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
       const nav = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
-      const density = win.getWindowProperties().densityPixels;
+      const density = display.getDefaultDisplaySync().densityPixels;
       fallback.topVp = sys.topRect.height / (density > 0 ? density : 3);
       fallback.bottomVp = Math.max(nav.bottomRect.height / (density > 0 ? density : 3), 28);
       return fallback;

@@ -1,7 +1,7 @@
 // 通用歌曲列表页(专辑/艺人/流派/文件夹/收藏):NavDestination + 全部播放按钮。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { LibraryStore } from '../../data/LibraryStore';
-import { Song } from '../../data/Model';
+import { Song, Artist, Genre } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';
 import { QueueService } from '../../service/QueueService';
 import { PlayerController } from '../../service/PlayerController';
@@ -25,13 +25,13 @@ export struct SongListDest {
         .sort((a: Song, b: Song): number => (a.discNo - b.discNo) || (a.trackNo - b.trackNo));
     }
     if (p.mode === 'artist') {
-      const artist = lib.artists.find((a: { key: string; songIds: number[] }): boolean => a.key === p.key);
+      const artist = lib.artists.find((a: Artist): boolean => a.key === p.key);
       const ids: number[] = artist !== undefined ? artist.songIds : [];
       const mapped: (Song | null)[] = ids.map((id: number): Song | null => lib.song(id));
       return mapped.filter((s: Song | null): boolean => s !== null) as Song[];
     }
     if (p.mode === 'genre') {
-      const g = lib.genres.find((x: { name: string; songIds: number[] }): boolean => x.name === p.key);
+      const g = lib.genres.find((x: Genre): boolean => x.name === p.key);
       const ids: number[] = g !== undefined ? g.songIds : [];
       const mapped: (Song | null)[] = ids.map((id: number): Song | null => lib.song(id));
       return mapped.filter((s: Song | null): boolean => s !== null) as Song[];
@@ -127,7 +127,7 @@ export struct SongListDest {
     .title(this.title)
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
-      const p = ctx.pathInfo.param;
+      const p: Object | undefined = ctx.pathInfo.param as Object | undefined;
       if (p !== null && p !== undefined && p instanceof SongListParam) {
         this.param = p as SongListParam;
         this.title = (p as SongListParam).title;
@@ -141,4 +141,10 @@ export struct SongListDest {
       }
     })
   }
+}
+
+
+@Builder
+export function SongListBuilder() {
+  SongListDest()
 }

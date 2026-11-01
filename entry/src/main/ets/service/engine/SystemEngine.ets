@@ -68,8 +68,8 @@ export class SystemEngine implements IAudioEngine {
     });
     p.on('audioInterrupt', (event: audio.InterruptEvent) => {
       hilog.info(DOMAIN, TAG, 'interrupt type=%{public}d force=%{public}d hint=%{public}d',
-        event.eventType, event.forceType, event.hint);
-      this.emit(EngineEventKind.INTERRUPT, event.hint, 'avplayer interrupt');
+        event.eventType, event.forceType, event.hintType);
+      this.emit(EngineEventKind.INTERRUPT, event.hintType, 'avplayer interrupt');
     });
     p.on('error', (err: BusinessError) => {
       hilog.error(DOMAIN, TAG, 'avplayer error %{public}d %{public}s', err.code, err.message);
@@ -144,9 +144,11 @@ export class SystemEngine implements IAudioEngine {
       return;
     }
     if (this.state === 'prepared' || this.state === 'playing' || this.state === 'paused' || this.state === 'completed') {
-      this.player.seek(ms, media.SeekMode.SEEK_PREV_SYNC).catch((e: BusinessError) => {
-        hilog.warn(DOMAIN, TAG, 'seek fail %{public}s', e.message);
-      });
+      try {
+        this.player.seek(ms, media.SeekMode.SEEK_PREV_SYNC);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'seek fail %{public}s', (e as Error).message);
+      }
     } else {
       this.seekTargetMs = ms; // prepared 后补
     }

@@ -42,10 +42,12 @@ export struct ScanSettingsDest {
   private async ensureAudioPermission(): Promise<boolean> {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     try {
-      const atManager = abilityAccessCtrl.getAtManager();
-      const result = await atManager.requestPermissionsFromUser(ctx, ['ohos.permission.READ_AUDIO'] as Permissions[]);
+      const atManager = abilityAccessCtrl.createAtManager();
+      const perms: Array<Permissions> = ['ohos.permission.READ_AUDIO'];
+      const result = await atManager.requestPermissionsFromUser(ctx, perms);
       let granted = false;
-      for (const r of result.authResults) {
+      const results: number[] = result.authResults;
+      for (const r of results) {
         if (r === 0) {
           granted = true;
         }
@@ -249,4 +251,10 @@ export struct ScanSettingsDest {
       this.pathStack = ctx.pathStack;
     })
   }
+}
+
+
+@Builder
+export function ScanSettingsBuilder() {
+  ScanSettingsDest()
 }

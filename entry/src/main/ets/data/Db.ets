@@ -55,6 +55,15 @@ const SQL_CREATE: string[] = [
   `CREATE TABLE IF NOT EXISTS app_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)`
 ];
 
+export class QueueSnapshot {
+  songIds: number[] = [];
+  activeIndex: number = 0;
+  posMs: number = 0;
+  repeat: RepeatMode = RepeatMode.OFF;
+  shuffled: boolean = false;
+  title: string = '';
+}
+
 export class Db {
   private static instance: Db | null = null;
   private store: relationalStore.RdbStore | null = null;
@@ -119,7 +128,7 @@ export class Db {
     const st = this.storeOrThrow();
     try {
       const bucket: relationalStore.ValuesBucket = { 'key': key, 'value': value };
-      await st.insertWithConflictResolution('app_settings', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+      await st.insert('app_settings', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'setSetting %{public}s fail %{public}s', key, (e as Error).message);
     }
@@ -136,12 +145,12 @@ export class Db {
     const cols = Db.SONG_COLS.split(', ');
     for (const c of cols) {
       const idx = rs.getColumnIndex(c);
-      const type = rs.getColumnType(idx);
-      if (type === relationalStore.ColumnType.TYPE_STRING) {
+      const type = rs.getColumnTypeSync(idx);
+      if (type === relationalStore.ColumnType.TEXT) {
         o[c] = rs.getString(idx);
-      } else if (type === relationalStore.ColumnType.TYPE_DOUBLE) {
+      } else if (type === relationalStore.ColumnType.REAL) {
         o[c] = rs.getDouble(idx);
-      } else if (type === relationalStore.ColumnType.TYPE_NULL) {
+      } else if (type === relationalStore.ColumnType.NULL) {
         o[c] = null;
       } else {
         o[c] = rs.getLong(idx);
@@ -179,7 +188,7 @@ export class Db {
       'rg_album_peak': s.rgAlbumPeak
     };
     if (isReplace) {
-      return st.insertWithConflictResolution('songs', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+      return st.insert('songs', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
     }
     return st.insert('songs', bucket);
   }
@@ -266,7 +275,7 @@ export class Db {
     const st = this.storeOrThrow();
     if (fav) {
       const bucket: relationalStore.ValuesBucket = { 'song_id': songId, 'created_at': Date.now() };
-      await st.insertWithConflictResolution('favorites', bucket, relationalStore.ConflictResolution.ON_CONFLICT_IGNORE);
+      await st.insert('favorites', bucket, relationalStore.ConflictResolution.ON_CONFLICT_IGNORE);
     } else {
       const pred = new relationalStore.RdbPredicates('favorites');
       pred.equalTo('song_id', songId);
@@ -280,7 +289,6 @@ export class Db {
     repeat: RepeatMode, shuffled: boolean): Promise<void> {
     const st = this.storeOrThrow();
     try {
-      await st.beginTransaction();
       const now = Date.now();
       const qBucket: relationalStore.ValuesBucket = {
         'id': queueId,
@@ -292,7 +300,7 @@ export class Db {
         'repeat_mode': repeat,
         'shuffle_order': shuffled ? '1' : ''
       };
-      await st.insertWithConflictResolution('queues', qBucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+      await st.insert('queues', qBucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
       const delPred = new relationalStore.RdbPredicates('queue_items');
       delPred.equalTo('queue_id', queueId);
       await st.delete(delPred);
@@ -302,14 +310,12 @@ export class Db {
         };
         await st.insert('queue_items', b);
       }
-      await st.commit();
     } catch (e) {
-      await st.rollback();
       hilog.error(DOMAIN, TAG, 'saveQueue fail %{public}s', (e as Error).message);
     }
   }
 
-  async loadLastQueue(): Promise<{ songIds: number[]; activeIndex: number; posMs: number; repeat: RepeatMode; shuffled: boolean; title: string } | null> {
+  async loadLastQueue(): Promise<QueueSnapshot | null> {
     const st = this.storeOrThrow();
     try {
       const rs = await st.querySql('SELECT id, title, active_index, active_pos_ms, repeat_mode, shuffle_order FROM queues ORDER BY last_active_at DESC LIMIT 1');
@@ -333,7 +339,14 @@ export class Db {
       if (songIds.length === 0) {
         return null;
       }
-      return { songIds: songIds, activeIndex: activeIndex, posMs: posMs, repeat: repeat, shuffled: shuffled, title: title };
+      const snap = new QueueSnapshot();
+      snap.songIds = songIds;
+      snap.activeIndex = activeIndex;
+      snap.posMs = posMs;
+      snap.repeat = repeat;
+      snap.shuffled = shuffled;
+      snap.title = title;
+      return snap;
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'loadLastQueue fail %{public}s', (e as Error).message);
       return null;

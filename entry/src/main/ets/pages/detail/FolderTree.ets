@@ -135,7 +135,7 @@ export struct FolderTreeDest {
     .onClick(() => {
       this.toggle(node.dirPath);
     })
-    .onLongClick((): void => {
+    .gesture(LongPressGesture({ repeat: false }).onAction((): void => {
       // 长按:整目录入队
       const ids: number[] = [];
       const collect = (n: FolderNode): void => {
@@ -150,6 +150,12 @@ export struct FolderTreeDest {
       if (ids.length > 0) {
         QueueService.get().append(ids);
       }
-    })
+    }))
   }
+}
+
+
+@Builder
+export function FolderTreeBuilder() {
+  FolderTreeDest()
 }

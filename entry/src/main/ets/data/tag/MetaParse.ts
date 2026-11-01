@@ -840,27 +840,27 @@ export function parseAudioMeta(fileName: string, fileSize: number,
   try {
     if (ext === 'mp3') {
       meta.codec = 'mp3';
-      const id3End = parseId3v2(head, size, meta);
-      parseMp3FrameHeader(head, size, meta, id3End > 0 ? id3End : 0, fileSize);
+      const id3End = parseId3v2(head, fileSize, meta);
+      parseMp3FrameHeader(head, fileSize, meta, id3End > 0 ? id3End : 0, fileSize);
       setBitrate(meta, fileSize);
       meta.ok = meta.durationMs > 0 || meta.title.length > 0;
     } else if (ext === 'flac') {
-      parseFlac(head, size, meta, fileSize);
+      parseFlac(head, fileSize, meta, fileSize);
       meta.ok = meta.sampleRate > 0;
     } else if (ext === 'ogg' || ext === 'oga' || ext === 'opus') {
-      parseOgg(head, size, tail, fileSize, meta);
+      parseOgg(head, fileSize, tail, fileSize, meta);
       meta.ok = meta.sampleRate > 0;
     } else if (ext === 'm4a' || ext === 'mp4' || ext === 'm4b') {
-      parseMp4(head, size, meta, fileSize);
+      parseMp4(head, fileSize, meta, fileSize);
       meta.ok = meta.durationMs > 0;
     } else if (ext === 'wav') {
-      parseWav(head, size, meta, fileSize);
+      parseWav(head, fileSize, meta, fileSize);
       meta.ok = meta.sampleRate > 0;
     } else if (ext === 'ape') {
-      parseApe(head, size, tail, fileSize, meta);
+      parseApe(head, fileSize, tail, fileSize, meta);
       meta.ok = meta.sampleRate > 0;
     } else if (ext === 'aac') {
-      parseAac(head, size, meta, fileSize);
+      parseAac(head, fileSize, meta, fileSize);
       meta.ok = meta.sampleRate > 0;
     } else if (ext === 'dsf' || ext === 'dff' || ext === 'wv' || ext === 'wma') {
       // P0 仅探测登记,P2 解码

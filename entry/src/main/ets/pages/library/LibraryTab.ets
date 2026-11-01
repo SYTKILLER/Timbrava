@@ -2,7 +2,7 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { TabSegmentButtonV2, SegmentButtonV2Items, SegmentButtonV2Item } from '@kit.ArkUI';
-import { AppTheme } from '../../common/Theme';
+import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { LibraryStore, DEFAULT_ORDER } from '../../data/LibraryStore';
 import { Song, Album, Artist, Genre, FolderNode } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';

@@ -81,3 +81,9 @@ export struct AboutDest {
     .title('关于')
   }
 }
+
+
+@Builder
+export function AboutBuilder() {
+  AboutDest()
+}

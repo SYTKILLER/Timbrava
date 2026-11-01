@@ -18,7 +18,7 @@ interface NativeTrackInfo {
   codec: string;
 }
 
-type NativeModule = {
+interface NativeModule {
   openFd(fd: number): NativeTrackInfo;
   play(): void;
   pause(): void;

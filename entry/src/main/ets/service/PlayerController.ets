@@ -1,7 +1,8 @@
 // 播放控制器(单例):引擎选路 + AVSession + 后台连续任务 + 音频焦点 + 设备断开暂停 + 收藏 + 统计。
-import { UIAbilityContext, wantAgent, WantAgent } from '@kit.AbilityKit';
-import { avSession } from '@kit.AVSessionKit';
+import { common, wantAgent, WantAgent, Want } from '@kit.AbilityKit';
+
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
+import { avSession } from '@kit.AVSessionKit';
 import { audio } from '@kit.AudioKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Db } from '../data/Db';
@@ -17,7 +18,9 @@ import { LosslessEngine } from './engine/LosslessEngine';
 const TAG = '[Timbrava][Player]';
 const DOMAIN = 0x0001;
 
-const BT_OR_WIRED_TYPES: number[] = [3, 4, 8, 9, 22]; // wired headset/headphone, BT A2DP/Sco, USB headset
+const BT_TYPES: number[] = [audio.DeviceType.BLUETOOTH_A2DP, audio.DeviceType.BLUETOOTH_SCO];
+const WIRED_TYPES: number[] = [audio.DeviceType.WIRED_HEADSET, audio.DeviceType.WIRED_HEADPHONES,
+  audio.DeviceType.USB_HEADSET];
 
 export class PlayerController {
   private static instance: PlayerController | null = null;
@@ -28,7 +31,7 @@ export class PlayerController {
     return PlayerController.instance;
   }
 
-  private ctx: UIAbilityContext | null = null;
+  private ctx: common.UIAbilityContext | null = null;
   private systemEngine: SystemEngine = new SystemEngine();
   private losslessEngine: LosslessEngine = new LosslessEngine();
   private engine: IAudioEngine | null = null;
@@ -41,7 +44,7 @@ export class PlayerController {
   engineKind: EngineKind = EngineKind.SYSTEM;
   engineInfo: string = '';
 
-  private session: avsession.AVSession | null = null;
+  private session: avSession.AVSession | null = null;
   private ticker: number = -1;
   private pausedByInterrupt: boolean = false;
   private bgTaskRunning: boolean = false;
@@ -57,7 +60,7 @@ export class PlayerController {
 
   // ============ 初始化 ============
 
-  async init(ctx: UIAbilityContext): Promise<void> {
+  async init(ctx: common.UIAbilityContext): Promise<void> {
     if (this.initDone) {
       return;
     }
@@ -75,8 +78,12 @@ export class PlayerController {
     this.initDone = true;
     hilog.info(DOMAIN, TAG, 'controller init done');
 
-    this.systemEngine.setEventCb((ev: EngineEventData): void => this.onEngineEvent(ev));
-    this.losslessEngine.setEventCb((ev: EngineEventData): void => this.onEngineEvent(ev));
+    this.systemEngine.setEventCb((ev: EngineEventData): void => {
+      this.onEngineEvent(ev);
+    });
+    this.losslessEngine.setEventCb((ev: EngineEventData): void => {
+      this.onEngineEvent(ev);
+    });
     this.startTicker();
     await this.initAvSession(ctx);
     this.initAudioFocus();
@@ -325,9 +332,9 @@ export class PlayerController {
 
   // ============ AVSession ============
 
-  private async initAvSession(ctx: UIAbilityContext): Promise<void> {
+  private async initAvSession(ctx: common.UIAbilityContext): Promise<void> {
     try {
-      this.session = await avsession.createAVSession(ctx, 'timbrava_player', 'audio');
+      this.session = await avSession.createAVSession(ctx, 'timbrava_player', 'audio');
       const s = this.session;
       s.on('play', (): void => {
         this.playPause();
@@ -346,9 +353,9 @@ export class PlayerController {
       s.on('seek', (time: number): void => {
         this.seekTo(time);
       });
-      s.on('setLoopMode', (mode: avsession.LoopMode): void => {
-        const map: RepeatMode = mode === avsession.LoopMode.LOOP_MODE_SINGLE ? RepeatMode.ONE
-          : mode === avsession.LoopMode.LOOP_MODE_LIST ? RepeatMode.ALL : RepeatMode.OFF;
+      s.on('setLoopMode', (mode: avSession.LoopMode): void => {
+        const map: RepeatMode = mode === avSession.LoopMode.LOOP_MODE_SINGLE ? RepeatMode.ONE
+          : mode === avSession.LoopMode.LOOP_MODE_LIST ? RepeatMode.ALL : RepeatMode.OFF;
         this.setRepeat(map);
       });
       s.on('toggleFavorite', (assetId: string): void => {
@@ -370,7 +377,7 @@ export class PlayerController {
     if (s === null || song === null) {
       return;
     }
-    const meta: avsession.AVMetadata = {
+    const meta: avSession.AVMetadata = {
       assetId: String(song.id),
       title: song.displayTitle(),
       artist: song.displayArtist(),
@@ -384,7 +391,7 @@ export class PlayerController {
       hilog.warn(DOMAIN, TAG, 'setAVMetadata fail %{public}s', e.message);
     });
     // 队列(上限 30 条,锁屏展示)
-    const items: avsession.AVQueueItem[] = [];
+    const items: avSession.AVQueueItem[] = [];
     const start = Math.max(0, this.queue.currentOrderIndex - 5);
     const end = Math.min(this.queue.list.length, start + 30);
     for (let i = start; i < end; i++) {
@@ -392,12 +399,12 @@ export class PlayerController {
       if (qSong === null) {
         continue;
       }
-      const desc: avsession.AVMediaDescription = {
+      const desc: avSession.AVMediaDescription = {
         assetId: String(qSong.id),
         title: qSong.displayTitle(),
         artist: qSong.displayArtist()
       };
-      const item: avsession.AVQueueItem = { description: desc };
+      const item: avSession.AVQueueItem = { itemId: qSong.id, description: desc };
       items.push(item);
     }
     if (items.length > 0) {
@@ -413,9 +420,10 @@ export class PlayerController {
     if (s === null) {
       return;
     }
-    const state: avsession.AVPlaybackState = {
-      state: this.isPlaying ? avsession.PlaybackState.PLAYBACK_STATE_PLAY : avsession.PlaybackState.PLAYBACK_STATE_PAUSE,
-      position: { position: this.positionMs, updateTime: Date.now() }
+    const pos: avSession.PlaybackPosition = { elapsedTime: this.positionMs, updateTime: Date.now() };
+    const state: avSession.AVPlaybackState = {
+      state: this.isPlaying ? avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE,
+      position: pos
     };
     s.setAVPlaybackState(state).catch((e: Error): void => {
       hilog.warn(DOMAIN, TAG, 'setAVPlaybackState fail %{public}s', e.message);
@@ -427,9 +435,9 @@ export class PlayerController {
     if (s === null) {
       return;
     }
-    const loop: avsession.LoopMode = this.queue.repeat === RepeatMode.ONE ? avsession.LoopMode.LOOP_MODE_SINGLE
-      : this.queue.repeat === RepeatMode.ALL ? avsession.LoopMode.LOOP_MODE_LIST : avsession.LoopMode.LOOP_MODE_SEQUENCE;
-    const state: avsession.AVPlaybackState = { loopMode: loop };
+    const loop: avSession.LoopMode = this.queue.repeat === RepeatMode.ONE ? avSession.LoopMode.LOOP_MODE_SINGLE
+      : this.queue.repeat === RepeatMode.ALL ? avSession.LoopMode.LOOP_MODE_LIST : avSession.LoopMode.LOOP_MODE_SEQUENCE;
+    const state: avSession.AVPlaybackState = { loopMode: loop };
     s.setAVPlaybackState(state).catch((e: Error): void => {
     });
   }
@@ -440,11 +448,7 @@ export class PlayerController {
     try {
       const audioManager = audio.getAudioManager();
       const sessionManager = audioManager.getSessionManager();
-      sessionManager.on('audioInterrupt', (event: audio.InterruptEvent): void => {
-        hilog.info(DOMAIN, TAG, 'audioInterrupt type=%{public}d force=%{public}d hint=%{public}d',
-          event.eventType, event.forceType, event.hint);
-        this.onInterruptHint(event.hint);
-      });
+      // 焦点中断经引擎事件(AVPlayer audioInterrupt / native renderer interrupt)上报
       sessionManager.activateAudioSession({ concurrencyMode: audio.AudioConcurrencyMode.CONCURRENCY_DEFAULT })
         .then((): void => {
           hilog.info(DOMAIN, TAG, 'audio session activated');
@@ -483,28 +487,30 @@ export class PlayerController {
 
   // ============ 设备断开暂停 ============
 
-  private initDeviceListener(ctx: UIAbilityContext): void {
+  private initDeviceListener(ctx: common.UIAbilityContext): void {
     try {
       const routing = audio.getAudioManager().getRoutingManager();
       routing.on('deviceChange', audio.DeviceFlag.OUTPUT_DEVICES_FLAG,
         (action: audio.DeviceChangeAction): void => {
-          if (action.change !== audio.DeviceChangeType.DISCONNECTED) {
+          if (action.type !== audio.DeviceChangeType.DISCONNECT) {
             return;
           }
           let relevant = false;
+          let isBt = false;
           for (const d of action.deviceDescriptors) {
-            if (BT_OR_WIRED_TYPES.indexOf(d.deviceType) >= 0) {
+            if (BT_TYPES.indexOf(d.deviceType) >= 0) {
               relevant = true;
-              hilog.info(DOMAIN, TAG, 'output device disconnected type=%{public}d', d.deviceType);
+              isBt = true;
+              hilog.info(DOMAIN, TAG, 'output device disconnected bt type=%{public}d', d.deviceType);
+            } else if (WIRED_TYPES.indexOf(d.deviceType) >= 0) {
+              relevant = true;
+              hilog.info(DOMAIN, TAG, 'output device disconnected wired type=%{public}d', d.deviceType);
             }
           }
           if (!relevant || !this.isPlaying) {
             return;
           }
           const settings = SettingsService.get();
-          // 粗分:蓝牙类(type 8/9)与有线类(3/4/22)
-          const isBt = action.deviceDescriptors.some((d: audio.AudioDeviceDescriptor): boolean =>
-            d.deviceType === 8 || d.deviceType === 9);
           if ((isBt && settings.pauseOnBtOff) || (!isBt && settings.pauseOnHeadphoneOff)) {
             this.engine?.pause();
             this.isPlaying = false;
@@ -526,8 +532,9 @@ export class PlayerController {
       return;
     }
     try {
+      const want: Want = { bundleName: 'com.march.timbrava', abilityName: 'EntryAbility' };
       const waParam: wantAgent.WantAgentInfo = {
-        wants: [{ bundleName: 'com.march.timbrava', abilityName: 'EntryAbility' }],
+        wants: [want],
         operationType: wantAgent.OperationType.START_ABILITY,
         requestCode: 0
       };

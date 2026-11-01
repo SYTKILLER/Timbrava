@@ -39,7 +39,7 @@ struct PrefToggleRow {
   @StorageProp('prefPauseHeadphone') prefPauseHeadphone: boolean = true;
   @StorageProp('prefPauseBt') prefPauseBt: boolean = true;
   @StorageProp('prefResumeInterrupt') prefResumeInterrupt: boolean = true;
-  key: string = 'lossless';
+  prefKey: string = 'lossless';
   title: string = '';
   sub: string = '';
 
@@ -48,13 +48,13 @@ struct PrefToggleRow {
   }
 
   private value(): boolean {
-    if (this.key === 'lossless') {
+    if (this.prefKey === 'lossless') {
       return this.prefLossless;
     }
-    if (this.key === 'headphone') {
+    if (this.prefKey === 'headphone') {
       return this.prefPauseHeadphone;
     }
-    if (this.key === 'bt') {
+    if (this.prefKey === 'bt') {
       return this.prefPauseBt;
     }
     return this.prefResumeInterrupt;
@@ -62,16 +62,16 @@ struct PrefToggleRow {
 
   private apply(v: boolean): void {
     const s = SettingsService.get();
-    if (this.key === 'lossless') {
+    if (this.prefKey === 'lossless') {
       s.setLosslessEngine(v);
-    } else if (this.key === 'headphone') {
+    } else if (this.prefKey === 'headphone') {
       s.setPauseOnHeadphoneOff(v);
-    } else if (this.key === 'bt') {
+    } else if (this.prefKey === 'bt') {
       s.setPauseOnBtOff(v);
     } else {
       s.setResumeAfterInterrupt(v);
     }
-    hilog.info(DOMAIN, TAG, '%{public}s -> %{public}s', this.key, v ? 'on' : 'off');
+    hilog.info(DOMAIN, TAG, '%{public}s -> %{public}s', this.prefKey, v ? 'on' : 'off');
   }
 
   build() {
@@ -196,7 +196,7 @@ export struct SettingsTab {
           CardSection({ title: '音频引擎' }) {
             Column() {
               PrefToggleRow({
-                key: 'lossless',
+                prefKey: 'lossless',
                 title: '无损引擎(FLAC/WAV 直通)',
                 sub: '按源采样率/位深建流;关闭后全部走系统引擎'
               })
@@ -208,11 +208,11 @@ export struct SettingsTab {
           // 播放行为
           CardSection({ title: '播放行为' }) {
             Column() {
-              PrefToggleRow({ key: 'headphone', title: '拔出耳机暂停', sub: '有线/USB 耳机断开时自动暂停' })
+              PrefToggleRow({ prefKey: 'headphone', title: '拔出耳机暂停', sub: '有线/USB 耳机断开时自动暂停' })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
-              PrefToggleRow({ key: 'bt', title: '蓝牙断开暂停', sub: '蓝牙音频设备断开时自动暂停' })
+              PrefToggleRow({ prefKey: 'bt', title: '蓝牙断开暂停', sub: '蓝牙音频设备断开时自动暂停' })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
-              PrefToggleRow({ key: 'resume', title: '打断后自动恢复', sub: '通话/导航结束后恢复播放' })
+              PrefToggleRow({ prefKey: 'resume', title: '打断后自动恢复', sub: '通话/导航结束后恢复播放' })
             }
           }
 
