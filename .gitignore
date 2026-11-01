@@ -1,0 +1,58 @@
+# ==== DevEco Studio / HarmonyOS 构建产物与缓存 ====
+/node_modules
+**/node_modules
+/oh_modules
+**/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+/.preview
+**/.preview
+
+# ==== 签名文件（严禁上传）====
+*.p12
+*.cer
+*.p7b
+*.keystore
+*.jks
+*.csr
+*.mobileprovision
+**/signature/
+
+# ==== 开发文档 / 参考资料（严禁上传）====
+/docs/
+/doc/
+/documentation/
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+*.vsdx
+/*.md
+!README.md
+!CHANGELOG.md
+
+# ==== 截图（严禁上传）====
+/screenshots/
+/screenshot/
+/captures/
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+/*.webp
+/*.bmp
+
+# ==== 系统杂项 ====
+.DS_Store
+Thumbs.db
