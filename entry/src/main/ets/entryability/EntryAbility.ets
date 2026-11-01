@@ -1,49 +1,62 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { PlayerController } from '../service/PlayerController';
+import { AppTheme } from '../common/Theme';
 
-const DOMAIN = 0x0000;
+const DOMAIN = 0x0001;
+const TAG = '[Timbrava][Ability]';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
+    hilog.info(DOMAIN, TAG, 'Ability onCreate');
+    AppStorage.setOrCreate('playerVer', 0);
+    AppStorage.setOrCreate('posVer', 0);
+    AppStorage.setOrCreate('libVer', 0);
+    AppStorage.setOrCreate('queueVer', 0);
+    AppStorage.setOrCreate('scanVer', 0);
+    AppStorage.setOrCreate('themeVer', 0);
+    AppStorage.setOrCreate('prefThemeMode', 'system');
+    AppStorage.setOrCreate('themePageBg', '');
+    PlayerController.get().init(this.context).then((): void => {
+      hilog.info(DOMAIN, TAG, 'controller ready');
+      AppTheme.apply(this.context);
+    });
   }
 
   onDestroy(): void {
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
+    hilog.info(DOMAIN, TAG, 'Ability onDestroy');
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    // Main window is created, set main page for this ability
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
-
+    hilog.info(DOMAIN, TAG, 'onWindowStageCreate');
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
-        hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
+        hilog.error(DOMAIN, TAG, 'Failed to load content: %{public}s', JSON.stringify(err));
         return;
       }
-      hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+      hilog.info(DOMAIN, TAG, 'loadContent ok');
+      // 沉浸式:必须在 loadContent 完成回调内调用(过早静默失败 1300002)
+      const mainWin = windowStage.getMainWindowSync();
+      mainWin.setWindowLayoutFullScreen(true).then((): void => {
+        hilog.info(DOMAIN, TAG, 'layoutFullScreen on');
+      }).catch((e: Error): void => {
+        hilog.warn(DOMAIN, TAG, 'layoutFullScreen fail %{public}s', e.message);
+      });
+      AppTheme.apply(this.context);
     });
-
-    try {
-      this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
-    } catch (err) {
-      hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
-    }
   }
 
   onWindowStageDestroy(): void {
-    // Main window is destroyed, release UI related resources
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
+    hilog.info(DOMAIN, TAG, 'onWindowStageDestroy');
   }
 
   onForeground(): void {
-    // Ability has brought to foreground
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
+    hilog.info(DOMAIN, TAG, 'onForeground');
   }
 
   onBackground(): void {
-    // Ability has back to background
-    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+    hilog.info(DOMAIN, TAG, 'onBackground');
+    PlayerController.get().persistAll();
   }
 }

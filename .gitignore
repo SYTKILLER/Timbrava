@@ -8,6 +8,7 @@
 **/build
 /.hvigor
 .cxx
+.objcheck
 /.clangd
 /.clang-format
 /.clang-tidy
@@ -52,6 +53,9 @@
 /*.gif
 /*.webp
 /*.bmp
+
+# ==== 本地工具缓存(ffmpeg 等,不入库) ====
+/.tools/
 
 # ==== 系统杂项 ====
 .DS_Store

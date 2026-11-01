@@ -2,7 +2,55 @@
   "color": [
     {
       "name": "start_window_background",
-      "value": "#000000"
+      "value": "#121212"
+    },
+    {
+      "name": "page_bg",
+      "value": "#121212"
+    },
+    {
+      "name": "card_bg",
+      "value": "#1E1E1E"
+    },
+    {
+      "name": "text_primary",
+      "value": "#EDEDED"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#A0A0A0"
+    },
+    {
+      "name": "accent",
+      "value": "#E3B28C"
+    },
+    {
+      "name": "on_accent",
+      "value": "#2B1A10"
+    },
+    {
+      "name": "divider",
+      "value": "#2C2C2C"
+    },
+    {
+      "name": "badge_bg",
+      "value": "#3A2F27"
+    },
+    {
+      "name": "badge_text",
+      "value": "#D9B08C"
+    },
+    {
+      "name": "mini_player_bg",
+      "value": "#1E1E1E"
+    },
+    {
+      "name": "player_bg",
+      "value": "#171310"
+    },
+    {
+      "name": "control_fg",
+      "value": "#EDE0D4"
     }
   ]
 }
