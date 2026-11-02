@@ -15,7 +15,8 @@ const DOMAIN = 0x0001;
 @Component
 export struct FullPlayerDest {
   @StorageProp('playerVer') @Watch('onPlayerChanged') playerVer: number = 0;
-  @StorageProp('posVer') posVer: number = 0;
+  @StorageProp('posVer') @Watch('onPosChanged') posVer: number = 0;
+  @State posMs: number = 0;
   @StorageProp('queueVer') queueVer: number = 0;
   @StorageProp('libVer') libVer: number = 0;
   @StorageProp('themePageBg') themePageBg: string = '';
@@ -34,12 +35,18 @@ export struct FullPlayerDest {
       this.topSafe = r.topVp;
       this.bottomSafe = r.bottomVp;
     });
+    this.posMs = Math.round(PlayerController.get().positionMs);
     // 页面可能晚于播放打开:@Watch 不会补发,主动拉一次(歌词由控制器中心化加载)
     this.onPlayerChanged();
   }
 
   onPlayerChanged(): void {
     // playerVer bump 已驱动重渲染;歌词文本取 PlayerController.currentLyrics
+  }
+
+  onPosChanged(): void {
+    // KB 三规则:posVer 必须经 @Watch 落到 @State 才驱动进度文本/滑条(KB 红线:声明不读=零依赖)
+    this.posMs = Math.round(PlayerController.get().positionMs);
   }
 
   private song(): Song | null {
@@ -497,7 +504,7 @@ export struct FullPlayerDest {
     if (this.seeking) {
       return Math.round(this.seekPreviewMs);
     }
-    return Math.round(PlayerController.get().positionMs);
+    return this.posMs;
   }
 
   private isPlayingNow(): boolean {

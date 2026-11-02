@@ -229,7 +229,7 @@ export class SystemEngine implements IAudioEngine {
     if (this.state === 'prepared' || this.state === 'playing' || this.state === 'paused') {
       try {
         p.setSpeed(SystemEngine.toPlaybackSpeed(v));
-        hilog.info(DOMAIN, TAG, 'speed -> %{public}f', v);
+        hilog.info(DOMAIN, TAG, 'speed -> %{public}d', Math.round(v * 100));
       } catch (e) {
         hilog.warn(DOMAIN, TAG, 'setSpeed fail %{public}s', (e as Error).message);
       }

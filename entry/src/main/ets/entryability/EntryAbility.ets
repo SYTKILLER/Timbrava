@@ -4,11 +4,13 @@ import { PlayerController } from '../service/PlayerController';
 import { AppTheme } from '../common/Theme';
 import { SettingsService } from '../service/SettingsService';
 import { ScanService } from '../data/ScanService';
+import { RgScanner } from '../service/RgScanner';
 import { Db } from '../data/Db';
 import { LibraryStore } from '../data/LibraryStore';
 import { QueueService, } from '../service/QueueService';
 import { RepeatMode } from '../data/Model';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
 
 const DBG_DOMAIN = 0x0001;
 const DBG_TAG = '[Timbrava][DebugCmd]';
@@ -73,6 +75,37 @@ async function runDebugCommands(ctx: common.UIAbilityContext, params: Record<str
     }
     if (get('debugFav') === '1') {
       player.toggleFavorite();
+    }
+    const speed = get('debugSpeed');
+    if (speed.length > 0) {
+      await player.setSpeed(parseFloat(speed));
+    }
+    if (get('debugAb') === '1') {
+      hilog.info(DBG_DOMAIN, DBG_TAG, 'ab -> %{public}s', player.setAbPoint());
+    }
+    if (get('debugSkipSilence') === '1') {
+      await player.toggleSkipSilence();
+    }
+    if (get('debugRg') === '1') {
+      hilog.info(DBG_DOMAIN, DBG_TAG, 'debugRg trigger');
+      RgScanner.get().scan(LibraryStore.get().songs);
+    }
+    if (get('debugRgCancel') === '1') {
+      RgScanner.get().cancel();
+    }
+    if (get('debugDup') === '1') {
+      // 造重复语料:同内容跨路径文件 + 重扫(重复清理检测用)
+      const dir = `${ctx.filesDir}/music`;
+      const dst = `${dir}/Dup_Song.flac`;
+      try {
+        if (!fs.accessSync(dst)) {
+          fs.copyFileSync(`${dir}/Song16_441.flac`, dst);
+          hilog.info(DBG_DOMAIN, DBG_TAG, 'dup file created');
+        }
+      } catch (e) {
+        hilog.warn(DBG_DOMAIN, DBG_TAG, 'dup create fail %{public}s', (e as Error).message);
+      }
+      await ScanService.get().rescan();
     }
   } catch (e) {
     hilog.error(DBG_DOMAIN, DBG_TAG, 'runDebugCommands fail %{public}s', (e as Error).message);

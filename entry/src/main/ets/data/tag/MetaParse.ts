@@ -863,7 +863,7 @@ function parseDsfHead(head: ReadAt, fileSize: number, meta: SongMeta): void {
 
 // DFF(DSDIFF):FRM8 容器,大端;FS(采样率)/CHNL(声道)/DSD(数据)。
 function parseDffHead(head: ReadAt, fileSize: number, meta: SongMeta): void {
-  let off = 12; // FRM8(4) + size(8);form type 'DSD ' 已含
+  let off = 16; // FRM8(4) + size(8) + form type 'DSD '(4),块从 16 起
   let rate = 0;
   let chNum = 0;
   let dsdStart = -1;

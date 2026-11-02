@@ -150,7 +150,7 @@ export class PlayerController {
 
   private chooseEngine(song: Song): IAudioEngine {
     const losslessPref = SettingsService.get().losslessEngine;
-    const isNativeCodec = song.codec === 'flac' || song.codec === 'wav';
+    const isNativeCodec = song.codec === 'flac' || song.codec === 'wav' || song.codec === 'dsd';
     const pick = losslessPref && isNativeCodec && this.losslessEngine.available();
     hilog.info(DOMAIN, TAG, 'route codec=%{public}s losslessPref=%{public}s native=%{public}s -> %{public}d',
       song.codec, String(losslessPref), String(isNativeCodec), pick ? 1 : 0);
@@ -487,7 +487,7 @@ export class PlayerController {
     }
     this.syncSessionState();
     this.bumpPlayer();
-    hilog.info(DOMAIN, TAG, 'speed -> %{public}f', this.speed);
+    hilog.info(DOMAIN, TAG, 'speed -> %{public}d', Math.round(this.speed * 100));
   }
 
   // A-B 重复:第一击记 A,第二击记 B,第三击取消。返回当前状态('off'|'a'|'ab')

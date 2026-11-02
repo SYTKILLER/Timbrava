@@ -60,3 +60,4 @@
 # ==== 系统杂项 ====
 .DS_Store
 Thumbs.db
+.verify/

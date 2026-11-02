@@ -427,7 +427,7 @@ void Engine::setReplayGain(float trackGainDb, float trackPeak, float albumGainDb
     lastAlbumPeak_ = albumPeak;
     rgMode_ = mode;
     timbrava::dspSetReplayGain(trackGainDb, trackPeak, albumGainDb, albumPeak, mode);
-    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "dsp rg mode=%{public}d track=%{public}f", mode, trackGainDb);
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "dsp rg mode=%{public}d track=%{public}s", mode, std::to_string(trackGainDb).c_str());
 }
 
 void Engine::setSkipSilence(bool on)
@@ -448,7 +448,7 @@ void Engine::setSpeed(float speed)
         speed = 1.0f;
     }
     speed_ = std::min(3.0f, std::max(0.25f, speed));
-    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "speed %{public}f", speed_.load());
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "speed %{public}s", std::to_string(speed_.load()).c_str());
 }
 
 bool Engine::dspActive() const
@@ -502,8 +502,9 @@ bool Engine::analyzeTrack(int fd, float *outRmsDb, float *outPeak, int64_t *outD
     *outRmsDb = rms;
     *outPeak = peak;
     *outDurationMs = info.sampleRate > 0 ? totalFrames * 1000 / info.sampleRate : 0;
-    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "analyze done frames=%{public}lld rms=%{public}f peak=%{public}f",
-                 static_cast<long long>(totalFrames), rms, peak);
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "analyze done frames=%{public}lld rms=%{public}s peak=%{public}s",
+                 static_cast<long long>(totalFrames), std::to_string(rms).c_str(),
+                 std::to_string(peak).c_str());
     return true;
 }
 
