@@ -19,6 +19,7 @@ export struct FullPlayerDest {
   @StorageProp('queueVer') queueVer: number = 0;
   @StorageProp('libVer') libVer: number = 0;
   @StorageProp('themePageBg') themePageBg: string = '';
+  @StorageProp('prefPlayerSkin') playerSkin: string = 'standard';
   @State seeking: boolean = false;
   @State seekPreviewMs: number = 0;
   @State showQueue: boolean = false;
@@ -180,10 +181,10 @@ export struct FullPlayerDest {
               })
           }
           .width('88%')
-          .height('56%')
+          .height(this.playerSkin === 'minimal' ? '44%' : '56%')
         } else if ((this.song() as Song).artPath.length > 0) {
           Image((this.song() as Song).artPath)
-            .width('78%')
+            .width(this.playerSkin === 'minimal' ? '46%' : '78%')
             .aspectRatio(1)
             .borderRadius(24)
             .objectFit(ImageFit.Cover)
@@ -194,7 +195,7 @@ export struct FullPlayerDest {
               .fontSize(72)
               .fontColor([$r('app.color.accent')])
           }
-          .width('78%')
+          .width(this.playerSkin === 'minimal' ? '46%' : '78%')
           .aspectRatio(1)
           .borderRadius(24)
           .backgroundColor($r('app.color.badge_bg'))

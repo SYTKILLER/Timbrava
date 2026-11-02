@@ -4,6 +4,7 @@ import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SettingsService, ThemeMode } from '../../service/SettingsService';
 import { RgScanner, RgScanState } from '../../service/RgScanner';
+import { BackupService } from '../../service/BackupService';
 import { LibraryStore } from '../../data/LibraryStore';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 
@@ -241,6 +242,25 @@ export struct SettingsTab {
           CardSection({ title: '外观' }) {
             Column() {
               ThemeRow()
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              PlayerSkinRow()
+            }
+          }
+
+          // 备份与恢复
+          CardSection({ title: '备份与恢复' }) {
+            Column() {
+              this.NavItem('导出备份', '设置/歌单/收藏/队列/EQ 预设 → JSON', (): void => {
+                BackupService.exportAll().then((ok: boolean): void => {
+                  this.getUIContext().getPromptAction().showToast({ message: ok ? '已导出' : '导出取消或失败' });
+                });
+              })
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              this.NavItem('从备份恢复', '选择 JSON 并恢复(歌单按文件路径重挂)', (): void => {
+                BackupService.importAll().then((ok: boolean): void => {
+                  this.getUIContext().getPromptAction().showToast({ message: ok ? '已恢复' : '导入取消或失败' });
+                });
+              })
             }
           }
 
@@ -325,6 +345,53 @@ const THEME_OPTIONS: ThemeOption[] = [
   new ThemeOption('dark'),
   new ThemeOption('black')
 ];
+
+// 播放页皮肤(#53):标准(大封面)/极简
+@Component
+struct PlayerSkinRow {
+  @StorageProp('prefPlayerSkin') prefPlayerSkin: string = 'standard';
+
+  build() {
+    Column({ space: 8 }) {
+      Row({ space: 10 }) {
+        SymbolGlyph($r('sys.symbol.paintpalette'))
+          .fontSize(18)
+          .fontColor([$r('app.color.accent')])
+        Text('播放页皮肤')
+          .fontSize(15)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      Row({ space: 8 }) {
+        Button('标准(大封面)')
+          .fontSize(13)
+          .fontColor(this.prefPlayerSkin === 'standard' ? $r('app.color.on_accent') : $r('app.color.text_primary'))
+          .backgroundColor(this.prefPlayerSkin === 'standard' ? $r('app.color.accent') : $r('app.color.badge_bg'))
+          .borderRadius(10)
+          .height(34)
+          .layoutWeight(1)
+          .onClick(() => {
+            SettingsService.get().setPlayerSkin('standard');
+          })
+        Button('极简')
+          .fontSize(13)
+          .fontColor(this.prefPlayerSkin === 'minimal' ? $r('app.color.on_accent') : $r('app.color.text_primary'))
+          .backgroundColor(this.prefPlayerSkin === 'minimal' ? $r('app.color.accent') : $r('app.color.badge_bg'))
+          .borderRadius(10)
+          .height(34)
+          .layoutWeight(1)
+          .onClick(() => {
+            SettingsService.get().setPlayerSkin('minimal');
+          })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: 10, bottom: 10 })
+  }
+}
 
 // LRCLIB 联网歌词开关(默认关,零联网定位下显式开启)
 @Component

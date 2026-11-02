@@ -45,6 +45,7 @@ export class SettingsService {
   skipSilence: boolean = false;
   playSpeed: number = 1.0;     // 0.25~3.0
   onlineLyrics: boolean = false; // LRCLIB 联网歌词(默认关,#38 零联网定位)
+  playerSkin: string = 'standard'; // standard 大封面 | minimal 极简(#53)
 
   private loaded: boolean = false;
 
@@ -73,6 +74,8 @@ export class SettingsService {
     const sp = parseFloat(await db.getSetting('playSpeed', '1.0'));
     this.playSpeed = Number.isFinite(sp) && sp >= 0.25 && sp <= 3.0 ? sp : 1.0;
     this.onlineLyrics = (await db.getSetting('onlineLyrics', '0')) === '1';
+    const skin = await db.getSetting('playerSkin', 'standard');
+    this.playerSkin = skin === 'minimal' ? 'minimal' : 'standard';
     this.loaded = true;
     this.syncTokens();
     hilog.info(DOMAIN, TAG, 'settings loaded');
@@ -91,6 +94,7 @@ export class SettingsService {
     this.token('prefSkipSilence', this.skipSilence);
     this.token('prefPlaySpeed', this.playSpeed);
     this.token('prefOnlineLyrics', this.onlineLyrics);
+    this.token('prefPlayerSkin', this.playerSkin);
   }
 
   private async save(key: string, value: string): Promise<void> {
@@ -159,6 +163,12 @@ export class SettingsService {
     this.playSpeed = Math.min(3.0, Math.max(0.25, v));
     this.syncTokens();
     await this.save('playSpeed', String(this.playSpeed));
+  }
+
+  async setPlayerSkin(skin: string): Promise<void> {
+    this.playerSkin = skin === 'minimal' ? 'minimal' : 'standard';
+    this.syncTokens();
+    await this.save('playerSkin', this.playerSkin);
   }
 
   async setOnlineLyrics(on: boolean): Promise<void> {

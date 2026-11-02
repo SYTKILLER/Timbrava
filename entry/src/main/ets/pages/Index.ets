@@ -86,7 +86,10 @@ struct Index {
     }
     .navDestination(this.pagesMap)
     .hideTitleBar(true)
-    .mode(NavigationMode.Stack)
+    // 分栏(#54):宽屏(≥600vp)自动 Split(库列表 + 右侧详情),手机保持 Stack
+    .mode(NavigationMode.Auto)
+    .navBarWidth('46%')
+    .minContentWidth(360)
   }
 
   private floatingStyle(): HdsTabsFloatingStyle {
