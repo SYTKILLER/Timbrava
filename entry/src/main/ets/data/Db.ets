@@ -64,6 +64,12 @@ export class QueueSnapshot {
   title: string = '';
 }
 
+export class EqPresetRow {
+  id: number = 0;
+  name: string = '';
+  bands: number[] = [];
+}
+
 export class Db {
   private static instance: Db | null = null;
   private store: relationalStore.RdbStore | null = null;
@@ -485,6 +491,70 @@ export class Db {
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'recordPlay fail %{public}s', (e as Error).message);
     }
+  }
+
+  // ============ EQ 预设 / 频段 JSON 编解码 ============
+
+  // bands JSON → 31 段增益数组(不足补 0,超出截断)
+  static parseBands(json: string): number[] {
+    const out: number[] = [];
+    if (json.length === 0) {
+      return out;
+    }
+    try {
+      const arr = JSON.parse(json) as Array<number>;
+      for (let i = 0; i < 31 && i < arr.length; i++) {
+        const v = Number(arr[i]);
+        out.push(Number.isFinite(v) ? Math.min(15, Math.max(-15, v)) : 0);
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'parseBands fail %{public}s', (e as Error).message);
+    }
+    return out;
+  }
+
+  static stringifyBands(bands: number[]): string {
+    const arr: number[] = [];
+    for (let i = 0; i < 31; i++) {
+      const v = i < bands.length ? bands[i] : 0;
+      const r = Math.round(v * 10) / 10;
+      arr.push(Number.isFinite(r) ? r : 0);
+    }
+    return JSON.stringify(arr);
+  }
+
+  async listEqPresets(): Promise<Array<EqPresetRow>> {
+    const st = this.storeOrThrow();
+    const out: Array<EqPresetRow> = [];
+    try {
+      const rs = await st.querySql('SELECT id, name, bands FROM eq_presets ORDER BY id');
+      while (rs.goToNextRow()) {
+        const row = new EqPresetRow();
+        row.id = rs.getLong(0);
+        row.name = rs.getString(1);
+        row.bands = Db.parseBands(rs.getString(2));
+        out.push(row);
+      }
+      rs.close();
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'listEqPresets fail %{public}s', (e as Error).message);
+    }
+    return out;
+  }
+
+  async saveEqPreset(name: string, bands: number[]): Promise<number> {
+    const st = this.storeOrThrow();
+    const bucket: relationalStore.ValuesBucket = {
+      'name': name, 'bands': Db.stringifyBands(bands)
+    };
+    return st.insert('eq_presets', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+  }
+
+  async deleteEqPreset(id: number): Promise<void> {
+    const st = this.storeOrThrow();
+    const pred = new relationalStore.RdbPredicates('eq_presets');
+    pred.equalTo('id', id);
+    await st.delete(pred);
   }
 
   // ============ 根目录 ============

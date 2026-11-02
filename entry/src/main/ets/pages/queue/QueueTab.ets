@@ -167,16 +167,17 @@ export struct QueueTab {
     Button({ stateEffect: true }) {
       SymbolGlyph(this.repeatIcon())
         .fontSize(18)
-        .fontColor([QueueService.get().repeat === RepeatMode.OFF ? $r('app.color.text_primary') : $r('app.color.accent')])
+        .fontColor([this.repeatAccent() ? $r('app.color.accent') : $r('app.color.text_primary')])
     }
     .width(36)
     .height(36)
     .backgroundColor(Color.Transparent)
-    .onClick(() => {
-      const mode = QueueService.get().cycleRepeat();
-      PlayerController.get().setRepeat(mode);
-      hilog.info(DOMAIN, TAG, 'repeat mode -> %{public}d', mode);
-    })
+    .bindMenu(this.repeatMenu())
+  }
+
+  private repeatAccent(): boolean {
+    const q = QueueService.get();
+    return q.repeat !== RepeatMode.OFF || q.boundary !== 'none' || q.stopAfterCurrent;
   }
 
   private repeatIcon(): Resource {
@@ -185,6 +186,40 @@ export struct QueueTab {
       return $r('sys.symbol.repeat_1');
     }
     return $r('sys.symbol.repeat');
+  }
+
+  @Builder
+  repeatMenu() {
+    Menu() {
+      MenuItem({ content: '顺序播放(不循环)' })
+        .onClick(() => {
+          PlayerController.get().setRepeat(RepeatMode.OFF);
+        })
+      MenuItem({ content: '列表循环' })
+        .onClick(() => {
+          PlayerController.get().setRepeat(RepeatMode.ALL);
+        })
+      MenuItem({ content: '单曲循环' })
+        .onClick(() => {
+          PlayerController.get().setRepeat(RepeatMode.ONE);
+        })
+      MenuItem({ content: QueueService.get().stopAfterCurrent ? '✓ 播完当前停止' : '播完当前停止' })
+        .onClick(() => {
+          QueueService.get().setStopAfterCurrent(!QueueService.get().stopAfterCurrent);
+        })
+      MenuItem({ content: QueueService.get().boundary === 'album' ? '✓ 按专辑推进' : '按专辑推进(跨专辑停)' })
+        .onClick(() => {
+          QueueService.get().setBoundary(QueueService.get().boundary === 'album' ? 'none' : 'album');
+        })
+      MenuItem({ content: QueueService.get().boundary === 'artist' ? '✓ 按艺人推进' : '按艺人推进(跨艺人停)' })
+        .onClick(() => {
+          QueueService.get().setBoundary(QueueService.get().boundary === 'artist' ? 'none' : 'artist');
+        })
+      MenuItem({ content: QueueService.get().boundary === 'folder' ? '✓ 按文件夹推进' : '按文件夹推进(跨目录停)' })
+        .onClick(() => {
+          QueueService.get().setBoundary(QueueService.get().boundary === 'folder' ? 'none' : 'folder');
+        })
+    }
   }
 
   @Builder

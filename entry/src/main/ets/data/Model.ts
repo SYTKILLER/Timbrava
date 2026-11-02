@@ -57,6 +57,12 @@ export class Song {
     return this.album.length > 0 ? this.album : '未知专辑';
   }
 
+  // 所在目录(循环扩展"按文件夹推进"的边界键)
+  dirPath(): string {
+    const i = this.path.lastIndexOf('/');
+    return i > 0 ? this.path.substring(0, i) : '';
+  }
+
   static fromJson(o: Record<string, Object | null>): Song {
     const s = new Song();
     s.id = Number(o['id'] ?? 0);

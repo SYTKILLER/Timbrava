@@ -214,6 +214,32 @@ static napi_value JShutdown(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
+static napi_value JSetSpeed(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    double speed = 1.0;
+    if (argc >= 1) {
+        napi_get_value_double(env, args[0], &speed);
+    }
+    timbrava::Engine::instance().setSpeed(static_cast<float>(speed));
+    return nullptr;
+}
+
+static napi_value JSetSkipSilence(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool on = false;
+    if (argc >= 1) {
+        napi_get_value_bool(env, args[0], &on);
+    }
+    timbrava::Engine::instance().setSkipSilence(on);
+    return nullptr;
+}
+
 
 // 调试/验证通道:应用对自己沙箱目录授权(宿主 shell uid 需穿越写入语料)
 static napi_value JChmodPath(napi_env env, napi_callback_info info)
@@ -258,6 +284,8 @@ static napi_value Init(napi_env env, napi_value exports)
         {"setPeqEnabled", nullptr, JSetPeqEnabled, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setPeqBand", nullptr, JSetPeqBand, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setReplayGain", nullptr, JSetReplayGain, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setSpeed", nullptr, JSetSpeed, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setSkipSilence", nullptr, JSetSkipSilence, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

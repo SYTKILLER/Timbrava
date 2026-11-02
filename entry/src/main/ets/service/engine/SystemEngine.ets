@@ -19,6 +19,7 @@ export class SystemEngine implements IAudioEngine {
   private durationMs: number = 0;
   private lastPosMs: number = 0;
   private seekTargetMs: number = -1;
+  private lastSpeed: number = 1.0;
 
   getKind(): EngineKind {
     return EngineKind.SYSTEM;
@@ -111,6 +112,10 @@ export class SystemEngine implements IAudioEngine {
       await waitInit();
       await p.prepare();
       this.durationMs = p.duration > 0 ? p.duration : 0;
+      // 恢复倍速(prepared 态才可设)
+      if (this.lastSpeed !== 1.0) {
+        this.applySpeed(this.lastSpeed);
+      }
       hilog.info(DOMAIN, TAG, 'open ok dur=%{public}d uri_len=%{public}d', this.durationMs, uri.length);
       const info = new EngineTrackInfo();
       info.durationMs = this.durationMs;
@@ -170,6 +175,74 @@ export class SystemEngine implements IAudioEngine {
 
   getDurationMs(): number {
     return this.durationMs;
+  }
+
+  // float 倍速 → 最近 AVPlayer 档位(KB:无 2.5x;档位 0.125~3.0)
+  private static readonly SPEED_STEPS: number[] = [0.125, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0];
+
+  private static toPlaybackSpeed(v: number): media.PlaybackSpeed {
+    const steps = SystemEngine.SPEED_STEPS;
+    let best = 1.0;
+    let bestDiff = Number.MAX_VALUE;
+    for (const s of steps) {
+      const d = Math.abs(s - v);
+      if (d < bestDiff) {
+        bestDiff = d;
+        best = s;
+      }
+    }
+    if (best === 0.125) {
+      return media.PlaybackSpeed.SPEED_FORWARD_0_125_X;
+    }
+    if (best === 0.25) {
+      return media.PlaybackSpeed.SPEED_FORWARD_0_25_X;
+    }
+    if (best === 0.5) {
+      return media.PlaybackSpeed.SPEED_FORWARD_0_50_X;
+    }
+    if (best === 0.75) {
+      return media.PlaybackSpeed.SPEED_FORWARD_0_75_X;
+    }
+    if (best === 1.25) {
+      return media.PlaybackSpeed.SPEED_FORWARD_1_25_X;
+    }
+    if (best === 1.5) {
+      return media.PlaybackSpeed.SPEED_FORWARD_1_50_X;
+    }
+    if (best === 1.75) {
+      return media.PlaybackSpeed.SPEED_FORWARD_1_75_X;
+    }
+    if (best === 2.0) {
+      return media.PlaybackSpeed.SPEED_FORWARD_2_00_X;
+    }
+    if (best === 3.0) {
+      return media.PlaybackSpeed.SPEED_FORWARD_3_00_X;
+    }
+    return media.PlaybackSpeed.SPEED_FORWARD_1_00_X;
+  }
+
+  private applySpeed(v: number): void {
+    const p = this.player;
+    if (p === null) {
+      return;
+    }
+    if (this.state === 'prepared' || this.state === 'playing' || this.state === 'paused') {
+      try {
+        p.setSpeed(SystemEngine.toPlaybackSpeed(v));
+        hilog.info(DOMAIN, TAG, 'speed -> %{public}f', v);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'setSpeed fail %{public}s', (e as Error).message);
+      }
+    }
+  }
+
+  setSpeed(speed: number): void {
+    this.lastSpeed = speed;
+    this.applySpeed(speed);
+  }
+
+  setSkipSilence(on: boolean): void {
+    // 系统引擎不支持,静默忽略
   }
 
   release(): void {

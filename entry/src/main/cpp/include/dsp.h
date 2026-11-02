@@ -78,12 +78,24 @@ void dspSetPeqBand(int index, int type, float freq, float gainDb, float q);
 // PEQ 总开关。关闭时 PEQ 段整体旁路(不影响 RG 与软限幅)。
 void dspSetPeqEnabled(bool enabled);
 
+// 跳过静音(门限压静音):信号峰值低于 -50dB 持续 500ms 后用 250ms 渐变压到
+// 无声,信号恢复用 60ms 渐回。仅整块增益控制,不做移除拼接。仅音频线程内部
+// 状态,控制线程只翻开关。
+void dspSetSkipSilence(bool enabled);
+
 // 设置 ReplayGain。线性增益 = 10^(gainDb/20):
 //   mode=0 关闭;mode=1 使用 trackGainDb;mode=2 使用 albumGainDb(其余按 0 处理)。
 // trackPeak/albumPeak 为对应模式的重放峰值,供上层显示与防削波预判;
 // DSP 端按规范直接应用增益,超限样本(|sample|·gain > 1.0)由链尾软压限兜底。
 void dspSetReplayGain(float trackGainDb, float trackPeak, float albumGainDb,
                       float albumPeak, int mode);
+
+// 全曲响度分析(ReplayGain 扫描器):对整曲交错 F32 PCM 分块测响度,
+// 返回 95 分位块 RMS(dB,未加等响权重,P2 近似)与线性峰值。
+// 分块调用:每块调 dspAnalyzeBlock,结束后 dspAnalyzeFinish 取结果。
+void dspAnalyzeReset();
+void dspAnalyzeBlock(const float *data, size_t frameCount, int channels);
+void dspAnalyzeFinish(float *outRmsDb, float *outPeak);
 
 // ---------------- 辅助查询 ----------------
 

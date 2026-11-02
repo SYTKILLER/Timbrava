@@ -20,11 +20,13 @@
 #include "dsp.h"
 #include "decoder.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <mutex>
+#include <vector>
 
 namespace timbrava {
 
@@ -75,6 +77,7 @@ struct DspConfig {
     int sampleRate = 48000;
     int channels = 0; // 0 = 尚未 prepare,process 直接返回
     bool peqEnabled = false;
+    bool skipSilence = false;
 
     BandSpec bands[kPeqBandCount];
 
@@ -107,6 +110,7 @@ struct DspParams {
     int sampleRate = 48000;
     int channels = 0;
     bool peqEnabled = false;
+    bool skipSilence = false;
     bool allIdentity = true; // 31 段全部恒等 → PEQ 整链直通
     uint32_t stateEpoch = 1;
     float rgGain = 1.0f; // 线性增益(= 10^(dB/20);mode==off 时为 1)
@@ -294,12 +298,47 @@ unsigned g_readerSlot = 2;        // 音频线程独占
 BiquadState g_state[kDspMaxChannels][kPeqBandCount]; // 每声道状态,音频线程独占
 uint32_t g_lastEpoch = 0;                            // 音频线程已应用的状态代次
 
+// 跳过静音门(仅音频线程访问,无需同步)
+float g_gateGain = 1.0f;     // 当前门增益(0~1,渐变)
+int64_t g_silenceRun = 0;    // 连续静音帧计数
+constexpr float kGateThresh = 0.0031623f; // -50 dBFS
+
+// 门控一帧:整帧峰值判定 → 渐变增益。进入静音 500ms 保持后 250ms 渐降为 0,
+// 信号恢复 60ms 渐回 1。
+inline void gateTick(float *frame, int ch, int sampleRate) {
+    float peak = 0.0f;
+    for (int c = 0; c < ch; ++c) {
+        const float a = frame[c] < 0.0f ? -frame[c] : frame[c];
+        if (a > peak) peak = a;
+    }
+    if (peak < kGateThresh) {
+        ++g_silenceRun;
+    } else {
+        g_silenceRun = 0;
+    }
+    const double sr = sampleRate > 0 ? static_cast<double>(sampleRate) : 48000.0;
+    const int64_t hold = static_cast<int64_t>(0.5 * sr);
+    const float target = (g_silenceRun > hold) ? 0.0f : 1.0f;
+    const float step = 1.0f / static_cast<float>(target == 0.0f ? 0.25 * sr : 0.06 * sr);
+    if (g_gateGain > target) {
+        g_gateGain = (g_gateGain - step > target) ? g_gateGain - step : target;
+    } else if (g_gateGain < target) {
+        g_gateGain = (g_gateGain + step < target) ? g_gateGain + step : target;
+    }
+    if (g_gateGain < 1.0f) {
+        for (int c = 0; c < ch; ++c) {
+            frame[c] *= g_gateGain;
+        }
+    }
+}
+
 // 由控制线程配置构建不可变参数快照(仅控制线程调用,系数计算集中在此)。
 DspParams buildParams(const DspConfig &cfg) {
     DspParams p;
     p.sampleRate = cfg.sampleRate;
     p.channels = cfg.channels;
     p.peqEnabled = cfg.peqEnabled;
+    p.skipSilence = cfg.skipSilence;
     p.stateEpoch = cfg.stateEpoch;
     p.rgGain = (cfg.rgMode == kReplayGainTrack) ? rgLinearGain(cfg.rgTrackGainDb)
                : (cfg.rgMode == kReplayGainAlbum) ? rgLinearGain(cfg.rgAlbumGainDb)
@@ -382,12 +421,13 @@ void dspProcessInterleavedF32(float *data, size_t frameCount) {
 
     const bool rgOn = (p.rgGain != 1.0f);
     const bool peqOn = (p.peqEnabled && !p.allIdentity);
-    if (!rgOn && !peqOn) return; // DSP 全关:逐位直通(恒等保证)
+    if (!rgOn && !peqOn && !p.skipSilence) return; // DSP 全关:逐位直通(恒等保证)
 
     for (size_t f = 0; f < frameCount; ++f) {
         float *frame = data + f * static_cast<size_t>(ch);
+        float x = 0.0f;
         for (int c = 0; c < ch; ++c) {
-            float x = frame[c];
+            x = frame[c];
             if (rgOn) {
                 x *= p.rgGain; // RG:线性增益 = 10^(dB/20)(控制线程预算)
             }
@@ -395,6 +435,9 @@ void dspProcessInterleavedF32(float *data, size_t frameCount) {
                 x = peqChain(x, g_state[c], p); // PEQ:31 段 biquad 串联
             }
             frame[c] = softLimit(x); // 软限幅:兜住 RG / PEQ 造成的 >1.0 过冲
+        }
+        if (p.skipSilence) {
+            gateTick(frame, ch, p.sampleRate);
         }
     }
 }
@@ -429,6 +472,17 @@ void dspSetPeqEnabled(bool enabled) {
     publishParams();
 }
 
+void dspSetSkipSilence(bool enabled) {
+    std::lock_guard<std::mutex> lk(g_configMutex);
+    g_config.skipSilence = enabled;
+    if (!enabled) {
+        g_gateGain = 1.0f; // 复位门(音频线程也读,但原子 float 语义可接受:
+                           // 极端竞态下至多多压一帧渐变,无爆音风险)
+        g_silenceRun = 0;
+    }
+    publishParams();
+}
+
 void dspSetReplayGain(float trackGainDb, float trackPeak, float albumGainDb,
                       float albumPeak, int mode) {
     std::lock_guard<std::mutex> lk(g_configMutex);
@@ -444,6 +498,82 @@ void dspSetReplayGain(float trackGainDb, float trackPeak, float albumGainDb,
 
 const float *dspPeqDefaultFreqs() {
     return defaultPeqFreqs();
+}
+
+// ---------------- 全曲响度分析(ReplayGain 扫描器) ----------------
+// P2 近似:未加等响(Y1988)权重,直接对 50ms 块取 RMS;增益公式
+// gain_dB = -18 - p95RMS_dB(ReplayGain 2.0 参考 -18 LUFS 的简化)。
+// 音频线程无关,控制线程调用;状态静态存储。
+
+namespace {
+std::vector<float> g_anaBlockDb;   // 各 50ms 块的 dBFS RMS
+double g_anaSumSq = 0.0;           // 全曲平方和(备用/.album 均值)
+uint64_t g_anaCount = 0;           // 全曲样本计数
+float g_anaPeak = 0.0f;
+std::vector<float> g_anaCarry;     // 跨块帧携带(块边界对齐 50ms)
+constexpr size_t kAnaBlockFrames = 2400; // 50ms @48k;其他采样率按时间折算
+} // namespace
+
+void dspAnalyzeReset() {
+    std::lock_guard<std::mutex> lk(g_configMutex);
+    g_anaBlockDb.clear();
+    g_anaSumSq = 0.0;
+    g_anaCount = 0;
+    g_anaPeak = 0.0f;
+    g_anaCarry.clear();
+}
+
+void dspAnalyzeBlock(const float *data, size_t frameCount, int channels) {
+    if (data == nullptr || frameCount == 0 || channels <= 0) {
+        return;
+    }
+    const size_t total = frameCount * static_cast<size_t>(channels);
+    for (size_t i = 0; i < total; ++i) {
+        const float a = data[i] < 0.0f ? -data[i] : data[i];
+        if (a > g_anaPeak) {
+            g_anaPeak = a;
+        }
+        g_anaSumSq += static_cast<double>(data[i]) * static_cast<double>(data[i]);
+    }
+    g_anaCount += total;
+
+    // 50ms 块 RMS(按帧计,折算到当前块长)
+    g_anaCarry.insert(g_anaCarry.end(), data, data + total);
+    const size_t framesInCarry = g_anaCarry.size() / static_cast<size_t>(channels);
+    const size_t blockFrames = kAnaBlockFrames; // 固定帧数块(时间随采样率浮动,可接受)
+    size_t offset = 0;
+    while (framesInCarry - offset >= blockFrames) {
+        double sum = 0.0;
+        const size_t n = blockFrames * static_cast<size_t>(channels);
+        for (size_t i = 0; i < n; ++i) {
+            sum += static_cast<double>(g_anaCarry[offset * static_cast<size_t>(channels) + i]) *
+                   static_cast<double>(g_anaCarry[offset * static_cast<size_t>(channels) + i]);
+        }
+        const double rms = std::sqrt(sum / static_cast<double>(n));
+        g_anaBlockDb.push_back(static_cast<float>(20.0 * std::log10(rms > 1e-9 ? rms : 1e-9)));
+        offset += blockFrames;
+    }
+    if (offset > 0) {
+        g_anaCarry.erase(g_anaCarry.begin(),
+                         g_anaCarry.begin() + static_cast<long>(offset * static_cast<size_t>(channels)));
+    }
+}
+
+void dspAnalyzeFinish(float *outRmsDb, float *outPeak) {
+    std::lock_guard<std::mutex> lk(g_configMutex);
+    if (outRmsDb == nullptr || outPeak == nullptr) {
+        return;
+    }
+    *outPeak = g_anaPeak;
+    if (g_anaBlockDb.empty()) {
+        *outRmsDb = -90.0f;
+        return;
+    }
+    // 95 分位(响度取块 RMS 的高分位,符合 ReplayGain 语义)
+    std::vector<float> sorted = g_anaBlockDb;
+    std::sort(sorted.begin(), sorted.end());
+    const size_t idx = static_cast<size_t>(0.95 * static_cast<double>(sorted.size() - 1));
+    *outRmsDb = sorted[idx];
 }
 
 

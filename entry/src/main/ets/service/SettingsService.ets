@@ -41,6 +41,9 @@ export class SettingsService {
   rgMode: number = 0;          // 0 off 1 track 2 album
   eqOn: boolean = false;
   eqPreset: string = 'flat';
+  eqBands: number[] = [];      // 自定义 31 段增益(dB;空数组=全平)
+  skipSilence: boolean = false;
+  playSpeed: number = 1.0;     // 0.25~3.0
 
   private loaded: boolean = false;
 
@@ -64,6 +67,10 @@ export class SettingsService {
     }
     this.eqOn = (await db.getSetting('eqOn', '0')) === '1';
     this.eqPreset = await db.getSetting('eqPreset', 'flat');
+    this.eqBands = Db.parseBands(await db.getSetting('eqBands', '[]'));
+    this.skipSilence = (await db.getSetting('skipSilence', '0')) === '1';
+    const sp = parseFloat(await db.getSetting('playSpeed', '1.0'));
+    this.playSpeed = Number.isFinite(sp) && sp >= 0.25 && sp <= 3.0 ? sp : 1.0;
     this.loaded = true;
     this.syncTokens();
     hilog.info(DOMAIN, TAG, 'settings loaded');
@@ -78,6 +85,9 @@ export class SettingsService {
     this.token('prefRgMode', this.rgMode);
     this.token('prefEqOn', this.eqOn);
     this.token('prefEqPreset', this.eqPreset);
+    this.token('prefEqBands', Db.stringifyBands(this.eqBands));
+    this.token('prefSkipSilence', this.skipSilence);
+    this.token('prefPlaySpeed', this.playSpeed);
   }
 
   private async save(key: string, value: string): Promise<void> {
@@ -123,6 +133,29 @@ export class SettingsService {
     await this.save('eqOn', on ? '1' : '0');
     await this.save('eqPreset', preset);
     PlayerBridge.notifyDspChanged();
+  }
+
+  // 自定义 31 段(逐段编辑 UI / 预设 / AutoEq 导入共用的权威存储)
+  async setEqBands(bands: number[]): Promise<void> {
+    this.eqBands = bands;
+    this.eqPreset = 'custom';
+    this.syncTokens();
+    await this.save('eqBands', Db.stringifyBands(bands));
+    await this.save('eqPreset', 'custom');
+    PlayerBridge.notifyDspChanged();
+  }
+
+  async setSkipSilence(on: boolean): Promise<void> {
+    this.skipSilence = on;
+    this.syncTokens();
+    await this.save('skipSilence', on ? '1' : '0');
+    PlayerBridge.notifyDspChanged();
+  }
+
+  async setPlaySpeed(v: number): Promise<void> {
+    this.playSpeed = Math.min(3.0, Math.max(0.25, v));
+    this.syncTokens();
+    await this.save('playSpeed', String(this.playSpeed));
   }
 
   async setResumeAfterInterrupt(on: boolean): Promise<void> {

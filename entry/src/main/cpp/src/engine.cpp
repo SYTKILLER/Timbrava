@@ -79,13 +79,21 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
     seeking_ = false;
     seekTargetFrames_ = -1;
 
-    // DSP(PEQ/RG)启用时渲染走 F32 管线;关闭时保持整型直通(比特完美)
-    bool useDsp = dspActive();
+    // 重采样状态复位(倍速在切曲/seek 后从当前帧继续计位)
+    resFifo_.clear();
+    resBase_ = 0;
+    resIdx_ = 0;
+    resPhase_ = 0.0;
+    resCarryBuf_.clear();
+    resDrained_ = false;
+
+    // DSP(PEQ/RG/跳过静音)或倍速启用时渲染走 F32 管线;关闭时保持整型直通(比特完美)
+    bool useDsp = dspActive() || speed_.load() != 1.0f;
     OutputFormat renderFmt = fmt_;
     if (useDsp && renderFmt != OutputFormat::F32LE) {
         renderFmt = OutputFormat::F32LE;
     }
-    if (useDsp) {
+    if (dspActive()) {
         timbrava::dspPrepare(info_.sampleRate, info_.channels);
         timbrava::dspSetReplayGain(lastTrackGain_.load(), lastTrackPeak_.load(),
                                    lastAlbumGain_.load(), lastAlbumPeak_.load(), rgMode_.load());
@@ -95,12 +103,12 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
     OutputFormat fmtCopy = fmt_;
     bool ok = out_->createWithFormat(
         info_, renderFmt,
-        [this, channels, fmtCopy](OH_AudioRenderer *, void *, void *buffer, int32_t length) -> OH_AudioData_Callback_Result {
+        [this, channels, fmtCopy, renderFmt](OH_AudioRenderer *, void *, void *buffer, int32_t length) -> OH_AudioData_Callback_Result {
             if (length <= 0) {
                 return AUDIO_DATA_CALLBACK_RESULT_VALID;
             }
-            int bytesPerSample = fmtCopy == OutputFormat::U8 ? 1 : fmtCopy == OutputFormat::S16LE ? 2 : 4;
-            int frameBytes = channels * bytesPerSample;
+            int srcBps = fmtCopy == OutputFormat::U8 ? 1 : fmtCopy == OutputFormat::S16LE ? 2 : 4;
+            int frameBytes = channels * srcBps;
             if (frameBytes <= 0) {
                 return AUDIO_DATA_CALLBACK_RESULT_INVALID;
             }
@@ -108,18 +116,33 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
                 std::memset(buffer, 0, static_cast<size_t>(length));
                 return AUDIO_DATA_CALLBACK_RESULT_VALID;
             }
-            size_t n = ring_.read(static_cast<uint8_t *>(buffer), static_cast<size_t>(length));
-            if (dspActive() && n > 0) {
-                // 整型→F32→DSP,renderer 为 F32 格式(length 为 F32 字节数)
-                int32_t bytesPerSampleSrc = fmtCopy == OutputFormat::U8 ? 1 : fmtCopy == OutputFormat::S16LE ? 2 : 4;
-                size_t frames = n / static_cast<size_t>(bytesPerSampleSrc * channels);
-                size_t floatOut = frames * static_cast<size_t>(channels) * 4;
-                if (floatOut <= static_cast<size_t>(length)) {
-                    timbrava::convertToInterleavedF32(static_cast<uint8_t *>(buffer), n, fmtCopy,
+            const float speed = speed_.load();
+            if (speed != 1.0f) {
+                this->produceSpeeded(static_cast<uint8_t *>(buffer), static_cast<size_t>(length),
+                                     channels, fmtCopy, renderFmt == OutputFormat::F32LE);
+                return AUDIO_DATA_CALLBACK_RESULT_VALID;
+            }
+            size_t n;
+            if (renderFmt == OutputFormat::F32LE) {
+                // F32 渲染:按输出帧数反推源字节数再读(修复旧实现按 F32 字节数读整型源的错位)
+                const size_t outFrames = static_cast<size_t>(length) / (static_cast<size_t>(channels) * 4);
+                const size_t want = outFrames * static_cast<size_t>(frameBytes);
+                n = ring_.read(static_cast<uint8_t *>(buffer), want);
+                if (n > 0) {
+                    size_t frames = n / static_cast<size_t>(frameBytes);
+                    size_t floatOut = frames * static_cast<size_t>(channels) * 4;
+                    timbrava::convertToInterleavedF32(static_cast<uint8_t *>(buffer),
+                                                      frames * static_cast<size_t>(frameBytes), fmtCopy,
                                                       reinterpret_cast<float *>(buffer));
-                    timbrava::dspProcessInterleavedF32(reinterpret_cast<float *>(buffer), frames);
+                    if (dspActive()) {
+                        timbrava::dspProcessInterleavedF32(reinterpret_cast<float *>(buffer), frames);
+                    }
                     n = floatOut;
+                    framesConsumed_ += static_cast<int64_t>(frames);
                 }
+            } else {
+                n = ring_.read(static_cast<uint8_t *>(buffer), static_cast<size_t>(length));
+                framesConsumed_ += static_cast<int64_t>(n / static_cast<size_t>(frameBytes));
             }
             if (n < static_cast<size_t>(length)) {
                 std::memset(static_cast<uint8_t *>(buffer) + n, 0, static_cast<size_t>(length) - n);
@@ -134,7 +157,6 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
                     }
                 }
             }
-            framesConsumed_ += static_cast<int64_t>(n / static_cast<size_t>(frameBytes));
             return AUDIO_DATA_CALLBACK_RESULT_VALID;
         },
         [this](int forceType, int hint) {
@@ -262,10 +284,17 @@ void Engine::applySeek()
     framesConsumed_ = target;
     eof_ = false;
     ring_.reset();
+    // 重采样游标对齐 seek 目标(fifo 由渲染线程在下次回调时惰性重建)
+    resFifo_.clear();
+    resBase_ = target;
+    resIdx_ = target;
+    resPhase_ = 0.0;
+    resCarryBuf_.clear();
+    resDrained_ = false;
     ring_.setWritable(mode_.load() == EngineMode::PLAYING);
-    // 预填 256KB 或 1s 超时再放开渲染,避免 seek 后爆 underrun
-    for (int i = 0; i < 100 && mode_.load() == EngineMode::PLAYING; i++) {
-        if (ring_.sizeLocked() >= 256 * 1024) {
+    // 预填 96KB 或 500ms 超时再放开渲染(P2 seek 优化:256KB/1s → 96KB/0.5s,目标 <300ms)
+    for (int i = 0; i < 50 && mode_.load() == EngineMode::PLAYING; i++) {
+        if (ring_.sizeLocked() >= 96 * 1024) {
             break;
         }
         std::unique_lock<std::mutex> lk(wakeM_);
@@ -299,6 +328,12 @@ void Engine::decodeLoop()
         }
         if (eof_.load()) {
             if (ring_.sizeLocked() == 0) {
+                // 倍速时等渲染线程把重采样尾部播完再发 end(否则最多截尾 ~1s)
+                if (speed_.load() != 1.0f && !resDrained_.load()) {
+                    std::unique_lock<std::mutex> lk(wakeM_);
+                    wakeCv_.wait_for(lk, std::chrono::milliseconds(20));
+                    continue;
+                }
                 std::lock_guard<std::mutex> lk(stateM_);
                 if (mode_.load() == EngineMode::PLAYING) {
                     if (out_ != nullptr) {
@@ -389,9 +424,30 @@ void Engine::setReplayGain(float trackGainDb, float trackPeak, float albumGainDb
     OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "dsp rg mode=%{public}d track=%{public}f", mode, trackGainDb);
 }
 
+void Engine::setSkipSilence(bool on)
+{
+    skipSilence_ = on;
+    timbrava::dspSetSkipSilence(on);
+    if (on) {
+        // 保证 DSP 配置已按当前曲目 prepare(否则门控无采样率可用)
+        timbrava::dspPrepare(info_.sampleRate > 0 ? info_.sampleRate : 44100,
+                             info_.channels > 0 ? info_.channels : 2);
+    }
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "dsp skip silence %{public}s", on ? "on" : "off");
+}
+
+void Engine::setSpeed(float speed)
+{
+    if (!(speed > 0.0f)) {
+        speed = 1.0f;
+    }
+    speed_ = std::min(3.0f, std::max(0.25f, speed));
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "speed %{public}f", speed_.load());
+}
+
 bool Engine::dspActive() const
 {
-    return peqEnabled_.load() || rgMode_.load() != 0;
+    return peqEnabled_.load() || rgMode_.load() != 0 || skipSilence_.load();
 }
 
 void Engine::setVolume(float vol)
@@ -417,6 +473,121 @@ int64_t Engine::durationMs() const
         return 0;
     }
     return info_.totalFrames * 1000 / info_.sampleRate;
+}
+
+// ---------------- 倍速重采样(渲染回调线程) ----------------
+
+// 向 resFifo_ 补充输入帧:读 ring → 完整帧组装 → 转 F32 → DSP。
+// 返回 resIdx_ 之后(含当前对)可用的帧数是否达到 need。
+bool Engine::feedResampler(int64_t needFrames, int channels, OutputFormat srcFmt)
+{
+    const int srcBps = srcFmt == OutputFormat::U8 ? 1 : srcFmt == OutputFormat::S16LE ? 2 : 4;
+    const size_t frameBytes = static_cast<size_t>(channels * srcBps);
+    if (resTmpBuf_.empty()) {
+        resTmpBuf_.resize(64 * 1024);
+    }
+    for (;;) {
+        const int64_t avail = static_cast<int64_t>(resFifo_.size() / static_cast<size_t>(channels)) -
+                              (resIdx_ - resBase_);
+        if (avail >= needFrames) {
+            return true;
+        }
+        size_t n = ring_.read(resTmpBuf_.data(), resTmpBuf_.size());
+        if (n > 0) {
+            resCarryBuf_.insert(resCarryBuf_.end(), resTmpBuf_.data(), resTmpBuf_.data() + n);
+        }
+        const size_t frames = resCarryBuf_.size() / frameBytes;
+        if (frames == 0) {
+            return false; // ring 空(未 EOF)或 EOF 且无残余
+        }
+        const size_t useBytes = frames * frameBytes;
+        const size_t oldFloats = resFifo_.size();
+        resFifo_.resize(oldFloats + frames * static_cast<size_t>(channels));
+        timbrava::convertToInterleavedF32(resCarryBuf_.data(), useBytes, srcFmt,
+                                          resFifo_.data() + oldFloats);
+        if (dspActive()) {
+            timbrava::dspProcessInterleavedF32(resFifo_.data() + oldFloats, frames);
+        }
+        const size_t rem = resCarryBuf_.size() - useBytes;
+        if (rem > 0) {
+            std::memmove(resCarryBuf_.data(), resCarryBuf_.data() + useBytes, rem);
+        }
+        resCarryBuf_.resize(rem);
+        // 惰性压缩:已消费帧过多时丢弃前段
+        const int64_t consumedOff = resIdx_ - resBase_;
+        if (consumedOff > 16384) {
+            resFifo_.erase(resFifo_.begin(),
+                           resFifo_.begin() + static_cast<long>(consumedOff * static_cast<int64_t>(channels)));
+            resBase_ = resIdx_;
+        }
+    }
+}
+
+void Engine::produceSpeeded(uint8_t *out, size_t outBytes, int channels, OutputFormat renderFmt, bool f32Render)
+{
+    const int srcBps = renderFmt == OutputFormat::U8 ? 1 : renderFmt == OutputFormat::S16LE ? 2 : 4;
+    const size_t outBps = f32Render ? 4u : static_cast<size_t>(srcBps);
+    const size_t outFramesWanted = outBytes / (static_cast<size_t>(channels) * outBps);
+    const double speed = speed_.load();
+    size_t produced = 0;
+    while (produced < outFramesWanted) {
+        feedResampler(2, channels, fmt_);
+        const int64_t avail = static_cast<int64_t>(resFifo_.size() / static_cast<size_t>(channels)) -
+                              (resIdx_ - resBase_);
+        if (avail <= 0) {
+            if (eof_.load()) {
+                resDrained_ = true; // 输入耗尽且已消费完:解码线程可发 end
+            }
+            break; // ring 暂空或尾部播完:本轮剩余填零
+        }
+        const float *f0 = resFifo_.data() + static_cast<size_t>(resIdx_ - resBase_) * channels;
+        const float *f1 = (avail >= 2) ? f0 + channels : f0; // EOF 末帧:保持最后样本
+        const float frac = static_cast<float>(resPhase_);
+        if (f32Render) {
+            float *dst = reinterpret_cast<float *>(out) + produced * channels;
+            for (int c = 0; c < channels; ++c) {
+                dst[c] = f0[c] + (f1[c] - f0[c]) * frac;
+            }
+        } else {
+            // 整型渲染流:插值结果量化回渲染格式(speed ≠ 1 本身有损,可接受)
+            uint8_t *dst = out + produced * static_cast<size_t>(channels) * srcBps;
+            for (int c = 0; c < channels; ++c) {
+                const float v = f0[c] + (f1[c] - f0[c]) * frac;
+                if (renderFmt == OutputFormat::S16LE) {
+                    int s = static_cast<int>(v * 32768.0f);
+                    s = std::max(-32768, std::min(32767, s));
+                    const uint16_t u = static_cast<uint16_t>(s);
+                    dst[c * 2] = static_cast<uint8_t>(u & 0xFF);
+                    dst[c * 2 + 1] = static_cast<uint8_t>((u >> 8) & 0xFF);
+                } else if (renderFmt == OutputFormat::U8) {
+                    int s = static_cast<int>(v * 128.0f) + 128;
+                    s = std::max(0, std::min(255, s));
+                    dst[c] = static_cast<uint8_t>(s);
+                } else {
+                    double d = static_cast<double>(v) * 2147483648.0;
+                    if (d > 2147483647.0) d = 2147483647.0;
+                    if (d < -2147483648.0) d = -2147483648.0;
+                    const uint32_t u = static_cast<uint32_t>(static_cast<int32_t>(d));
+                    dst[c * 4] = static_cast<uint8_t>(u & 0xFF);
+                    dst[c * 4 + 1] = static_cast<uint8_t>((u >> 8) & 0xFF);
+                    dst[c * 4 + 2] = static_cast<uint8_t>((u >> 16) & 0xFF);
+                    dst[c * 4 + 3] = static_cast<uint8_t>((u >> 24) & 0xFF);
+                }
+            }
+        }
+        ++produced;
+        resPhase_ += speed;
+        while (resPhase_ >= 1.0) {
+            resPhase_ -= 1.0;
+            ++resIdx_;
+        }
+    }
+    // 剩余填零
+    const size_t filled = produced * static_cast<size_t>(channels) * outBps;
+    if (filled < outBytes) {
+        std::memset(out + filled, 0, outBytes - filled);
+    }
+    framesConsumed_ = resIdx_;
 }
 
 } // namespace timbrava

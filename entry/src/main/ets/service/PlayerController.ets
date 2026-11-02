@@ -15,6 +15,7 @@ import { Song, RepeatMode } from '../data/Model';
 import { IAudioEngine, EngineKind, EngineEventData, EngineEventKind, EngineTrackInfo } from './engine/EngineTypes';
 import { SystemEngine } from './engine/SystemEngine';
 import { LosslessEngine } from './engine/LosslessEngine';
+import { PEQ_FREQS, presetBands } from './EqPresets';
 
 const TAG = '[Timbrava][Player]';
 const DOMAIN = 0x0001;
@@ -44,6 +45,9 @@ export class PlayerController {
   durationMs: number = 0;
   engineKind: EngineKind = EngineKind.SYSTEM;
   engineInfo: string = '';
+  speed: number = 1.0;                 // 倍速(0.25~3.0)
+  abStartMs: number = -1;              // A-B 重复起点(-1 未设)
+  abEndMs: number = -1;                // A-B 重复终点(-1 未设)
 
   private session: avSession.AVSession | null = null;
   private ticker: number = -1;
@@ -78,6 +82,8 @@ export class PlayerController {
     ScanService.get().init(ctx);
     await LibraryStore.get().reload();
     await this.queue.restore();
+    await this.queue.restoreLoopExt();
+    this.speed = SettingsService.get().playSpeed;
     this.initDone = true;
     PlayerBridge.onDspChanged = (): void => {
       this.applyDspToEngine();
@@ -123,6 +129,10 @@ export class PlayerController {
         if (song !== null && song.cueEndMs > song.cueStartMs && rawPos >= song.cueEndMs) {
           hilog.info(DOMAIN, TAG, 'cue range end -> next');
           this.autoNext();
+        } else if (this.abStartMs >= 0 && this.abEndMs > this.abStartMs && this.positionMs >= this.abEndMs) {
+          // A-B 重复:到 B 点回跳 A 点
+          hilog.info(DOMAIN, TAG, 'ab repeat loop back %{public}d', Math.round(this.abStartMs));
+          this.seekTo(this.abStartMs);
         }
       }
       if (this.engineKind === EngineKind.LOSSLESS) {
@@ -186,6 +196,8 @@ export class PlayerController {
       ? `无损引擎 ${info.codec.toUpperCase()} ${info.bitDepth}bit/${info.sampleRate}Hz`
       : '系统引擎';
     this.currentSong = song;
+    this.abStartMs = -1;
+    this.abEndMs = -1;
     const cueStart = song.cueStartMs > 0 ? song.cueStartMs : 0;
     this.durationMs = song.cueEndMs > song.cueStartMs ? song.cueEndMs - song.cueStartMs
       : (info.durationMs > 0 ? info.durationMs : song.durationMs);
@@ -195,7 +207,9 @@ export class PlayerController {
       target.seek(effectiveResume);
       this.positionMs = resumeFromMs;
     }
-    // ReplayGain:按设置模式应用到本曲(无损引擎)
+    // ReplayGain/PEQ/跳过静音/倍速:按设置应用到本曲
+    target.setSpeed(this.speed);
+    target.setSkipSilence(SettingsService.get().skipSilence);
     if (this.engineKind === EngineKind.LOSSLESS) {
       const settings = SettingsService.get();
       const mode = settings.rgMode;
@@ -205,7 +219,7 @@ export class PlayerController {
       }
       (target as LosslessEngine).setPeq(settings.eqOn);
       if (settings.eqOn) {
-        this.applyEqPreset(settings.eqPreset);
+        this.applyEqToEngine();
       }
     }
     target.play();
@@ -357,39 +371,20 @@ export class PlayerController {
     }
   }
 
-  private applyEqPreset(preset: string): void {
+  // 把设置中的 EQ 曲线(内置预设名或自定义 31 段)下发无损引擎
+  private applyEqToEngine(): void {
+    const settings = SettingsService.get();
+    const bands = settings.eqPreset === 'custom' && settings.eqBands.length === 31
+      ? settings.eqBands : presetBands(settings.eqPreset);
+    this.applyEqBands(bands);
+  }
+
+  private applyEqBands(bands: number[]): void {
     const engine = this.losslessEngine;
-    // 31 段简化预设(P1):全段 peak;自定义逐段 UI 属 P2
-    const bands31: number[] = [
-      20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800,
-      1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 16000
-    ];
     engine.setPeqBand(31, 0, 1000, 0, 1); // 重置全部为平坦
-    if (preset === 'bass') {
-      for (let i = 0; i < 10; i++) {
-        engine.setPeqBand(i, 0, bands31[i], 6 - i * 0.5, 1.0);
-      }
-    } else if (preset === 'vocal') {
-      for (let i = 8; i < 18; i++) {
-        engine.setPeqBand(i, 0, bands31[i], 3.5, 1.2);
-      }
-    } else if (preset === 'treble') {
-      for (let i = 20; i < 31; i++) {
-        engine.setPeqBand(i, 0, bands31[i], 4, 1.0);
-      }
-    } else if (preset === 'rock') {
-      for (let i = 0; i < 6; i++) {
-        engine.setPeqBand(i, 0, bands31[i], 4, 1.0);
-      }
-      for (let i = 22; i < 31; i++) {
-        engine.setPeqBand(i, 0, bands31[i], 3, 1.0);
-      }
-    } else if (preset === 'electronic') {
-      for (let i = 0; i < 8; i++) {
-        engine.setPeqBand(i, 0, bands31[i], 5, 1.0);
-      }
-      for (let i = 24; i < 31; i++) {
-        engine.setPeqBand(i, 0, bands31[i], 3.5, 1.0);
+    for (let i = 0; i < 31 && i < bands.length; i++) {
+      if (bands[i] !== 0) {
+        engine.setPeqBand(i, 0, PEQ_FREQS[i], bands[i], 1.1);
       }
     }
   }
@@ -404,16 +399,80 @@ export class PlayerController {
       song.rgAlbumGain, song.rgAlbumPeak > 0 ? song.rgAlbumPeak : 1, settings.rgMode);
     this.losslessEngine.setPeq(settings.eqOn);
     if (settings.eqOn) {
-      this.applyEqPreset(settings.eqPreset);
+      this.applyEqToEngine();
     }
+    this.losslessEngine.setSkipSilence(settings.skipSilence);
     // 设置变更即时生效:重新 openTrack 太重,P1 简化为下次切曲应用(PEQ 开关即时,曲线即时)
-    hilog.info(DOMAIN, TAG, 'dsp settings applied rg=%{public}d eq=%{public}s', settings.rgMode,
-      settings.eqOn ? settings.eqPreset : 'off');
+    hilog.info(DOMAIN, TAG, 'dsp settings applied rg=%{public}d eq=%{public}s skip=%{public}s',
+      settings.rgMode, settings.eqOn ? settings.eqPreset : 'off', String(settings.skipSilence));
   }
 
   setRepeat(mode: RepeatMode): void {
     this.queue.setRepeat(mode);
     this.syncSessionLoopMode();
+  }
+
+  // ===== 倍速 / A-B 重复 / 跳过静音 =====
+
+  async setSpeed(v: number): Promise<void> {
+    this.speed = Math.min(3.0, Math.max(0.25, v));
+    await SettingsService.get().setPlaySpeed(this.speed);
+    if (this.engine !== null) {
+      this.engine.setSpeed(this.speed);
+    }
+    this.syncSessionState();
+    this.bumpPlayer();
+    hilog.info(DOMAIN, TAG, 'speed -> %{public}f', this.speed);
+  }
+
+  // A-B 重复:第一击记 A,第二击记 B,第三击取消。返回当前状态('off'|'a'|'ab')
+  setAbPoint(): string {
+    if (this.abStartMs < 0) {
+      this.abStartMs = Math.max(0, this.positionMs);
+      this.abEndMs = -1;
+      this.bumpPlayer();
+      return 'a';
+    }
+    if (this.abEndMs < 0) {
+      const b = Math.max(0, this.positionMs);
+      if (b <= this.abStartMs + 500) {
+        // B 点太近:视为取消
+        this.abStartMs = -1;
+        this.abEndMs = -1;
+        this.bumpPlayer();
+        return 'off';
+      }
+      this.abEndMs = b;
+      this.bumpPlayer();
+      return 'ab';
+    }
+    this.abStartMs = -1;
+    this.abEndMs = -1;
+    this.bumpPlayer();
+    return 'off';
+  }
+
+  abState(): string {
+    if (this.abStartMs >= 0 && this.abEndMs > this.abStartMs) {
+      return 'ab';
+    }
+    if (this.abStartMs >= 0) {
+      return 'a';
+    }
+    return 'off';
+  }
+
+  async toggleSkipSilence(): Promise<void> {
+    const on = !SettingsService.get().skipSilence;
+    await SettingsService.get().setSkipSilence(on);
+    if (this.engineKind === EngineKind.LOSSLESS && this.engine !== null) {
+      this.engine.setSkipSilence(on);
+    }
+    this.bumpPlayer();
+  }
+
+  isSkipSilenceOn(): boolean {
+    return SettingsService.get().skipSilence;
   }
 
   toggleFavorite(): void {
@@ -523,7 +582,8 @@ export class PlayerController {
     const pos: avSession.PlaybackPosition = { elapsedTime: this.positionMs, updateTime: Date.now() };
     const state: avSession.AVPlaybackState = {
       state: this.isPlaying ? avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE,
-      position: pos
+      position: pos,
+      speed: this.speed
     };
     s.setAVPlaybackState(state).catch((e: Error): void => {
       hilog.warn(DOMAIN, TAG, 'setAVPlaybackState fail %{public}s', e.message);

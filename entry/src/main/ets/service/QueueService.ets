@@ -33,6 +33,9 @@ export class QueueService {
   repeat: RepeatMode = RepeatMode.OFF;
   shuffled: boolean = false;
   queueTitle: string = '';
+  // 循环扩展(#16):推进边界(下一曲跨出边界即停止)+ 播完当前停止
+  boundary: string = 'none';        // none | album | artist | folder
+  stopAfterCurrent: boolean = false;
 
   private saveTimer: number = -1;
 
@@ -251,6 +254,23 @@ export class QueueService {
 
   // ===== 播放顺序推进(由 PlayerController 调用) =====
 
+  // 边界比较:下一曲与当前曲的 album/artist/folder 键是否一致
+  private sameBoundary(a: Song | null, b: Song | null): boolean {
+    if (a === null || b === null) {
+      return false;
+    }
+    if (this.boundary === 'album') {
+      return a.albumArtist + '\u0001' + a.displayAlbum() === b.albumArtist + '\u0001' + b.displayAlbum();
+    }
+    if (this.boundary === 'artist') {
+      return a.displayArtist() === b.displayArtist();
+    }
+    if (this.boundary === 'folder') {
+      return a.dirPath() === b.dirPath();
+    }
+    return true;
+  }
+
   nextIndex(auto: boolean): number {
     if (this.list.length === 0) {
       return -1;
@@ -258,13 +278,52 @@ export class QueueService {
     if (auto && this.repeat === RepeatMode.ONE) {
       return this.currentOrderIndex;
     }
+    if (auto && this.stopAfterCurrent) {
+      return -1; // 播完当前停止
+    }
+    let next = -1;
     if (this.currentOrderIndex + 1 < this.list.length) {
-      return this.currentOrderIndex + 1;
+      next = this.currentOrderIndex + 1;
+    } else if (this.repeat === RepeatMode.ALL) {
+      next = 0;
     }
-    if (this.repeat === RepeatMode.ALL) {
-      return 0;
+    if (next >= 0 && this.boundary !== 'none' && auto) {
+      // 跨出推进边界 → 停止(列表自然播尽时才判;手动切曲不受限)
+      if (!this.sameBoundary(this.songAt(this.currentOrderIndex), this.songAt(next))) {
+        return -1;
+      }
     }
-    return -1;
+    return next;
+  }
+
+  setBoundary(b: string): void {
+    const v = b === 'album' || b === 'artist' || b === 'folder' ? b : 'none';
+    this.boundary = v;
+    this.stopAfterCurrent = false; // 互斥:选边界推进即取消播完停止
+    this.persistLoopExt();
+    this.bump();
+    hilog.info(DOMAIN, TAG, 'loop boundary -> %{public}s', v);
+  }
+
+  setStopAfterCurrent(on: boolean): void {
+    this.stopAfterCurrent = on;
+    if (on) {
+      this.boundary = 'none';
+    }
+    this.persistLoopExt();
+    this.bump();
+    hilog.info(DOMAIN, TAG, 'stop after current -> %{public}s', String(on));
+  }
+
+  // 循环扩展持久化(app_settings;队列表结构不变)
+  private persistLoopExt(): void {
+    Db.get().setSetting('loopBoundary', this.boundary);
+    Db.get().setSetting('stopAfterCurrent', this.stopAfterCurrent ? '1' : '0');
+  }
+
+  async restoreLoopExt(): Promise<void> {
+    this.boundary = await Db.get().getSetting('loopBoundary', 'none');
+    this.stopAfterCurrent = (await Db.get().getSetting('stopAfterCurrent', '0')) === '1';
   }
 
   prevIndex(): number {

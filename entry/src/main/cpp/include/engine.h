@@ -38,6 +38,8 @@ public:
     void setPeqEnabled(bool on);
     void setPeqBand(int index, int type, float freq, float gainDb, float q);
     void setReplayGain(float trackGainDb, float trackPeak, float albumGainDb, float albumPeak, int mode);
+    void setSkipSilence(bool on);
+    void setSpeed(float speed);
     bool dspActive() const;
     void pollEvents(std::vector<std::string> &out);
     void shutdown();
@@ -50,6 +52,11 @@ private:
     void decodeLoop();
     void pushEvent(const std::string &json);
     void applySeek();
+    // 倍速输出:读 ring → F32 → DSP → 线性插值(speed 变速变调)→ 按渲染格式打包。
+    // 仅渲染回调线程调用。f32Render=false 时输出打包回整型渲染格式。
+    void produceSpeeded(uint8_t *out, size_t outBytes, int channels, OutputFormat srcFmt, bool f32Render);
+    // 向重采样 FIFO 补充输入帧(读 ring → 组帧 → F32 → DSP);仅渲染回调线程调用。
+    bool feedResampler(int64_t needFrames, int channels, OutputFormat srcFmt);
 
     std::mutex stateM_; // 保护 info_/fmt_/decoder_/out_ 生命周期
     std::atomic<EngineMode> mode_{EngineMode::IDLE};
@@ -72,11 +79,22 @@ private:
     std::atomic<int64_t> seekTargetFrames_{-1};
     std::atomic<float> volume_{1.0f};
     std::atomic<bool> peqEnabled_{false};
+    std::atomic<bool> skipSilence_{false};
+    std::atomic<float> speed_{1.0f};
     std::atomic<int> rgMode_{0};
     std::atomic<float> lastTrackGain_{0.0f};
     std::atomic<float> lastTrackPeak_{1.0f};
     std::atomic<float> lastAlbumGain_{0.0f};
     std::atomic<float> lastAlbumPeak_{1.0f};
+
+    // 倍速线性插值重采样(仅渲染回调线程访问;变速变调,源时间轴计位)
+    std::vector<float> resFifo_;   // 待插值输入帧(交错 F32,自 resBase_ 起连续)
+    int64_t resBase_ = 0;          // resFifo_[0] 对应的源帧号
+    int64_t resIdx_ = 0;           // 已消耗源帧数(= 插值游标整部)
+    double resPhase_ = 0.0;        // 插值小数相位
+    std::vector<uint8_t> resCarryBuf_;
+    std::vector<uint8_t> resTmpBuf_; // ring 读临时缓冲(复用,避免回调内分配)
+    std::atomic<bool> resDrained_{false}; // eof 后重采样尾部播完(解码线程等它再发 end)
 
     std::mutex evM_;
     std::deque<std::string> events_;

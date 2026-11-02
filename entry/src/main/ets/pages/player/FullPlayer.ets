@@ -4,6 +4,7 @@ import { common } from '@kit.AbilityKit';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { PlayerController } from '../../service/PlayerController';
 import { QueueService } from '../../service/QueueService';
+import { EngineKind } from '../../service/engine/EngineTypes';
 import { LibraryStore } from '../../data/LibraryStore';
 import { Song, RepeatMode, formatDuration } from '../../data/Model';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -376,6 +377,57 @@ export struct FullPlayerDest {
       .justifyContent(FlexAlign.Center)
       .padding({ top: 8, bottom: 8 })
 
+      // 功能行:倍速 / A-B 重复 / 跳过静音
+      Row({ space: 6 }) {
+        Button({ stateEffect: true }) {
+          Row({ space: 4 }) {
+            SymbolGlyph($r('sys.symbol.speed_multiple'))
+              .fontSize(16)
+              .fontColor([this.speedNow() === 1.0 ? $r('app.color.text_secondary') : $r('app.color.accent')])
+            Text(this.speedLabel())
+              .fontSize(11)
+              .fontColor(this.speedNow() === 1.0 ? $r('app.color.text_secondary') : $r('app.color.accent'))
+          }
+        }
+        .height(34)
+        .backgroundColor(Color.Transparent)
+        .bindMenu(this.speedMenu())
+
+        Button({ stateEffect: true }) {
+          Row({ space: 4 }) {
+            SymbolGlyph($r('sys.symbol.scope'))
+              .fontSize(16)
+              .fontColor([this.abStateNow() === 'off' ? $r('app.color.text_secondary') : $r('app.color.accent')])
+            Text(this.abLabel())
+              .fontSize(11)
+              .fontColor(this.abStateNow() === 'off' ? $r('app.color.text_secondary') : $r('app.color.accent'))
+          }
+        }
+        .height(34)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          PlayerController.get().setAbPoint();
+        })
+
+        Button({ stateEffect: true }) {
+          Row({ space: 4 }) {
+            SymbolGlyph($r('sys.symbol.speaker_slash'))
+              .fontSize(16)
+              .fontColor([this.skipSilenceNow() ? $r('app.color.accent') : $r('app.color.text_secondary')])
+            Text('跳过静音')
+              .fontSize(11)
+              .fontColor(this.skipSilenceNow() ? $r('app.color.accent') : $r('app.color.text_secondary'))
+          }
+        }
+        .height(34)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          PlayerController.get().toggleSkipSilence();
+        })
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+
       // 收藏行
       Button({ stateEffect: true }) {
         Row({ space: 6 }) {
@@ -495,6 +547,75 @@ export struct FullPlayerDest {
       return $r('sys.symbol.repeat_1');
     }
     return $r('sys.symbol.repeat');
+  }
+
+  // ===== 功能行辅助(playerVer 驱动重渲染) =====
+
+  private speedNow(): number {
+    return PlayerController.get().speed;
+  }
+
+  private speedLabel(): string {
+    const v = this.speedNow();
+    if (v === 1.0) {
+      return '倍速';
+    }
+    return `${v}x`;
+  }
+
+  private abStateNow(): string {
+    return PlayerController.get().abState();
+  }
+
+  private abLabel(): string {
+    const st = this.abStateNow();
+    if (st === 'a') {
+      return 'A-B:已设A';
+    }
+    if (st === 'ab') {
+      return 'A-B:循环中';
+    }
+    return 'A-B';
+  }
+
+  private skipSilenceNow(): boolean {
+    return PlayerController.get().currentSong !== null &&
+      (PlayerController.get().engineKind === EngineKind.LOSSLESS) &&
+      PlayerController.get().isSkipSilenceOn();
+  }
+
+  @Builder
+  speedMenu() {
+    Menu() {
+      MenuItem({ content: '0.5x' })
+        .onClick(() => {
+          PlayerController.get().setSpeed(0.5);
+        })
+      MenuItem({ content: '0.75x' })
+        .onClick(() => {
+          PlayerController.get().setSpeed(0.75);
+        })
+      MenuItem({ content: '标准 1.0x' })
+        .onClick(() => {
+          PlayerController.get().setSpeed(1.0);
+        })
+      MenuItem({ content: '1.25x' })
+        .onClick(() => {
+          PlayerController.get().setSpeed(1.25);
+        })
+      MenuItem({ content: '1.5x' })
+        .onClick(() => {
+          PlayerController.get().setSpeed(1.5);
+        })
+      MenuItem({ content: '2.0x' })
+        .onClick(() => {
+          PlayerController.get().setSpeed(2.0);
+        })
+      MenuItem({ content: '3.0x' })
+        .onClick(() => {
+          PlayerController.get().setSpeed(3.0);
+        })
+    }
   }
 }
 

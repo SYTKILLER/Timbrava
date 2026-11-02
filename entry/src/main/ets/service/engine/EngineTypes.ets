@@ -51,6 +51,10 @@ export interface IAudioEngine {
   seek(ms: number): void;
   getPositionMs(): number;
   getDurationMs(): number;
+  // 倍速(0.25~3.0;SystemEngine 取最近 AVPlayer 档位,LosslessEngine 重采样任意值)
+  setSpeed(speed: number): void;
+  // 跳过静音(仅无损引擎 DSP 支持;系统引擎 no-op)
+  setSkipSilence(on: boolean): void;
   // 引擎自检(如 native so 加载状态)
   available(): boolean;
   release(): void;
