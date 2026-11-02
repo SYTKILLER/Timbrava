@@ -228,6 +228,8 @@ export struct SettingsTab {
               PrefToggleRow({ prefKey: 'bt', title: '蓝牙断开暂停', sub: '蓝牙音频设备断开时自动暂停' })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               PrefToggleRow({ prefKey: 'resume', title: '打断后自动恢复', sub: '通话/导航结束后恢复播放' })
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              OnlineLyricsRow()
             }
           }
 
@@ -319,6 +321,34 @@ const THEME_OPTIONS: ThemeOption[] = [
   new ThemeOption('dark'),
   new ThemeOption('black')
 ];
+
+// LRCLIB 联网歌词开关(默认关,零联网定位下显式开启)
+@Component
+struct OnlineLyricsRow {
+  @StorageProp('prefOnlineLyrics') prefOnlineLyrics: boolean = false;
+
+  build() {
+    Row({ space: 12 }) {
+      Column({ space: 2 }) {
+        Text('LRCLIB 联网歌词')
+          .fontSize(15)
+          .fontColor($r('app.color.text_primary'))
+        Text('默认关闭。开启后无内嵌歌词时联网查询 lrclib.net')
+          .fontSize(11)
+          .fontColor($r('app.color.text_secondary'))
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      Toggle({ type: ToggleType.Switch, isOn: this.prefOnlineLyrics })
+        .selectedColor($r('app.color.accent'))
+        .onChange((v: boolean): void => {
+          SettingsService.get().setOnlineLyrics(v);
+        })
+    }
+    .width('100%')
+    .padding({ top: 10, bottom: 10 })
+  }
+}
 
 // ReplayGain 应用模式行(0 关 / 1 按曲目 / 2 按专辑)
 @Component

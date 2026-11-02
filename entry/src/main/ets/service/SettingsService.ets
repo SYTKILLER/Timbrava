@@ -44,6 +44,7 @@ export class SettingsService {
   eqBands: number[] = [];      // 自定义 31 段增益(dB;空数组=全平)
   skipSilence: boolean = false;
   playSpeed: number = 1.0;     // 0.25~3.0
+  onlineLyrics: boolean = false; // LRCLIB 联网歌词(默认关,#38 零联网定位)
 
   private loaded: boolean = false;
 
@@ -71,6 +72,7 @@ export class SettingsService {
     this.skipSilence = (await db.getSetting('skipSilence', '0')) === '1';
     const sp = parseFloat(await db.getSetting('playSpeed', '1.0'));
     this.playSpeed = Number.isFinite(sp) && sp >= 0.25 && sp <= 3.0 ? sp : 1.0;
+    this.onlineLyrics = (await db.getSetting('onlineLyrics', '0')) === '1';
     this.loaded = true;
     this.syncTokens();
     hilog.info(DOMAIN, TAG, 'settings loaded');
@@ -88,6 +90,7 @@ export class SettingsService {
     this.token('prefEqBands', Db.stringifyBands(this.eqBands));
     this.token('prefSkipSilence', this.skipSilence);
     this.token('prefPlaySpeed', this.playSpeed);
+    this.token('prefOnlineLyrics', this.onlineLyrics);
   }
 
   private async save(key: string, value: string): Promise<void> {
@@ -156,6 +159,13 @@ export class SettingsService {
     this.playSpeed = Math.min(3.0, Math.max(0.25, v));
     this.syncTokens();
     await this.save('playSpeed', String(this.playSpeed));
+  }
+
+  async setOnlineLyrics(on: boolean): Promise<void> {
+    this.onlineLyrics = on;
+    this.syncTokens();
+    await this.save('onlineLyrics', on ? '1' : '0');
+    hilog.info(DOMAIN, TAG, 'online lyrics -> %{public}s', String(on));
   }
 
   async setResumeAfterInterrupt(on: boolean): Promise<void> {

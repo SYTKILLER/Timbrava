@@ -7,10 +7,7 @@ import { QueueService } from '../../service/QueueService';
 import { EngineKind } from '../../service/engine/EngineTypes';
 import { LibraryStore } from '../../data/LibraryStore';
 import { Song, RepeatMode, formatDuration } from '../../data/Model';
-import { fileIo as fs } from '@kit.CoreFileKit';
 import { LyricsPanel } from '../../components/LyricsPanel';
-import { extractLyricsFromHead } from '../../data/lyrics/LyricsExtractor';
-import { Db } from '../../data/Db';
 
 const TAG = '[Timbrava][FullPlayer]';
 const DOMAIN = 0x0001;
@@ -26,8 +23,6 @@ export struct FullPlayerDest {
   @State seekPreviewMs: number = 0;
   @State showQueue: boolean = false;
   @State showLyrics: boolean = false;
-  @State lyricText: string = '';
-  private loadedLyricsFor: number = -1;
   @State topSafe: number = 36;
   @State bottomSafe: number = 28;
   private pathStack: NavPathStack | null = null;
@@ -38,48 +33,12 @@ export struct FullPlayerDest {
       this.topSafe = r.topVp;
       this.bottomSafe = r.bottomVp;
     });
-    // 页面可能晚于播放打开:@Watch 不会补发,主动加载当前曲歌词
+    // 页面可能晚于播放打开:@Watch 不会补发,主动拉一次(歌词由控制器中心化加载)
     this.onPlayerChanged();
   }
 
   onPlayerChanged(): void {
-    const song = PlayerController.get().currentSong;
-    if (song !== null && song.id !== this.loadedLyricsFor) {
-      this.loadLyrics(song);
-    }
-  }
-
-  // 按需歌词:缓存命中 → 否则读文件头 4MB 提取内嵌歌词 → 入缓存
-  private loadLyrics(song: Song): void {
-    this.loadedLyricsFor = song.id;
-    this.lyricText = '';
-    Db.get().getLyricsCache(song.id).then((cached: string): void => {
-      if (cached.length > 0) {
-        this.lyricText = cached;
-        return;
-      }
-      let file: fs.File | null = null;
-      try {
-        file = fs.openSync(song.path, fs.OpenMode.READ_ONLY);
-        const buf = new ArrayBuffer(4 * 1024 * 1024);
-        const n = fs.readSync(file.fd, buf);
-        const text = extractLyricsFromHead(new Uint8Array(buf, 0, n));
-        if (text.length > 0) {
-          this.lyricText = text;
-          Db.get().putLyricsCache(song.id, text);
-          hilog.info(DOMAIN, TAG, 'lyrics extracted song=%{public}d len=%{public}d', song.id, text.length);
-        }
-      } catch (e) {
-        hilog.warn(DOMAIN, TAG, 'loadLyrics fail %{public}s', (e as Error).message);
-      } finally {
-        if (file !== null) {
-          try {
-            fs.closeSync(file);
-          } catch (e2) {
-          }
-        }
-      }
-    });
+    // playerVer bump 已驱动重渲染;歌词文本取 PlayerController.currentLyrics
   }
 
   private song(): Song | null {
@@ -203,10 +162,22 @@ export struct FullPlayerDest {
         if (this.playerVer < 0) {
           Text('')
         } else if (this.showLyrics) {
-          Column() {
-            LyricsPanel({ lyricText: this.lyricText })
+          Column({ space: 6 }) {
+            LyricsPanel({ lyricText: this.lyricsNow() })
               .width('100%')
               .layoutWeight(1)
+            Button(this.editLabel())
+              .fontSize(11)
+              .height(26)
+              .fontColor($r('app.color.text_secondary'))
+              .backgroundColor($r('app.color.badge_bg'))
+              .onClick(() => {
+                const song = PlayerController.get().currentSong;
+                const stack = this.pathStack;
+                if (song !== null && stack !== null) {
+                  stack.pushPathByName('LyricsEditor', song.id);
+                }
+              })
           }
           .width('88%')
           .height('56%')
@@ -550,6 +521,14 @@ export struct FullPlayerDest {
   }
 
   // ===== 功能行辅助(playerVer 驱动重渲染) =====
+
+  private lyricsNow(): string {
+    return PlayerController.get().currentLyrics;
+  }
+
+  private editLabel(): string {
+    return this.lyricsNow().length > 0 ? '编辑歌词' : '添加歌词(打轴)';
+  }
 
   private speedNow(): number {
     return PlayerController.get().speed;

@@ -12,10 +12,13 @@ import { PlaylistRepo } from '../data/PlaylistRepo';
 import { SettingsService, PlayerBridge } from './SettingsService';
 import { QueueService } from './QueueService';
 import { Song, RepeatMode } from '../data/Model';
+import { LrcLibClient } from './LrcLibClient';
 import { IAudioEngine, EngineKind, EngineEventData, EngineEventKind, EngineTrackInfo } from './engine/EngineTypes';
 import { SystemEngine } from './engine/SystemEngine';
 import { LosslessEngine, NativeAnalyzeResult } from './engine/LosslessEngine';
 import { PEQ_FREQS, presetBands } from './EqPresets';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { extractLyricsFromHead } from '../data/lyrics/LyricsExtractor';
 
 const TAG = '[Timbrava][Player]';
 const DOMAIN = 0x0001;
@@ -48,6 +51,8 @@ export class PlayerController {
   speed: number = 1.0;                 // 倍速(0.25~3.0)
   abStartMs: number = -1;              // A-B 重复起点(-1 未设)
   abEndMs: number = -1;                // A-B 重复终点(-1 未设)
+  currentLyrics: string = '';          // 当前曲 LRC 原文(缓存/文件头/LRCLIB;空=无)
+  private lyricsLoadedFor: number = -1;
 
   private session: avSession.AVSession | null = null;
   private ticker: number = -1;
@@ -235,8 +240,64 @@ export class PlayerController {
     this.syncSessionNowPlaying();
     this.syncSessionState();
     this.bumpPlayer();
+    this.loadLyricsAsync(song);
     hilog.info(DOMAIN, TAG, 'playSong [%{public}s] %{public}s via %{public}s', song.codec, song.displayTitle(),
       this.engineInfo);
+  }
+
+  // 歌词按需加载:缓存 → 文件头内嵌 → LRCLIB(默认关,显式开关)。完成后 bump + 同步桌面歌词。
+  private loadLyricsAsync(song: Song): void {
+    this.currentLyrics = '';
+    this.lyricsLoadedFor = song.id;
+    Db.get().getLyricsCache(song.id).then((cached: string): void => {
+      if (this.lyricsLoadedFor !== song.id) {
+        return; // 已切曲
+      }
+      if (cached.length > 0) {
+        this.currentLyrics = cached;
+        this.syncSessionNowPlaying();
+        this.bumpPlayer();
+        return;
+      }
+      let file: fs.File | null = null;
+      try {
+        file = fs.openSync(song.path, fs.OpenMode.READ_ONLY);
+        const buf = new ArrayBuffer(4 * 1024 * 1024);
+        const n = fs.readSync(file.fd, buf);
+        const text = extractLyricsFromHead(new Uint8Array(buf, 0, n));
+        if (text.length > 0) {
+          this.currentLyrics = text;
+          Db.get().putLyricsCache(song.id, text);
+          this.syncSessionNowPlaying();
+          this.bumpPlayer();
+          hilog.info(DOMAIN, TAG, 'lyrics extracted song=%{public}d len=%{public}d', song.id, text.length);
+          return;
+        }
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'loadLyrics fail %{public}s', (e as Error).message);
+      } finally {
+        if (file !== null) {
+          try {
+            fs.closeSync(file);
+          } catch (e2) {
+          }
+        }
+      }
+      // 联网歌词(LRCLIB,默认关)
+      if (SettingsService.get().onlineLyrics) {
+        LrcLibClient.fetch(song.displayArtist(), song.displayTitle(), song.displayAlbum(), song.durationMs)
+          .then((lrc: string): void => {
+            if (this.lyricsLoadedFor !== song.id || lrc.length === 0) {
+              return;
+            }
+            this.currentLyrics = lrc;
+            Db.get().putLyricsCache(song.id, lrc);
+            this.syncSessionNowPlaying();
+            this.bumpPlayer();
+            hilog.info(DOMAIN, TAG, 'lyrics from lrclib song=%{public}d len=%{public}d', song.id, lrc.length);
+          });
+      }
+    });
   }
 
   private async onEngineEvent(ev: EngineEventData): Promise<void> {
@@ -559,6 +620,10 @@ export class PlayerController {
     };
     if (song.artPath.length > 0) {
       meta.mediaImage = song.artPath;
+    }
+    // 桌面歌词(P2):带 LRC 原文,系统侧渲染
+    if (this.currentLyrics.length > 0) {
+      meta.lyric = this.currentLyrics;
     }
     s.setAVMetadata(meta).catch((e: Error): void => {
       hilog.warn(DOMAIN, TAG, 'setAVMetadata fail %{public}s', e.message);

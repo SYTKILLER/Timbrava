@@ -63,6 +63,14 @@
       "data": {
         "description": "31 段均衡器"
       }
+    },
+    {
+      "name": "LyricsEditor",
+      "pageSourceFile": "src/main/ets/pages/player/LyricsEditor.ets",
+      "buildFunction": "LyricsEditorBuilder",
+      "data": {
+        "description": "歌词打轴编辑器"
+      }
     }
   ]
 }

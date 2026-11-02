@@ -10,6 +10,7 @@ import { LibraryTab } from './library/LibraryTab';
 import { QueueTab } from './queue/QueueTab';
 import { SettingsTab } from './settings/SettingsTab';
 import { FullPlayerDest } from './player/FullPlayer';
+import { LyricsEditorDest } from './player/LyricsEditor';
 import { SongListDest } from './detail/SongList';
 import { FolderTreeDest } from './detail/FolderTree';
 import { ScanSettingsDest } from './settings/ScanSettings';
@@ -146,6 +147,8 @@ struct Index {
   pagesMap(name: string) {
     if (name === 'FullPlayer') {
       FullPlayerDest()
+    } else if (name === 'LyricsEditor') {
+      LyricsEditorDest()
     } else if (name === 'SongList') {
       SongListDest()
     } else if (name === 'FolderTree') {
