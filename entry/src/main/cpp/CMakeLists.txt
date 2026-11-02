@@ -8,6 +8,7 @@ include_directories(${NATIVERENDER_ROOT_PATH}
 
 add_library(timbrava_core SHARED
             timbrava_napi.cpp
+            src/dsp.cpp
             src/engine.cpp
             src/flac_decoder.cpp
             src/wav_decoder.cpp

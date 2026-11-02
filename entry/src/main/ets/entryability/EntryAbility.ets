@@ -34,6 +34,7 @@ async function runDebugCommands(ctx: common.UIAbilityContext, params: Record<str
       await Db.get().dumpArtPaths();
     }
     if (get('debugImport') === '1') {
+      await ScanService.get().ensureSandboxRoot();
       await ScanService.get().importFromHost();
     }
     if (get('debugScan') === '1') {

@@ -1,6 +1,7 @@
 // 队列服务:内存为权威 + relationalStore 持久化(防抖双写)。
 // 语义:playNow 替换队列;playNext 插到当前后;append 追加;随机 = 重排列表(originalList 记忆,可还原)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { relationalStore } from '@kit.ArkData';
 import { Db } from '../data/Db';
 import { LibraryStore } from '../data/LibraryStore';
 import { Song, RepeatMode } from '../data/Model';
@@ -8,6 +9,14 @@ import { Song, RepeatMode } from '../data/Model';
 const TAG = '[Timbrava][Queue]';
 const DOMAIN = 0x0001;
 const QUEUE_ID = 'main';
+
+export class QueueBrief {
+  id: string = '';
+  title: string = '';
+  songCount: number = 0;
+  isActive: boolean = false;
+  createdAt: number = 0;
+}
 
 export class QueueService {
   private static instance: QueueService | null = null;
@@ -26,6 +35,88 @@ export class QueueService {
   queueTitle: string = '';
 
   private saveTimer: number = -1;
+
+  // ===== 多队列(QueueBoard,P1 简化版:切换=重建播放流) =====
+
+  currentQueueId(): string {
+    return QUEUE_ID;
+  }
+
+  async listQueues(): Promise<QueueBrief[]> {
+    const out: QueueBrief[] = [];
+    const db = Db.get();
+    if (!db.ready()) {
+      return out;
+    }
+    const st = db.storeOrNull();
+    if (st === null) {
+      return out;
+    }
+    try {
+      const rs = await st.querySql('SELECT id, title, created_at FROM queues ORDER BY created_at DESC');
+      while (rs.goToNextRow()) {
+        const id = rs.getString(0);
+        const title = rs.getString(1);
+        const createdAt = rs.getLong(2);
+        const rs2 = await st.querySql('SELECT COUNT(*) FROM queue_items WHERE queue_id = ?', [id]);
+        let n = 0;
+        if (rs2.goToFirstRow()) {
+          n = rs2.getLong(0);
+        }
+        rs2.close();
+        const brief = new QueueBrief();
+        brief.id = id;
+        brief.title = title.length > 0 ? title : '未命名队列';
+        brief.songCount = n;
+        brief.isActive = id === QUEUE_ID;
+        brief.createdAt = createdAt;
+        out.push(brief);
+      }
+      rs.close();
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'listQueues fail %{public}s', (e as Error).message);
+    }
+    return out;
+  }
+
+  // 以当前活动队列内容创建新队列(命名)
+  async saveCurrentAs(title: string): Promise<boolean> {
+    const db = Db.get();
+    if (!db.ready() || this.list.length === 0) {
+      return false;
+    }
+    const id = `q_${Date.now()}`;
+    await db.saveQueue(id, title, this.list, this.currentOrderIndex, 0, this.repeat, this.shuffled);
+    this.bump();
+    return true;
+  }
+
+  // 切换队列:持久化当前 → 载入目标(返回 songIds 供 PlayerController 接管播放)
+  async switchTo(queueId: string): Promise<number[]> {
+    this.persistNow();
+    const db = Db.get();
+    const snap = await db.loadQueueById(queueId);
+    if (snap === null) {
+      return [];
+    }
+    this.list = snap.songIds;
+    this.originalList = snap.songIds.slice();
+    this.currentOrderIndex = Math.min(Math.max(0, snap.activeIndex), Math.max(0, this.list.length - 1));
+    this.repeat = snap.repeat;
+    this.shuffled = snap.shuffled;
+    this.queueTitle = snap.title;
+    this.bump();
+    hilog.info(DOMAIN, TAG, 'switched to queue %{public}s n=%{public}d', queueId, this.list.length);
+    return this.list;
+  }
+
+  async deleteQueue(queueId: string): Promise<void> {
+    if (queueId === QUEUE_ID) {
+      return;
+    }
+    await Db.get().deleteQueueById(queueId);
+    this.bump();
+  }
 
   bump(): void {
     AppStorage.setOrCreate('queueVer', (AppStorage.get<number>('queueVer') ?? 0) + 1);

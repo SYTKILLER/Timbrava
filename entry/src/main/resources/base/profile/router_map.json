@@ -39,6 +39,22 @@
       "data": {
         "description": "关于"
       }
+    },
+    {
+      "name": "Search",
+      "pageSourceFile": "src/main/ets/pages/detail/Search.ets",
+      "buildFunction": "SearchBuilder",
+      "data": {
+        "description": "全局搜索"
+      }
+    },
+    {
+      "name": "QueueBoard",
+      "pageSourceFile": "src/main/ets/pages/queue/QueueBoard.ets",
+      "buildFunction": "QueueBoardBuilder",
+      "data": {
+        "description": "队列板"
+      }
     }
   ]
 }

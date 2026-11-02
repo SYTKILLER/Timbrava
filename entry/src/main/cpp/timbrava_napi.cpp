@@ -149,6 +149,63 @@ static napi_value JPollEvents(napi_env env, napi_callback_info info)
     return arr;
 }
 
+static napi_value JSetPeqEnabled(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool on = false;
+    if (argc >= 1) {
+        napi_get_value_bool(env, args[0], &on);
+    }
+    timbrava::Engine::instance().setPeqEnabled(on);
+    return nullptr;
+}
+
+static napi_value JSetPeqBand(napi_env env, napi_callback_info info)
+{
+    size_t argc = 5;
+    napi_value args[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int index = 0;
+    int type = 0;
+    double freq = 1000.0;
+    double gain = 0.0;
+    double q = 1.0;
+    if (argc >= 5) {
+        napi_get_value_int32(env, args[0], &index);
+        napi_get_value_int32(env, args[1], &type);
+        napi_get_value_double(env, args[2], &freq);
+        napi_get_value_double(env, args[3], &gain);
+        napi_get_value_double(env, args[4], &q);
+    }
+    timbrava::Engine::instance().setPeqBand(index, type, static_cast<float>(freq),
+                                            static_cast<float>(gain), static_cast<float>(q));
+    return nullptr;
+}
+
+static napi_value JSetReplayGain(napi_env env, napi_callback_info info)
+{
+    size_t argc = 5;
+    napi_value args[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    double tGain = 0;
+    double tPeak = 1;
+    double aGain = 0;
+    double aPeak = 1;
+    int mode = 0;
+    if (argc >= 5) {
+        napi_get_value_double(env, args[0], &tGain);
+        napi_get_value_double(env, args[1], &tPeak);
+        napi_get_value_double(env, args[2], &aGain);
+        napi_get_value_double(env, args[3], &aPeak);
+        napi_get_value_int32(env, args[4], &mode);
+    }
+    timbrava::Engine::instance().setReplayGain(static_cast<float>(tGain), static_cast<float>(tPeak),
+                                               static_cast<float>(aGain), static_cast<float>(aPeak), mode);
+    return nullptr;
+}
+
 static napi_value JShutdown(napi_env env, napi_callback_info info)
 {
     (void)env;
@@ -198,6 +255,9 @@ static napi_value Init(napi_env env, napi_value exports)
         {"pollEvents", nullptr, JPollEvents, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"shutdown", nullptr, JShutdown, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"chmodPath", nullptr, JChmodPath, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setPeqEnabled", nullptr, JSetPeqEnabled, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setPeqBand", nullptr, JSetPeqBand, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setReplayGain", nullptr, JSetReplayGain, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

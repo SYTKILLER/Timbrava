@@ -99,6 +99,10 @@ export class Db {
     return this.store !== null;
   }
 
+  storeOrNull(): relationalStore.RdbStore | null {
+    return this.store;
+  }
+
   private storeOrThrow(): relationalStore.RdbStore {
     if (this.store === null) {
       throw new Error('Db not initialized');
@@ -370,6 +374,99 @@ export class Db {
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'loadLastQueue fail %{public}s', (e as Error).message);
       return null;
+    }
+  }
+
+  // ============ 歌词缓存 ============
+
+  async getLyricsCache(songId: number): Promise<string> {
+    const st = this.storeOrThrow();
+    const rs = await st.querySql('SELECT lrc FROM lyrics_cache WHERE song_id = ?', [songId]);
+    let out = '';
+    if (rs.goToFirstRow()) {
+      out = rs.getString(0);
+    }
+    rs.close();
+    return out;
+  }
+
+  async putLyricsCache(songId: number, lrc: string): Promise<void> {
+    const st = this.storeOrThrow();
+    const bucket: relationalStore.ValuesBucket = { 'song_id': songId, 'lrc': lrc, 'source': 0, 'offset_ms': 0 };
+    await st.insert('lyrics_cache', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+  }
+
+  // ============ 黑名单(incl_excl type=1) ============
+
+  async getBlacklist(): Promise<string[]> {
+    const st = this.storeOrThrow();
+    const rs = await st.querySql("SELECT path FROM incl_excl WHERE type = 1 ORDER BY path");
+    const out: string[] = [];
+    while (rs.goToNextRow()) {
+      out.push(rs.getString(0));
+    }
+    rs.close();
+    return out;
+  }
+
+  async addBlacklist(path: string): Promise<void> {
+    const st = this.storeOrThrow();
+    const bucket: relationalStore.ValuesBucket = { 'type': 1, 'path': path };
+    await st.insert('incl_excl', bucket, relationalStore.ConflictResolution.ON_CONFLICT_IGNORE);
+  }
+
+  async removeBlacklist(path: string): Promise<void> {
+    const st = this.storeOrThrow();
+    const pred = new relationalStore.RdbPredicates('incl_excl');
+    pred.equalTo('path', path).and().equalTo('type', 1);
+    await st.delete(pred);
+  }
+
+  async loadQueueById(queueId: string): Promise<QueueSnapshot | null> {
+    const st = this.storeOrThrow();
+    try {
+      const rs = await st.querySql('SELECT id, title, active_index, active_pos_ms, repeat_mode, shuffle_order FROM queues WHERE id = ?', [queueId]);
+      if (!rs.goToFirstRow()) {
+        rs.close();
+        return null;
+      }
+      const title = rs.getString(rs.getColumnIndex('title'));
+      const activeIndex = rs.getLong(rs.getColumnIndex('active_index'));
+      const posMs = rs.getLong(rs.getColumnIndex('active_pos_ms'));
+      const repeat = rs.getLong(rs.getColumnIndex('repeat_mode')) as RepeatMode;
+      const shuffled = rs.getString(rs.getColumnIndex('shuffle_order')).length > 0;
+      rs.close();
+      const rs2 = await st.querySql('SELECT song_id FROM queue_items WHERE queue_id = ? ORDER BY position', [queueId]);
+      const songIds: number[] = [];
+      while (rs2.goToNextRow()) {
+        songIds.push(rs2.getLong(0));
+      }
+      rs2.close();
+      const snap = new QueueSnapshot();
+      snap.songIds = songIds;
+      snap.activeIndex = activeIndex;
+      snap.posMs = posMs;
+      snap.repeat = repeat;
+      snap.shuffled = shuffled;
+      snap.title = title;
+      return snap;
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'loadQueueById fail %{public}s', (e as Error).message);
+      return null;
+    }
+  }
+
+  async deleteQueueById(queueId: string): Promise<void> {
+    const st = this.storeOrThrow();
+    try {
+      const pred = new relationalStore.RdbPredicates('queues');
+      pred.equalTo('id', queueId);
+      await st.delete(pred);
+      const pred2 = new relationalStore.RdbPredicates('queue_items');
+      pred2.equalTo('queue_id', queueId);
+      await st.delete(pred2);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'deleteQueueById fail %{public}s', (e as Error).message);
     }
   }
 

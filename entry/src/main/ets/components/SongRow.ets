@@ -197,6 +197,22 @@ export class SongListParam {
     return p;
   }
 
+  static playlist(id: number, title: string): SongListParam {
+    const p = new SongListParam();
+    p.mode = 'playlist';
+    p.key = String(id);
+    p.title = title;
+    return p;
+  }
+
+  static smart(kind: string, title: string): SongListParam {
+    const p = new SongListParam();
+    p.mode = 'smart';
+    p.key = kind;
+    p.title = title;
+    return p;
+  }
+
   static allSongs(): SongListParam {
     const p = new SongListParam();
     p.mode = 'songs';

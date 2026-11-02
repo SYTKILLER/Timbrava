@@ -8,6 +8,9 @@ import { Db } from './Db';
 import { LibraryStore } from './LibraryStore';
 import { Song, ScanProgress, RootFolder } from './Model';
 import { isAudioExt, parseAudioMeta, SongMeta } from './tag/MetaParse';
+import { parseCue, looksLikeCue, CueSheet } from './cue/CueParser';
+import { ReadAt } from './tag/MetaParse';
+import timbravaCore from 'libtimbrava_core.so';
 import { fnv1a } from './tag/Bytes';
 
 const TAG = '[Timbrava][Scan]';
@@ -65,6 +68,15 @@ export class ScanService {
     hilog.info(DOMAIN, TAG, 'scan start');
     try {
       const roots = await Db.get().getRootFolders();
+      const blacklist = await Db.get().getBlacklist();
+      const isBlocked = (p: string): boolean => {
+        for (const b of blacklist) {
+          if (b.length > 0 && p.startsWith(b)) {
+            return true;
+          }
+        }
+        return false;
+      };
       let removed = 0;
       const candidates: FileCandidate[] = [];
       for (const root of roots) {
@@ -82,6 +94,9 @@ export class ScanService {
       let idx = 0;
       for (const cand of candidates) {
         idx++;
+        if (isBlocked(cand.path)) {
+          continue;
+        }
         seenPaths.add(cand.path);
         let st: fs.Stat | null = null;
         try {
@@ -142,6 +157,39 @@ export class ScanService {
     }
   }
 
+  // 调试通道:确保沙箱语料根已注册(mkdir + chmod 宿主可写 + 登记)
+  async ensureSandboxRoot(): Promise<void> {
+    if (this.context === null) {
+      return;
+    }
+    const dir = `${this.context.filesDir}/music`;
+    try {
+      if (!fs.accessSync(dir)) {
+        fs.mkdirSync(dir, true);
+      }
+    } catch (e) {
+      try {
+        fs.mkdirSync(dir, true);
+      } catch (e2) {
+        return;
+      }
+    }
+    // 宿主 shell 写入授权(P0 验证通道同款)
+    try {
+      timbravaCore.chmodPath(this.context.filesDir, 0o775);
+      timbravaCore.chmodPath(dir, 0o777);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'chmod fail %{public}s', (e as Error).message);
+    }
+    const roots = await Db.get().getRootFolders();
+    const exists = roots.find((r: RootFolder): boolean => r.value === dir);
+    if (exists === undefined) {
+      roots.push(new RootFolder('path', dir));
+      await Db.get().setRootFolders(roots);
+      hilog.info(DOMAIN, TAG, 'sandbox root registered: %{public}s', dir);
+    }
+  }
+
   // ============ 调试导入通道(宿主机 HTTP,经 hdc rport 反向隧道) ============
 
   private importing: boolean = false;
@@ -164,10 +212,10 @@ export class ScanService {
       this.importing = false;
       return;
     }
-    const base = 'http://127.0.0.1:8099';
+    const base = 'http://127.0.0.1:8100';
     try {
-      const manifest = await this.httpGetBuffer(`${base}/manifest.json`);
-      const entries: ManifestEntry[] = JSON.parse(this.abToString(manifest)) as ManifestEntry[];
+      const manifestBuf = await this.httpGetBuffer(`${base}/manifest.json`);
+      const entries: ManifestEntry[] = JSON.parse(this.abToString(new Uint8Array(manifestBuf))) as ManifestEntry[];
       hilog.info(DOMAIN, TAG, 'import manifest n=%{public}d', entries.length);
       for (const ent of entries) {
         const dest = `${dir}/${ent.name}`;
@@ -273,8 +321,7 @@ export class ScanService {
     throw lastErr;
   }
 
-  private abToString(ab: ArrayBuffer): string {
-    const u8 = new Uint8Array(ab);
+  private abToString(u8: Uint8Array): string {
     let out = '';
     for (let i = 0; i < u8.length; i++) {
       out += String.fromCharCode(u8[i]);
@@ -291,11 +338,14 @@ export class ScanService {
     try {
       file = await fs.open(cand.uriOrPath, fs.OpenMode.READ_ONLY);
       const fd = file.fd;
-      const readAt = (off: number, len: number): Uint8Array => {
+      const readAt: ReadAt = (off: number, len: number): Uint8Array => {
         const buf = new ArrayBuffer(len);
         const n = fs.readSync(fd, buf, { offset: off, length: len });
         return new Uint8Array(buf, 0, n);
       };
+      if (cand.name.toLowerCase().endsWith('.cue')) {
+        return await this.parseCueFile(cand, fsize, mtime);
+      }
       const meta: SongMeta = parseAudioMeta(cand.name, fsize, readAt, readAt);
       if (!meta.ok) {
         hilog.warn(DOMAIN, TAG, 'parse fail(跳过) %{public}s', cand.path);
@@ -357,6 +407,128 @@ export class ScanService {
     }
   }
 
+  // CUE 分轨:cue 同目录音频文件 → 每轨一条记录(同 path 多行,cue_start_ms/cue_end_ms 裁剪)
+  private async parseCueFile(cand: FileCandidate, fsize: number, mtime: number): Promise<boolean> {
+    try {
+      let cueFile: fs.File | null = null;
+      let audioFile: fs.File | null = null;
+      try {
+        cueFile = await fs.open(cand.uriOrPath, fs.OpenMode.READ_ONLY);
+        const cueFd = cueFile.fd;
+        const readCue: ReadAt = (off: number, len: number): Uint8Array => {
+          const buf = new ArrayBuffer(len);
+          const n = fs.readSync(cueFd, buf, { offset: off, length: len });
+          return new Uint8Array(buf, 0, n);
+        };
+        const text = this.abToString(readCue(0, Math.min(fsize, 512 * 1024)));
+        if (!looksLikeCue(text)) {
+          return false;
+        }
+        const sheet: CueSheet = parseCue(text);
+        if (!sheet.valid()) {
+          return false;
+        }
+        const dir = cand.path.substring(0, cand.path.lastIndexOf('/') + 1);
+        const audioPath = `${dir}${sheet.audioFile.split('\\').join('/')}`;
+        // 音频头解析(时长/编码/位深/封面)
+        let audioDurMs = 0;
+        let audioArt = '';
+        let codec = '';
+        let sr = 0;
+        let bd = 0;
+        const known = await Db.get().querySongs('path = ? AND cue_start_ms = 0', [audioPath], '', 1, 0);
+        if (known.length > 0) {
+          audioDurMs = known[0].durationMs;
+          audioArt = known[0].artPath;
+          codec = known[0].codec;
+          sr = known[0].sampleRate;
+          bd = known[0].bitDepth;
+        } else {
+          try {
+            audioFile = await fs.open(audioPath, fs.OpenMode.READ_ONLY);
+            const aFd = audioFile.fd;
+            const readAudio: ReadAt = (off: number, len: number): Uint8Array => {
+              const buf = new ArrayBuffer(len);
+              const n = fs.readSync(aFd, buf, { offset: off, length: len });
+              return new Uint8Array(buf, 0, n);
+            };
+            let aSize = 0;
+            try {
+              aSize = fs.statSync(audioPath).size;
+            } catch (e) {
+              aSize = 0;
+            }
+            const meta = parseAudioMeta(sheet.audioFile, aSize, readAudio, readAudio);
+            codec = meta.codec;
+            sr = meta.sampleRate;
+            bd = meta.bitDepth;
+            audioDurMs = meta.durationMs;
+            if (meta.coverData !== null && meta.coverData.length > 0) {
+              audioArt = await this.saveCover(meta.coverData, meta.coverMime, aSize, mtime);
+            }
+          } catch (e) {
+            hilog.warn(DOMAIN, TAG, 'cue audio probe fail %{public}s', (e as Error).message);
+          }
+        }
+        let added = 0;
+        for (const t of sheet.tracks) {
+          const song = new Song();
+          song.path = audioPath;
+          song.fileSize = fsize;
+          song.mtime = mtime;
+          song.title = t.title.length > 0 ? t.title : `${sheet.albumTitle} Track ${t.index}`;
+          song.artist = t.performer.length > 0 ? t.performer : sheet.albumPerformer;
+          song.album = sheet.albumTitle;
+          song.albumArtist = sheet.albumPerformer;
+          song.trackNo = t.index;
+          song.durationMs = t.endMs > t.startMs ? t.endMs - t.startMs : Math.max(0, audioDurMs - t.startMs);
+          song.sampleRate = sr;
+          song.bitDepth = bd;
+          song.codec = codec;
+          song.cueStartMs = t.startMs;
+          song.cueEndMs = t.endMs;
+          song.artPath = audioArt;
+          const dup = await Db.get().querySongs('path = ? AND cue_start_ms = ?', [audioPath, t.startMs], '', 1, 0);
+          if (dup.length > 0) {
+            if (dup[0].mtime === mtime && dup[0].fileSize === fsize && dup[0].title === song.title) {
+              continue;
+            }
+            song.id = dup[0].id;
+            const bucket: relationalStore.ValuesBucket = {
+              'title': song.title, 'artist': song.artist, 'album': song.album, 'album_artist': song.albumArtist,
+              'track_no': song.trackNo, 'duration_ms': song.durationMs, 'mtime': song.mtime,
+              'cue_start_ms': song.cueStartMs, 'cue_end_ms': song.cueEndMs, 'art_path': song.artPath
+            };
+            await Db.get().updateSongFields(song.id, bucket);
+            added++;
+          } else {
+            await Db.get().upsertSong(song, false);
+            added++;
+          }
+        }
+        hilog.info(DOMAIN, TAG, 'cue stored %{public}s tracks=%{public}d added=%{public}d',
+          cand.name, sheet.tracks.length, added);
+        return added > 0;
+      } finally {
+        if (cueFile !== null) {
+          try {
+            fs.closeSync(cueFile);
+          } catch (e) {
+          }
+        }
+        if (audioFile !== null) {
+          try {
+            fs.closeSync(audioFile);
+          } catch (e) {
+          }
+        }
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'parseCueFile fail %{public}s %{public}s', cand.path, (e as Error).message);
+      return false;
+    }
+  }
+
   private async saveCover(data: Uint8Array, mime: string, fsize: number, mtime: number): Promise<string> {
     if (this.context === null) {
       return '';
@@ -402,7 +574,8 @@ export class ScanService {
         for (const rel of names) {
           // rel 以 '/' 开头:相对根的路径
           const name = rel.substring(rel.lastIndexOf('/') + 1);
-          if (!isAudioExt(name)) {
+          const isCue = name.toLowerCase().endsWith('.cue');
+          if (!isAudioExt(name) && !isCue) {
             continue;
           }
           const dirPath = root.value.endsWith('/') ? root.value : `${root.value}/`;
@@ -418,7 +591,8 @@ export class ScanService {
         const names = await fs.listFile(root.value, { recursion: true });
         for (const rel of names) {
           const name = rel.substring(rel.lastIndexOf('/') + 1);
-          if (!isAudioExt(name)) {
+          const isCue = name.toLowerCase().endsWith('.cue');
+          if (!isAudioExt(name) && !isCue) {
             continue;
           }
           const childUri = `${root.value}${root.value.endsWith('/') ? '' : '/'}${rel.startsWith('/') ? rel.substring(1) : rel}`;

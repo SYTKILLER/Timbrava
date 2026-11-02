@@ -28,7 +28,7 @@ export class SongMeta {
   ok: boolean = false;
 }
 
-type ReadAt = (offset: number, length: number) => Uint8Array;
+export type ReadAt = (offset: number, length: number) => Uint8Array;
 
 const AUDIO_EXTS: string[] = ['mp3', 'flac', 'wav', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'ape', 'wma', 'wv', 'dsf', 'dff'];
 

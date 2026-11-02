@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "audio_output.h"
+#include "dsp.h"
 #include "decoder.h"
 #include "ring_buffer.h"
 
@@ -34,6 +35,10 @@ public:
     EngineMode mode() const;
     int64_t positionMs();
     int64_t durationMs() const;
+    void setPeqEnabled(bool on);
+    void setPeqBand(int index, int type, float freq, float gainDb, float q);
+    void setReplayGain(float trackGainDb, float trackPeak, float albumGainDb, float albumPeak, int mode);
+    bool dspActive() const;
     void pollEvents(std::vector<std::string> &out);
     void shutdown();
 
@@ -66,6 +71,12 @@ private:
     std::atomic<bool> underrunSinceSeek_{false};
     std::atomic<int64_t> seekTargetFrames_{-1};
     std::atomic<float> volume_{1.0f};
+    std::atomic<bool> peqEnabled_{false};
+    std::atomic<int> rgMode_{0};
+    std::atomic<float> lastTrackGain_{0.0f};
+    std::atomic<float> lastTrackPeak_{1.0f};
+    std::atomic<float> lastAlbumGain_{0.0f};
+    std::atomic<float> lastAlbumPeak_{1.0f};
 
     std::mutex evM_;
     std::deque<std::string> events_;

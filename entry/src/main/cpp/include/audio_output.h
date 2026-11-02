@@ -24,6 +24,8 @@ public:
     ~AudioOutput();
 
     bool create(const TrackInfo &info, OutputFormat fmt, NeedDataFn onData, InterruptFn onInterrupt, ErrorFn onError);
+    bool createWithFormat(const TrackInfo &info, OutputFormat renderFmt, NeedDataFn onData, InterruptFn onInterrupt,
+                          ErrorFn onError);
     void destroy();
 
     bool start();

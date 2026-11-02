@@ -1,6 +1,6 @@
 // 应用根:Navigation + 底部 HdsTabs(音乐库/队列/设置)+ 迷你播放条(悬浮)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { HdsTabs } from '@kit.UIDesignKit';
+import { HdsTabs, HdsTabsFloatingStyle } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../service/PlayerController';
@@ -15,6 +15,8 @@ import { SongListDest } from './detail/SongList';
 import { FolderTreeDest } from './detail/FolderTree';
 import { ScanSettingsDest } from './settings/ScanSettings';
 import { AboutDest } from './settings/About';
+import { SearchDest } from './detail/Search';
+import { QueueBoardDest } from './queue/QueueBoard';
 
 const TAG = '[Timbrava][Index]';
 const DOMAIN = 0x0001;
@@ -66,6 +68,7 @@ struct Index {
         }
         .vertical(false)
         .scrollable(true)
+        .barFloatingStyle(this.floatingStyle())
         .onChange((index: number) => {
           this.activeTab = index;
         })
@@ -81,6 +84,15 @@ struct Index {
     .navDestination(this.pagesMap)
     .hideTitleBar(true)
     .mode(NavigationMode.Stack)
+  }
+
+  private floatingStyle(): HdsTabsFloatingStyle {
+    const st: HdsTabsFloatingStyle = {
+      barSideMargin: 16,
+      barBottomMargin: this.bottomSafe + 8,
+      gradientMask: { maskColor: '#00000000' }
+    };
+    return st;
   }
 
   @Builder
@@ -142,6 +154,10 @@ struct Index {
       ScanSettingsDest()
     } else if (name === 'About') {
       AboutDest()
+    } else if (name === 'Search') {
+      SearchDest()
+    } else if (name === 'QueueBoard') {
+      QueueBoardDest()
     }
   }
 }

@@ -30,6 +30,9 @@ interface NativeModule {
   getTrackInfo(): NativeTrackInfo;
   pollEvents(): Array<string>;
   shutdown(): void;
+  setPeqEnabled(on: boolean): void;
+  setPeqBand(index: number, type: number, freq: number, gainDb: number, q: number): void;
+  setReplayGain(trackGainDb: number, trackPeak: number, albumGainDb: number, albumPeak: number, mode: number): void;
 };
 
 export class LosslessEngine implements IAudioEngine {
@@ -137,6 +140,18 @@ export class LosslessEngine implements IAudioEngine {
         this.emit(EngineEventKind.UNDERRUN, 0, 'buffer underrun');
       }
     }
+  }
+
+  setPeq(on: boolean): void {
+    (timbravaCore as NativeModule).setPeqEnabled(on);
+  }
+
+  setPeqBand(index: number, type: number, freq: number, gainDb: number, q: number): void {
+    (timbravaCore as NativeModule).setPeqBand(index, type, freq, gainDb, q);
+  }
+
+  setReplayGain(trackGainDb: number, trackPeak: number, albumGainDb: number, albumPeak: number, mode: number): void {
+    (timbravaCore as NativeModule).setReplayGain(trackGainDb, trackPeak, albumGainDb, albumPeak, mode);
   }
 
   release(): void {

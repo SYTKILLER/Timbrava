@@ -79,11 +79,22 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
     seeking_ = false;
     seekTargetFrames_ = -1;
 
+    // DSP(PEQ/RG)启用时渲染走 F32 管线;关闭时保持整型直通(比特完美)
+    bool useDsp = dspActive();
+    OutputFormat renderFmt = fmt_;
+    if (useDsp && renderFmt != OutputFormat::F32LE) {
+        renderFmt = OutputFormat::F32LE;
+    }
+    if (useDsp) {
+        timbrava::dspPrepare(info_.sampleRate, info_.channels);
+        timbrava::dspSetReplayGain(lastTrackGain_.load(), lastTrackPeak_.load(),
+                                   lastAlbumGain_.load(), lastAlbumPeak_.load(), rgMode_.load());
+    }
     out_ = std::make_unique<AudioOutput>();
     int channels = info_.channels;
     OutputFormat fmtCopy = fmt_;
-    bool ok = out_->create(
-        info_, fmt_,
+    bool ok = out_->createWithFormat(
+        info_, renderFmt,
         [this, channels, fmtCopy](OH_AudioRenderer *, void *, void *buffer, int32_t length) -> OH_AudioData_Callback_Result {
             if (length <= 0) {
                 return AUDIO_DATA_CALLBACK_RESULT_VALID;
@@ -98,6 +109,18 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
                 return AUDIO_DATA_CALLBACK_RESULT_VALID;
             }
             size_t n = ring_.read(static_cast<uint8_t *>(buffer), static_cast<size_t>(length));
+            if (dspActive() && n > 0) {
+                // 整型→F32→DSP,renderer 为 F32 格式(length 为 F32 字节数)
+                int32_t bytesPerSampleSrc = fmtCopy == OutputFormat::U8 ? 1 : fmtCopy == OutputFormat::S16LE ? 2 : 4;
+                size_t frames = n / static_cast<size_t>(bytesPerSampleSrc * channels);
+                size_t floatOut = frames * static_cast<size_t>(channels) * 4;
+                if (floatOut <= static_cast<size_t>(length)) {
+                    timbrava::convertToInterleavedF32(static_cast<uint8_t *>(buffer), n, fmtCopy,
+                                                      reinterpret_cast<float *>(buffer));
+                    timbrava::dspProcessInterleavedF32(reinterpret_cast<float *>(buffer), frames);
+                    n = floatOut;
+                }
+            }
             if (n < static_cast<size_t>(length)) {
                 std::memset(static_cast<uint8_t *>(buffer) + n, 0, static_cast<size_t>(length) - n);
                 if (!eof_.load()) {
@@ -339,6 +362,37 @@ void Engine::shutdown()
 EngineMode Engine::mode() const { return mode_.load(); }
 
 bool Engine::hasTrack() const { return mode_.load() != EngineMode::IDLE; }
+
+void Engine::setPeqEnabled(bool on)
+{
+    peqEnabled_ = on;
+    if (on) {
+        timbrava::dspPrepare(info_.sampleRate > 0 ? info_.sampleRate : 44100,
+                             info_.channels > 0 ? info_.channels : 2);
+    }
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "dsp peq %{public}s", on ? "on" : "off");
+}
+
+void Engine::setPeqBand(int index, int type, float freq, float gainDb, float q)
+{
+    timbrava::dspSetPeqBand(index, type, freq, gainDb, q);
+}
+
+void Engine::setReplayGain(float trackGainDb, float trackPeak, float albumGainDb, float albumPeak, int mode)
+{
+    lastTrackGain_ = trackGainDb;
+    lastTrackPeak_ = trackPeak;
+    lastAlbumGain_ = albumGainDb;
+    lastAlbumPeak_ = albumPeak;
+    rgMode_ = mode;
+    timbrava::dspSetReplayGain(trackGainDb, trackPeak, albumGainDb, albumPeak, mode);
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "dsp rg mode=%{public}d track=%{public}f", mode, trackGainDb);
+}
+
+bool Engine::dspActive() const
+{
+    return peqEnabled_.load() || rgMode_.load() != 0;
+}
 
 void Engine::setVolume(float vol)
 {

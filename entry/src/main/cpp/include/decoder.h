@@ -31,6 +31,9 @@ public:
     virtual int64_t readFrames(uint8_t *dst, int64_t maxFrames, size_t dstCap) = 0;
 };
 
+// 整型源格式 → 交错 F32(dst 容量需 ≥ 输出样本数×4;U8/S16/S32(左对齐)/F32 透传)
+void convertToInterleavedF32(const uint8_t *src, size_t byteCount, OutputFormat fmt, float *dst);
+
 } // namespace timbrava
 
 #endif

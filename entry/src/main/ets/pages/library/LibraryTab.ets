@@ -8,6 +8,7 @@ import { Song, Album, Artist, Genre, FolderNode } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';
 import { BasicDataSource } from '../../common/DataSource';
 import { ScanService } from '../../data/ScanService';
+import { PlaylistsTab } from '../playlist/PlaylistsTab';
 
 const TAG = '[Timbrava][Library]';
 const DOMAIN = 0x0001;
@@ -102,7 +103,12 @@ export struct LibraryTab {
         .width(36)
         .height(36)
         .backgroundColor(Color.Transparent)
-        .visibility(Visibility.None) // P1 搜索
+        .onClick(() => {
+          const stack = AppStorage.get<NavPathStack>('navStack');
+          if (stack !== undefined && stack !== null) {
+            stack.pushPathByName('Search', null);
+          }
+        })
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: this.topSafe + 8, bottom: 4 })
@@ -122,6 +128,7 @@ export struct LibraryTab {
         this.ArtistsPage()
         this.GenresPage()
         this.FoldersPage()
+        this.PlaylistsPage()
       }
       .index(this.segmentIndex)
       .onChange((i: number): void => {
@@ -305,6 +312,11 @@ export struct LibraryTab {
   }
 
   @Builder
+  PlaylistsPage() {
+    PlaylistsTab()
+  }
+
+  @Builder
   FoldersPage() {
     if (LibraryStore.get().folderRoot.children.length === 0) {
       this.EmptyHint('还没有目录结构')
@@ -349,5 +361,6 @@ const SEG_ITEMS: SegmentButtonV2Items = new SegmentButtonV2Items([
   new SegmentButtonV2Item({ text: '专辑' }),
   new SegmentButtonV2Item({ text: '艺人' }),
   new SegmentButtonV2Item({ text: '流派' }),
-  new SegmentButtonV2Item({ text: '文件夹' })
+  new SegmentButtonV2Item({ text: '文件夹' }),
+  new SegmentButtonV2Item({ text: '歌单' })
 ]);

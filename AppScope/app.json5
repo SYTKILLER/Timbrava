@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.march.timbrava",
     "vendor": "example",
-    "versionCode": 2000,
-    "versionName": "0.2.0",
+    "versionCode": 3000,
+    "versionName": "0.3.0",
     "buildVersion": "1",
     "icon": "$media:layered_image",
     "label": "$string:app_name"

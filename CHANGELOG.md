@@ -7,6 +7,28 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-02
+
+### Added(P1,模拟器验证通过)
+
+- 歌词:自研 LRC 解析器(行级+逐词扩展+offset)+ 内嵌提取(ID3 USLT/FLAC VorbisComment/MP4 ©lyr)+ 缓存表 + 全屏播放页同步歌词面板(当前行高亮/自动居中),实测 FLAC 内嵌歌词 6 行渲染与高亮跟随。
+- 歌单:PlaylistRepo(CRUD/排序/智能歌单 recent·added·most)+ 歌单第六分区 + 列表「存为歌单」+ M3U 解析/导出(沙箱 exports/)。
+- 多队列 QueueBoard:命名队列保存/切换接管/删除,队列页入口。
+- DSP(31 段 PEQ + ReplayGain + 软压限):Native 三槽无锁系数切换、F32 渲染管线、整型→F32 转换、预设 5 种(bass/vocal/treble/rock/electronic)、RG 按曲目标签自动应用;设置页开关接入。
+- CUE 分轨:自研解析器(FILE/TRACK/INDEX 00/01/pregap)+ 扫描集成(同文件多行裁剪区间)+ 播放区间控制(起点 seek/终点自动切曲/进度换算)。
+- 全局搜索:歌名/艺人/专辑 LIKE 模糊匹配,300ms 防抖 + 代次防串,搜索页路由。
+- 睡眠定时:15/30/45/60/90 分钟菜单,到点自动暂停。
+- 黑名单:路径前缀忽略,扫描过滤,扫描页管理 UI。
+- UI:HdsTabs 悬浮式底部页签(barFloatingStyle,API 23+,符合规范);搜索按钮启用。
+
+### Fixed
+
+- FullPlayer 切曲不刷新:playerVer/posVer 在 build 中条件读取;歌词面板位置改为组件内自取(规避 @Builder 传参快照)。
+- 歌词面板高度塌陷:Stack 中 layoutWeight 无效,改显式高度容器。
+- FullPlayer 打开时歌词不加载(晚于播放打开时 @Watch 不补发),aboutToAppear 主动加载。
+- debugPlay/导入流程:沙箱根目录自动注册+chmod。
+
+
 ## [0.2.0] - 2026-11-02
 
 ### Added(P0 完整落地,模拟器验证通过)

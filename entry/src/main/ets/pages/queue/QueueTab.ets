@@ -56,8 +56,23 @@ export struct QueueTab {
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
+        Button({ stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.square_stack_3d'))
+            .fontSize(18)
+            .fontColor([QueueService.get().shuffled ? $r('app.color.text_primary') : $r('app.color.text_primary')])
+        }
+        .width(36)
+        .height(36)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          const stack = AppStorage.get<NavPathStack>('navStack');
+          if (stack !== undefined && stack !== null) {
+            stack.pushPathByName('QueueBoard', null);
+          }
+        })
         this.RepeatButton()
         this.ShuffleButton()
+        this.SleepButton()
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.trash'))
             .fontSize(18)
@@ -101,6 +116,49 @@ export struct QueueTab {
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageBg())
+  }
+
+  @Builder
+  SleepButton() {
+    Button({ stateEffect: true }) {
+      SymbolGlyph($r('sys.symbol.timer'))
+        .fontSize(18)
+        .fontColor([PlayerController.get().sleepRemainMin() > 0 ? $r('app.color.accent') : $r('app.color.text_primary')])
+    }
+    .width(36)
+    .height(36)
+    .backgroundColor(Color.Transparent)
+    .bindMenu(this.sleepMenu())
+  }
+
+  @Builder
+  sleepMenu() {
+    Menu() {
+      MenuItem({ content: '关闭睡眠定时' })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(0);
+        })
+      MenuItem({ content: '15 分钟' })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(15);
+        })
+      MenuItem({ content: '30 分钟' })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(30);
+        })
+      MenuItem({ content: '45 分钟' })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(45);
+        })
+      MenuItem({ content: '60 分钟' })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(60);
+        })
+      MenuItem({ content: '90 分钟' })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(90);
+        })
+    }
   }
 
   @Builder

@@ -8,7 +8,8 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Db } from '../data/Db';
 import { LibraryStore } from '../data/LibraryStore';
 import { ScanService } from '../data/ScanService';
-import { SettingsService } from './SettingsService';
+import { PlaylistRepo } from '../data/PlaylistRepo';
+import { SettingsService, PlayerBridge } from './SettingsService';
 import { QueueService } from './QueueService';
 import { Song, RepeatMode } from '../data/Model';
 import { IAudioEngine, EngineKind, EngineEventData, EngineEventKind, EngineTrackInfo } from './engine/EngineTypes';
@@ -49,6 +50,7 @@ export class PlayerController {
   private pausedByInterrupt: boolean = false;
   private bgTaskRunning: boolean = false;
   private initDone: boolean = false;
+  private sleepAtMs: number = 0; // 0=未设置;Booming SleepTimer 语义简化版(P2 渐弱)
 
   private bumpPlayer(): void {
     AppStorage.setOrCreate('playerVer', (AppStorage.get<number>('playerVer') ?? 0) + 1);
@@ -72,10 +74,14 @@ export class PlayerController {
       return;
     }
     await SettingsService.get().load();
+    await PlaylistRepo.get().init(ctx);
     ScanService.get().init(ctx);
     await LibraryStore.get().reload();
     await this.queue.restore();
     this.initDone = true;
+    PlayerBridge.onDspChanged = (): void => {
+      this.applyDspToEngine();
+    };
     hilog.info(DOMAIN, TAG, 'controller init done');
 
     this.systemEngine.setEventCb((ev: EngineEventData): void => {
@@ -96,9 +102,28 @@ export class PlayerController {
       return;
     }
     this.ticker = setInterval((): void => {
+      // 睡眠定时到点 → 暂停
+      if (this.sleepAtMs > 0 && Date.now() >= this.sleepAtMs) {
+        this.sleepAtMs = 0;
+        if (this.isPlaying) {
+          this.engine?.pause();
+          this.isPlaying = false;
+          this.syncSessionState();
+          this.bumpPlayer();
+        }
+        hilog.info(DOMAIN, TAG, 'sleep timer fired, paused');
+      }
       if (this.engine !== null && this.isPlaying) {
-        this.positionMs = this.engine.getPositionMs();
+        const song = this.currentSong;
+        const cueStart = song !== null && song.cueStartMs > 0 ? song.cueStartMs : 0;
+        const rawPos = this.engine.getPositionMs();
+        this.positionMs = rawPos - cueStart;
         this.bumpPos();
+        // CUE 区间终点 → 切下一曲
+        if (song !== null && song.cueEndMs > song.cueStartMs && rawPos >= song.cueEndMs) {
+          hilog.info(DOMAIN, TAG, 'cue range end -> next');
+          this.autoNext();
+        }
       }
       if (this.engineKind === EngineKind.LOSSLESS) {
         this.losslessEngine.pollNativeEvents();
@@ -161,11 +186,27 @@ export class PlayerController {
       ? `无损引擎 ${info.codec.toUpperCase()} ${info.bitDepth}bit/${info.sampleRate}Hz`
       : '系统引擎';
     this.currentSong = song;
-    this.durationMs = info.durationMs > 0 ? info.durationMs : song.durationMs;
+    const cueStart = song.cueStartMs > 0 ? song.cueStartMs : 0;
+    this.durationMs = song.cueEndMs > song.cueStartMs ? song.cueEndMs - song.cueStartMs
+      : (info.durationMs > 0 ? info.durationMs : song.durationMs);
     this.positionMs = 0;
-    if (resumeFromMs > 0) {
-      target.seek(resumeFromMs);
+    const effectiveResume = cueStart + resumeFromMs;
+    if (effectiveResume > 0) {
+      target.seek(effectiveResume);
       this.positionMs = resumeFromMs;
+    }
+    // ReplayGain:按设置模式应用到本曲(无损引擎)
+    if (this.engineKind === EngineKind.LOSSLESS) {
+      const settings = SettingsService.get();
+      const mode = settings.rgMode;
+      if (mode > 0) {
+        (target as LosslessEngine).setReplayGain(song.rgTrackGain, song.rgTrackPeak > 0 ? song.rgTrackPeak : 1,
+          song.rgAlbumGain, song.rgAlbumPeak > 0 ? song.rgAlbumPeak : 1, mode);
+      }
+      (target as LosslessEngine).setPeq(settings.eqOn);
+      if (settings.eqOn) {
+        this.applyEqPreset(settings.eqPreset);
+      }
     }
     target.play();
     this.isPlaying = true;
@@ -308,10 +349,66 @@ export class PlayerController {
 
   seekTo(ms: number): void {
     if (this.engine !== null) {
-      this.engine.seek(ms);
+      const song = this.currentSong;
+      const cueStart = song !== null && song.cueStartMs > 0 ? song.cueStartMs : 0;
+      this.engine.seek(cueStart + ms);
       this.positionMs = ms;
       this.bumpPos();
     }
+  }
+
+  private applyEqPreset(preset: string): void {
+    const engine = this.losslessEngine;
+    // 31 段简化预设(P1):全段 peak;自定义逐段 UI 属 P2
+    const bands31: number[] = [
+      20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800,
+      1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 16000
+    ];
+    engine.setPeqBand(31, 0, 1000, 0, 1); // 重置全部为平坦
+    if (preset === 'bass') {
+      for (let i = 0; i < 10; i++) {
+        engine.setPeqBand(i, 0, bands31[i], 6 - i * 0.5, 1.0);
+      }
+    } else if (preset === 'vocal') {
+      for (let i = 8; i < 18; i++) {
+        engine.setPeqBand(i, 0, bands31[i], 3.5, 1.2);
+      }
+    } else if (preset === 'treble') {
+      for (let i = 20; i < 31; i++) {
+        engine.setPeqBand(i, 0, bands31[i], 4, 1.0);
+      }
+    } else if (preset === 'rock') {
+      for (let i = 0; i < 6; i++) {
+        engine.setPeqBand(i, 0, bands31[i], 4, 1.0);
+      }
+      for (let i = 22; i < 31; i++) {
+        engine.setPeqBand(i, 0, bands31[i], 3, 1.0);
+      }
+    } else if (preset === 'electronic') {
+      for (let i = 0; i < 8; i++) {
+        engine.setPeqBand(i, 0, bands31[i], 5, 1.0);
+      }
+      for (let i = 24; i < 31; i++) {
+        engine.setPeqBand(i, 0, bands31[i], 3.5, 1.0);
+      }
+    }
+  }
+
+  private applyDspToEngine(): void {
+    if (this.engineKind !== EngineKind.LOSSLESS || this.currentSong === null) {
+      return;
+    }
+    const settings = SettingsService.get();
+    const song = this.currentSong;
+    this.losslessEngine.setReplayGain(song.rgTrackGain, song.rgTrackPeak > 0 ? song.rgTrackPeak : 1,
+      song.rgAlbumGain, song.rgAlbumPeak > 0 ? song.rgAlbumPeak : 1, settings.rgMode);
+    this.losslessEngine.setPeq(settings.eqOn);
+    if (settings.eqOn) {
+      this.applyEqPreset(settings.eqPreset);
+    }
+    // 设置变更即时生效:重新 openTrack 太重,P1 简化为下次切曲应用(PEQ 开关即时,曲线即时)
+    hilog.info(DOMAIN, TAG, 'dsp settings applied rg=%{public}d eq=%{public}s', settings.rgMode,
+      settings.eqOn ? settings.eqPreset : 'off');
   }
 
   setRepeat(mode: RepeatMode): void {
@@ -549,6 +646,24 @@ export class PlayerController {
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'startBackgroundRunning fail %{public}s', (e as Error).message);
     }
+  }
+
+  setSleepTimer(minutes: number): void {
+    if (minutes <= 0) {
+      this.sleepAtMs = 0;
+      hilog.info(DOMAIN, TAG, 'sleep timer cancelled');
+    } else {
+      this.sleepAtMs = Date.now() + minutes * 60000;
+      hilog.info(DOMAIN, TAG, 'sleep timer set %{public}dmin', minutes);
+    }
+    AppStorage.setOrCreate('sleepVer', (AppStorage.get<number>('sleepVer') ?? 0) + 1);
+  }
+
+  sleepRemainMin(): number {
+    if (this.sleepAtMs <= 0) {
+      return 0;
+    }
+    return Math.max(0, Math.ceil((this.sleepAtMs - Date.now()) / 60000));
   }
 
   persistAll(): void {

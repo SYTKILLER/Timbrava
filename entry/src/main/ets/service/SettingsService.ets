@@ -3,6 +3,17 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Db } from '../data/Db';
 
 const TAG = '[Timbrava][Settings]';
+
+// 设置变更 → 无损引擎 DSP 重应用(避免 SettingsService 反向依赖引擎层)
+export class PlayerBridge {
+  static onDspChanged: (() => void) | null = null;
+
+  static notifyDspChanged(): void {
+    if (PlayerBridge.onDspChanged !== null) {
+      PlayerBridge.onDspChanged();
+    }
+  }
+}
 const DOMAIN = 0x0001;
 
 export class ThemeMode {
@@ -27,6 +38,9 @@ export class SettingsService {
   pauseOnHeadphoneOff: boolean = true;
   pauseOnBtOff: boolean = true;
   resumeAfterInterrupt: boolean = true;
+  rgMode: number = 0;          // 0 off 1 track 2 album
+  eqOn: boolean = false;
+  eqPreset: string = 'flat';
 
   private loaded: boolean = false;
 
@@ -44,6 +58,12 @@ export class SettingsService {
     this.pauseOnHeadphoneOff = (await db.getSetting('pauseOnHeadphoneOff', '1')) === '1';
     this.pauseOnBtOff = (await db.getSetting('pauseOnBtOff', '1')) === '1';
     this.resumeAfterInterrupt = (await db.getSetting('resumeAfterInterrupt', '1')) === '1';
+    this.rgMode = parseInt(await db.getSetting('rgMode', '0'), 10);
+    if (Number.isNaN(this.rgMode)) {
+      this.rgMode = 0;
+    }
+    this.eqOn = (await db.getSetting('eqOn', '0')) === '1';
+    this.eqPreset = await db.getSetting('eqPreset', 'flat');
     this.loaded = true;
     this.syncTokens();
     hilog.info(DOMAIN, TAG, 'settings loaded');
@@ -55,6 +75,9 @@ export class SettingsService {
     this.token('prefPauseHeadphone', this.pauseOnHeadphoneOff);
     this.token('prefPauseBt', this.pauseOnBtOff);
     this.token('prefResumeInterrupt', this.resumeAfterInterrupt);
+    this.token('prefRgMode', this.rgMode);
+    this.token('prefEqOn', this.eqOn);
+    this.token('prefEqPreset', this.eqPreset);
   }
 
   private async save(key: string, value: string): Promise<void> {
@@ -84,6 +107,22 @@ export class SettingsService {
     this.pauseOnBtOff = on;
     this.syncTokens();
     await this.save('pauseOnBtOff', on ? '1' : '0');
+  }
+
+  async setRgMode(mode: number): Promise<void> {
+    this.rgMode = mode;
+    this.syncTokens();
+    await this.save('rgMode', String(mode));
+    PlayerBridge.notifyDspChanged();
+  }
+
+  async setEq(on: boolean, preset: string): Promise<void> {
+    this.eqOn = on;
+    this.eqPreset = preset;
+    this.syncTokens();
+    await this.save('eqOn', on ? '1' : '0');
+    await this.save('eqPreset', preset);
+    PlayerBridge.notifyDspChanged();
   }
 
   async setResumeAfterInterrupt(on: boolean): Promise<void> {

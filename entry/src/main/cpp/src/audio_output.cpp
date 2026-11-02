@@ -37,6 +37,11 @@ void AudioOutput::OnError(OH_AudioRenderer *renderer, void *userData, OH_AudioSt
 
 bool AudioOutput::create(const TrackInfo &info, OutputFormat fmt, NeedDataFn onData, InterruptFn onInterrupt,
                          ErrorFn onError) {
+    return createWithFormat(info, fmt, std::move(onData), std::move(onInterrupt), std::move(onError));
+}
+
+bool AudioOutput::createWithFormat(const TrackInfo &info, OutputFormat fmt, NeedDataFn onData, InterruptFn onInterrupt,
+                                   ErrorFn onError) {
     onData_ = std::move(onData);
     onInterrupt_ = std::move(onInterrupt);
     onError_ = std::move(onError);

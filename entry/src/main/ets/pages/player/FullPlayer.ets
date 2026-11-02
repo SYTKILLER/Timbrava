@@ -6,13 +6,17 @@ import { PlayerController } from '../../service/PlayerController';
 import { QueueService } from '../../service/QueueService';
 import { LibraryStore } from '../../data/LibraryStore';
 import { Song, RepeatMode, formatDuration } from '../../data/Model';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { LyricsPanel } from '../../components/LyricsPanel';
+import { extractLyricsFromHead } from '../../data/lyrics/LyricsExtractor';
+import { Db } from '../../data/Db';
 
 const TAG = '[Timbrava][FullPlayer]';
 const DOMAIN = 0x0001;
 
 @Component
 export struct FullPlayerDest {
-  @StorageProp('playerVer') playerVer: number = 0;
+  @StorageProp('playerVer') @Watch('onPlayerChanged') playerVer: number = 0;
   @StorageProp('posVer') posVer: number = 0;
   @StorageProp('queueVer') queueVer: number = 0;
   @StorageProp('libVer') libVer: number = 0;
@@ -20,6 +24,9 @@ export struct FullPlayerDest {
   @State seeking: boolean = false;
   @State seekPreviewMs: number = 0;
   @State showQueue: boolean = false;
+  @State showLyrics: boolean = false;
+  @State lyricText: string = '';
+  private loadedLyricsFor: number = -1;
   @State topSafe: number = 36;
   @State bottomSafe: number = 28;
   private pathStack: NavPathStack | null = null;
@@ -29,6 +36,48 @@ export struct FullPlayerDest {
     AppTheme.safeAreas(ctx).then((r: SafeAreaResult): void => {
       this.topSafe = r.topVp;
       this.bottomSafe = r.bottomVp;
+    });
+    // 页面可能晚于播放打开:@Watch 不会补发,主动加载当前曲歌词
+    this.onPlayerChanged();
+  }
+
+  onPlayerChanged(): void {
+    const song = PlayerController.get().currentSong;
+    if (song !== null && song.id !== this.loadedLyricsFor) {
+      this.loadLyrics(song);
+    }
+  }
+
+  // 按需歌词:缓存命中 → 否则读文件头 4MB 提取内嵌歌词 → 入缓存
+  private loadLyrics(song: Song): void {
+    this.loadedLyricsFor = song.id;
+    this.lyricText = '';
+    Db.get().getLyricsCache(song.id).then((cached: string): void => {
+      if (cached.length > 0) {
+        this.lyricText = cached;
+        return;
+      }
+      let file: fs.File | null = null;
+      try {
+        file = fs.openSync(song.path, fs.OpenMode.READ_ONLY);
+        const buf = new ArrayBuffer(4 * 1024 * 1024);
+        const n = fs.readSync(file.fd, buf);
+        const text = extractLyricsFromHead(new Uint8Array(buf, 0, n));
+        if (text.length > 0) {
+          this.lyricText = text;
+          Db.get().putLyricsCache(song.id, text);
+          hilog.info(DOMAIN, TAG, 'lyrics extracted song=%{public}d len=%{public}d', song.id, text.length);
+        }
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'loadLyrics fail %{public}s', (e as Error).message);
+      } finally {
+        if (file !== null) {
+          try {
+            fs.closeSync(file);
+          } catch (e2) {
+          }
+        }
+      }
     });
   }
 
@@ -87,6 +136,18 @@ export struct FullPlayerDest {
           .onClick(() => {
             this.showQueue = !this.showQueue;
           })
+          Button({ stateEffect: true }) {
+            SymbolGlyph($r('sys.symbol.book'))
+              .fontSize(20)
+              .fontColor([this.showLyrics ? $r('app.color.accent') : $r('app.color.text_primary')])
+          }
+          .width(40)
+          .height(40)
+          .backgroundColor(Color.Transparent)
+          .margin({ left: 4 })
+          .onClick(() => {
+            this.showLyrics = !this.showLyrics;
+          })
         }
         .width('100%')
         .padding({ left: 8, right: 8, top: this.topSafe })
@@ -136,9 +197,19 @@ export struct FullPlayerDest {
     Column() {
       Blank().height(12)
 
-      // 大封面
+      // 大封面 / 歌词
       Stack({ alignContent: Alignment.Center }) {
-        if ((this.song() as Song).artPath.length > 0) {
+        if (this.playerVer < 0) {
+          Text('')
+        } else if (this.showLyrics) {
+          Column() {
+            LyricsPanel({ lyricText: this.lyricText })
+              .width('100%')
+              .layoutWeight(1)
+          }
+          .width('88%')
+          .height('56%')
+        } else if ((this.song() as Song).artPath.length > 0) {
           Image((this.song() as Song).artPath)
             .width('78%')
             .aspectRatio(1)
@@ -161,8 +232,11 @@ export struct FullPlayerDest {
       .width('100%')
       .layoutWeight(1)
 
-      // 信息 + 引擎徽章
+      // 信息 + 引擎徽章(playerVer 条件读取驱动切曲刷新)
       Column({ space: 6 }) {
+        if (this.playerVer < 0) {
+          Text('')
+        }
         Text((this.song() as Song).displayTitle())
           .fontSize(22)
           .fontWeight(FontWeight.Bold)

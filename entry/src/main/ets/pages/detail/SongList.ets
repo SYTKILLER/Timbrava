@@ -4,6 +4,7 @@ import { LibraryStore } from '../../data/LibraryStore';
 import { Song, Artist, Genre } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';
 import { QueueService } from '../../service/QueueService';
+import { PlaylistRepo } from '../../data/PlaylistRepo';
 import { PlayerController } from '../../service/PlayerController';
 
 const TAG = '[Timbrava][SongList]';
@@ -17,7 +18,7 @@ export struct SongListDest {
   @State param: SongListParam = new SongListParam();
   private pathStack: NavPathStack | null = null;
 
-  private resolveSongs(p: SongListParam): Song[] {
+  private async resolveSongs(p: SongListParam): Promise<Song[]> {
     const lib = LibraryStore.get();
     if (p.mode === 'album') {
       return lib.songs.filter((s: Song): boolean =>
@@ -39,6 +40,13 @@ export struct SongListDest {
     if (p.mode === 'folder') {
       return lib.songs.filter((s: Song): boolean => s.path.startsWith(p.key + '/'));
     }
+    if (p.mode === 'playlist') {
+      const id = parseInt(p.key, 10);
+      return PlaylistRepo.get().getPlaylistSongs(Number.isNaN(id) ? 0 : id);
+    }
+    if (p.mode === 'smart') {
+      return PlaylistRepo.get().getSmartSongs(p.key);
+    }
     if (p.mode === 'favorites') {
       const out: Song[] = [];
       for (const s of lib.songs) {
@@ -58,8 +66,29 @@ export struct SongListDest {
   }
 
   private reload(): void {
-    this.songs = this.resolveSongs(this.param);
+    this.resolveSongs(this.param).then((songs: Song[]): void => {
+      this.songs = songs;
+      hilog.debug(DOMAIN, TAG, 'reload %{public}s -> %{public}d songs', this.param.mode, songs.length);
+    });
     hilog.debug(DOMAIN, TAG, 'reload %{public}s -> %{public}d songs', this.param.mode, this.songs.length);
+  }
+
+  private saveAsPlaylist(): void {
+    if (this.songs.length === 0) {
+      return;
+    }
+    const base = this.title.length > 0 ? this.title : '歌单';
+    const name = `${base} · ${new Date().getMonth() + 1}/${new Date().getDate()}`;
+    const ids: number[] = this.songs.map((s: Song): number => s.id);
+    PlaylistRepo.get().createPlaylist(name).then((id: number): void => {
+      if (id > 0) {
+        PlaylistRepo.get().addSongs(id, ids).then((): void => {
+          this.getUIContext().getPromptAction().showToast({ message: `已保存歌单「${name}」` });
+        });
+      } else {
+        this.getUIContext().getPromptAction().showToast({ message: '歌单重名,保存失败' });
+      }
+    });
   }
 
   private playAll(): void {
@@ -82,6 +111,15 @@ export struct SongListDest {
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Button('存为歌单')
+            .fontSize(13)
+            .fontColor($r('app.color.text_primary'))
+            .backgroundColor($r('app.color.badge_bg'))
+            .height(34)
+            .borderRadius(17)
+            .onClick(() => {
+              this.saveAsPlaylist();
+            })
           Button(`全部播放 ${this.songs.length}`)
             .fontSize(13)
             .fontColor($r('app.color.on_accent'))

@@ -19,6 +19,8 @@ const DOMAIN = 0x0001;
 export struct ScanSettingsDest {
   @StorageProp('scanVer') @Watch('onScanChanged') scanVer: number = 0;
   @State roots: RootFolder[] = [];
+  @State blacklist: string[] = [];
+  @State newBlackPath: string = '';
   @State progress: ScanProgress = new ScanProgress();
   @State topSafe: number = 36;
   private pathStack: NavPathStack | null = null;
@@ -29,6 +31,13 @@ export struct ScanSettingsDest {
       this.topSafe = r.topVp;
     });
     this.reloadRoots();
+    this.reloadBlacklist();
+  }
+
+  private reloadBlacklist(): void {
+    Db.get().getBlacklist().then((arr: string[]): void => {
+      this.blacklist = arr;
+    });
   }
 
   onScanChanged(): void {
@@ -382,6 +391,66 @@ export struct ScanSettingsDest {
                 Progress({ value: this.progress.current, total: this.progress.total, type: ProgressType.Linear })
                   .color($r('app.color.accent'))
                   .width('100%')
+              }
+            }
+            .width('100%')
+            .padding(12)
+            .borderRadius(16)
+            .backgroundColor($r('app.color.card_bg'))
+
+            // 黑名单(忽略路径前缀)
+            Column({ space: 6 }) {
+              Text('黑名单(忽略路径前缀,重扫生效)')
+                .fontSize(12)
+                .fontColor($r('app.color.text_secondary'))
+                .width('100%')
+              Row({ space: 8 }) {
+                TextInput({ text: this.newBlackPath, placeholder: '/music/... 路径前缀' })
+                  .fontSize(13)
+                  .height(36)
+                  .borderRadius(10)
+                  .layoutWeight(1)
+                  .onChange((v: string): void => {
+                    this.newBlackPath = v;
+                  })
+                Button('添加')
+                  .fontSize(12)
+                  .height(36)
+                  .fontColor($r('app.color.on_accent'))
+                  .backgroundColor($r('app.color.accent'))
+                  .onClick(() => {
+                    const p = this.newBlackPath.trim();
+                    if (p.length > 0) {
+                      Db.get().addBlacklist(p).then((): void => {
+                        this.newBlackPath = '';
+                        this.reloadBlacklist();
+                      });
+                    }
+                  })
+              }
+              .width('100%')
+              if (this.blacklist.length > 0) {
+                ForEach(this.blacklist, (b: string, i: number) => {
+                  Row({ space: 8 }) {
+                    Text(b)
+                      .fontSize(12)
+                      .fontColor($r('app.color.text_primary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
+                    Button('移除')
+                      .fontSize(11)
+                      .height(26)
+                      .fontColor($r('app.color.text_secondary'))
+                      .backgroundColor($r('app.color.badge_bg'))
+                      .onClick(() => {
+                        Db.get().removeBlacklist(b).then((): void => {
+                          this.reloadBlacklist();
+                        });
+                      })
+                  }
+                  .width('100%')
+                }, (b: string): string => b)
               }
             }
             .width('100%')
