@@ -232,6 +232,17 @@ export class Db {
     return out;
   }
 
+  // 从库完全移除单曲(songs + favorites;播放记录/队列行保留为孤儿,查询侧已判空)
+  async removeSongCompletely(songId: number): Promise<void> {
+    const st = this.storeOrThrow();
+    const pred = new relationalStore.RdbPredicates('songs');
+    pred.equalTo('id', songId);
+    await st.delete(pred);
+    const pred2 = new relationalStore.RdbPredicates('favorites');
+    pred2.equalTo('song_id', songId);
+    await st.delete(pred2);
+  }
+
   async deleteSongsByPaths(paths: string[]): Promise<void> {
     const st = this.storeOrThrow();
     for (const p of paths) {

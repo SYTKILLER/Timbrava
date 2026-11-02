@@ -9,6 +9,7 @@
 #include <fcntl.h>
 
 #include "include/engine.h"
+#include "include/flac_tag_writer.h"
 
 #define LOG_TAG "[TimbravaNative][Napi]"
 #include <hilog/log.h>
@@ -259,24 +260,6 @@ static void CompleteAnalyze(napi_env env, napi_status status, void *data)
     delete c;
 }
 
-static napi_value JAnalyzeFd(napi_env env, napi_callback_info info)
-{
-    size_t argc = 1;
-    napi_value args[1] = {nullptr};
-    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-    AnalyzeCarrier *c = new AnalyzeCarrier();
-    if (argc >= 1) {
-        napi_get_value_int32(env, args[0], &c->fd);
-    }
-    napi_value promise;
-    napi_create_promise(env, &c->deferred, &promise);
-    napi_value name;
-    napi_create_string_utf8(env, "timbravaAnalyze", NAPI_AUTO_LENGTH, &name);
-    napi_create_async_work(env, nullptr, name, ExecuteAnalyze, CompleteAnalyze, c, &c->work);
-    napi_queue_async_work(env, c->work);
-    return promise;
-}
-
 static napi_value JSetSpeed(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -303,6 +286,23 @@ static napi_value JSetSkipSilence(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
+static napi_value JAnalyzeFd(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    AnalyzeCarrier *c = new AnalyzeCarrier();
+    if (argc >= 1) {
+        napi_get_value_int32(env, args[0], &c->fd);
+    }
+    napi_value promise;
+    napi_create_promise(env, &c->deferred, &promise);
+    napi_value name;
+    napi_create_string_utf8(env, "timbravaAnalyze", NAPI_AUTO_LENGTH, &name);
+    napi_create_async_work(env, nullptr, name, ExecuteAnalyze, CompleteAnalyze, c, &c->work);
+    napi_queue_async_work(env, c->work);
+    return promise;
+}
 
 // 调试/验证通道:应用对自己沙箱目录授权(宿主 shell uid 需穿越写入语料)
 static napi_value JChmodPath(napi_env env, napi_callback_info info)
@@ -328,6 +328,80 @@ static napi_value JChmodPath(napi_env env, napi_callback_info info)
     return result;
 }
 
+// ---------------- FLAC 标签写回(napi 异步工作,Promise 返回) ----------------
+
+struct TagCarrier {
+    std::string srcPath;
+    std::string tmpPath;
+    timbrava::FlacTags tags;
+    bool ok = false;
+    std::string errMsg;
+    napi_deferred deferred = nullptr;
+    napi_async_work work = nullptr;
+};
+
+static void ExecuteTags(napi_env env, void *data)
+{
+    TagCarrier *c = static_cast<TagCarrier *>(data);
+    c->ok = timbrava::writeFlacTags(c->srcPath, c->tmpPath, c->tags, &c->errMsg);
+}
+
+static void CompleteTags(napi_env env, napi_status status, void *data)
+{
+    TagCarrier *c = static_cast<TagCarrier *>(data);
+    napi_value result = nullptr;
+    napi_create_object(env, &result);
+    napi_value v;
+    napi_get_boolean(env, c->ok, &v);
+    napi_set_named_property(env, result, "ok", v);
+    if (!c->ok) {
+        napi_create_string_utf8(env, c->errMsg.c_str(), NAPI_AUTO_LENGTH, &v);
+        napi_set_named_property(env, result, "msg", v);
+    }
+    napi_resolve_deferred(env, c->deferred, result);
+    napi_delete_async_work(env, c->work);
+    delete c;
+}
+
+static std::string JsString(napi_env env, napi_value val)
+{
+    char buf[1024];
+    size_t len = 0;
+    if (napi_get_value_string_utf8(env, val, buf, sizeof(buf), &len) != napi_ok) {
+        return "";
+    }
+    return std::string(buf, len);
+}
+
+static napi_value JWriteFlacTags(napi_env env, napi_callback_info info)
+{
+    // 参数:srcPath, tmpPath, title, artist, album, albumArtist, genre, year, trackNo, discNo
+    size_t argc = 10;
+    napi_value args[10] = {nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    TagCarrier *c = new TagCarrier();
+    auto pickAt = [&](size_t idx) -> std::string {
+        return idx < argc && args[idx] != nullptr ? JsString(env, args[idx]) : "";
+    };
+    c->srcPath = pickAt(0);
+    c->tmpPath = pickAt(1);
+    c->tags.title = pickAt(2);
+    c->tags.artist = pickAt(3);
+    c->tags.album = pickAt(4);
+    c->tags.albumArtist = pickAt(5);
+    c->tags.genre = pickAt(6);
+    c->tags.year = pickAt(7);
+    c->tags.trackNo = pickAt(8);
+    c->tags.discNo = pickAt(9);
+    napi_value promise;
+    napi_create_promise(env, &c->deferred, &promise);
+    napi_value name;
+    napi_create_string_utf8(env, "timbravaTags", NAPI_AUTO_LENGTH, &name);
+    napi_create_async_work(env, nullptr, name, ExecuteTags, CompleteTags, c, &c->work);
+    napi_queue_async_work(env, c->work);
+    return promise;
+}
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
 {
@@ -350,6 +424,7 @@ static napi_value Init(napi_env env, napi_value exports)
         {"setSpeed", nullptr, JSetSpeed, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setSkipSilence", nullptr, JSetSkipSilence, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"analyzeFd", nullptr, JAnalyzeFd, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"writeFlacTags", nullptr, JWriteFlacTags, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

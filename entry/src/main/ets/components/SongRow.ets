@@ -132,6 +132,13 @@ export struct SongRow {
         .onClick(() => {
           PlayerController.get().toggleFavoriteFor(this.song.id);
         })
+      MenuItem({ content: '编辑标签(FLAC)' })
+        .onClick(() => {
+          const stack = this.navStack();
+          if (stack !== null) {
+            stack.pushPathByName('TagEditor', this.song.id);
+          }
+        })
       MenuItem({ content: '查看专辑' })
         .onClick(() => {
           const stack = this.navStack();

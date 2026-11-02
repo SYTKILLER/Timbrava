@@ -4,6 +4,7 @@ import { LibraryStore } from '../../data/LibraryStore';
 import { Song, Artist, Genre } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';
 import { RgScanner } from '../../service/RgScanner';
+import { TagEditorParam } from './TagEditor';
 import { QueueService } from '../../service/QueueService';
 import { PlaylistRepo } from '../../data/PlaylistRepo';
 import { PlayerController } from '../../service/PlayerController';
@@ -107,6 +108,16 @@ export struct SongListDest {
       MenuItem({ content: '扫描本列表 ReplayGain' })
         .onClick(() => {
           RgScanner.get().scan(this.songs);
+        })
+      MenuItem({ content: '批量修改标签(写回 FLAC)' })
+        .onClick(() => {
+          const stack = AppStorage.get<NavPathStack>('navStack');
+          if (stack !== undefined && stack !== null) {
+            const p = new TagEditorParam();
+            p.batch = true;
+            p.songIds = this.songs.map((s: Song): number => s.id);
+            stack.pushPathByName('TagEditor', p);
+          }
         })
     }
   }

@@ -191,6 +191,10 @@ export struct SettingsTab {
               this.NavItem('扫描文件夹管理', '选择音乐目录、开始扫描', (): void => {
                 this.nav().pushPathByName('ScanSettings', null);
               })
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              this.NavItem('重复清理', '检测同曲多份记录并从库移除', (): void => {
+                this.nav().pushPathByName('Duplicates', null);
+              })
             }
           }
 

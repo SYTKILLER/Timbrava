@@ -18,6 +18,8 @@ import { EqualizerDest } from './settings/Equalizer';
 import { AboutDest } from './settings/About';
 import { SearchDest } from './detail/Search';
 import { QueueBoardDest } from './queue/QueueBoard';
+import { TagEditorDest } from './detail/TagEditor';
+import { DuplicatesDest } from './library/Duplicates';
 
 const TAG = '[Timbrava][Index]';
 const DOMAIN = 0x0001;
@@ -163,6 +165,10 @@ struct Index {
       SearchDest()
     } else if (name === 'QueueBoard') {
       QueueBoardDest()
+    } else if (name === 'TagEditor') {
+      TagEditorDest()
+    } else if (name === 'Duplicates') {
+      DuplicatesDest()
     }
   }
 }

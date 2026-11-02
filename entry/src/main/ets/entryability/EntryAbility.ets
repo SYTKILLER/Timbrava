@@ -94,6 +94,7 @@ const TAG = '[Timbrava][Ability]';
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, 'Ability onCreate');
+    AppStorage.setOrCreate('uiAbilityContext', this.context);
     AppStorage.setOrCreate('playerVer', 0);
     AppStorage.setOrCreate('posVer', 0);
     AppStorage.setOrCreate('libVer', 0);

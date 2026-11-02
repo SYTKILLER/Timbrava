@@ -71,6 +71,22 @@
       "data": {
         "description": "歌词打轴编辑器"
       }
+    },
+    {
+      "name": "TagEditor",
+      "pageSourceFile": "src/main/ets/pages/detail/TagEditor.ets",
+      "buildFunction": "TagEditorBuilder",
+      "data": {
+        "description": "标签编辑"
+      }
+    },
+    {
+      "name": "Duplicates",
+      "pageSourceFile": "src/main/ets/pages/library/Duplicates.ets",
+      "buildFunction": "DuplicatesBuilder",
+      "data": {
+        "description": "重复清理"
+      }
     }
   ]
 }
