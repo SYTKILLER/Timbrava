@@ -37,6 +37,8 @@ static napi_value JOpenFd(napi_env env, napi_callback_info info)
         napi_set_named_property(env, result, "channels", v);
         napi_create_int32(env, trackInfo.bitsPerSample, &v);
         napi_set_named_property(env, result, "bitDepth", v);
+        napi_create_int32(env, trackInfo.dsdRate, &v);
+        napi_set_named_property(env, result, "dsdRate", v);
         napi_create_int64(env, trackInfo.totalFrames, &v);
         napi_set_named_property(env, result, "totalFrames", v);
         napi_create_string_utf8(env, trackInfo.codec, NAPI_AUTO_LENGTH, &v);

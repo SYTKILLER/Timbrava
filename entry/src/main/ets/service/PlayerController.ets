@@ -192,9 +192,13 @@ export class PlayerController {
     }
     this.engine = target;
     this.engineKind = target.getKind();
-    this.engineInfo = target.getKind() === EngineKind.LOSSLESS
-      ? `无损引擎 ${info.codec.toUpperCase()} ${info.bitDepth}bit/${info.sampleRate}Hz`
-      : '系统引擎';
+    if (target.getKind() === EngineKind.LOSSLESS) {
+      this.engineInfo = info.codec === 'dsd' && info.dsdRate > 0
+        ? `无损引擎 DSD${Math.round(info.dsdRate / 44100)}(PCM 88.2k 抽取)`
+        : `无损引擎 ${info.codec.toUpperCase()} ${info.bitDepth}bit/${info.sampleRate}Hz`;
+    } else {
+      this.engineInfo = '系统引擎';
+    }
     this.currentSong = song;
     this.abStartMs = -1;
     this.abEndMs = -1;

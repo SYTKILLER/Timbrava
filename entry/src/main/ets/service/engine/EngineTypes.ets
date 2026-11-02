@@ -7,11 +7,12 @@ export enum EngineKind {
 }
 
 export class EngineTrackInfo {
-  sampleRate: number = 0;
+  sampleRate: number = 0;   // PCM 渲染率(DSD = 抽取后 88200)
   channels: number = 0;
   bitDepth: number = 0;
   durationMs: number = 0;
   codec: string = '';
+  dsdRate: number = 0;      // 原始 DSD 采样率(Hz;PCM 为 0)
 
   static EMPTY(): EngineTrackInfo {
     return new EngineTrackInfo();

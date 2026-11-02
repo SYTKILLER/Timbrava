@@ -9,6 +9,7 @@
 #include <cstring>
 #include "flac_decoder.h"
 #include "wav_decoder.h"
+#include "dsd_decoder.h"
 
 namespace timbrava {
 
@@ -57,17 +58,22 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
     stopTrack();
 
     std::lock_guard<std::mutex> lk(stateM_);
-    // 试 FLAC,失败再试 WAV
-    auto flac = std::make_unique<FlacDecoder>();
-    if (flac->openFile(fd, TrackInfo{})) {
-        decoder_ = std::move(flac);
+    // 探测链:DSD(magic 确定性,最先)→ FLAC → WAV
+    auto dsd = std::make_unique<DsdDecoder>();
+    if (dsd->openFile(fd, TrackInfo{})) {
+        decoder_ = std::move(dsd);
     } else {
-        auto wav = std::make_unique<WavDecoder>();
-        if (wav->openFile(fd, TrackInfo{})) {
-            decoder_ = std::move(wav);
+        auto flac = std::make_unique<FlacDecoder>();
+        if (flac->openFile(fd, TrackInfo{})) {
+            decoder_ = std::move(flac);
         } else {
-            *errMsg = "unsupported or corrupted file (flac/wav probe failed)";
-            return false;
+            auto wav = std::make_unique<WavDecoder>();
+            if (wav->openFile(fd, TrackInfo{})) {
+                decoder_ = std::move(wav);
+            } else {
+                *errMsg = "unsupported or corrupted file (dsd/flac/wav probe failed)";
+                return false;
+            }
         }
     }
 

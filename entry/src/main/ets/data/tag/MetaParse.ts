@@ -828,6 +828,107 @@ function readZone(head: ReadAt, size: number, off: number, len: number): Uint8Ar
   return clampRead(head, size, off, len);
 }
 
+// ---------------- DSD(DSF/DFF)头探测(P2:登记时长/采样率;解码在 native 引擎) ----------------
+
+// DSF:'DSD '(28B) + 'fmt '(52B) + 'data';小端。
+function parseDsfHead(head: ReadAt, fileSize: number, meta: SongMeta): void {
+  const z = readZone(head, fileSize, 28, 60);
+  if (z.length < 60 || !matchTag(z, 0, 'fmt ')) {
+    return;
+  }
+  // fmt 内偏移:formatVersion(12) formatId(16) channelType(20) channelNum(24)
+  //            samplingRate(28) bitsPerSample(32) sampleCount(36..44) blockSize(44)
+  const chNum = u32le(z, 24);
+  const rate = u32le(z, 28);
+  const bits = u32le(z, 32);
+  const sampleCount = Number(u64leFrom(z, 36));
+  const blockSize = u32le(z, 44);
+  if (rate < 1000000 || bits !== 1 || sampleCount <= 0 || blockSize !== 4096) {
+    return;
+  }
+  // 'data' 块:偏移 28+52=80 起(4B 'data' + 8B size)
+  const dz = readZone(head, fileSize, 80, 12);
+  if (dz.length >= 12 && matchTag(dz, 0, 'data')) {
+    const dataSize = Number(u64leFrom(dz, 4));
+    if (dataSize > 0 && chNum > 0) {
+      const bytesPerCh = Math.floor(dataSize / chNum);
+      meta.durationMs = Math.round(bytesPerCh * 8 * 1000 / rate);
+    }
+  }
+  meta.sampleRate = rate;
+  meta.bitDepth = 1;
+  meta.channels = chNum;
+  meta.ok = true;
+}
+
+// DFF(DSDIFF):FRM8 容器,大端;FS(采样率)/CHNL(声道)/DSD(数据)。
+function parseDffHead(head: ReadAt, fileSize: number, meta: SongMeta): void {
+  let off = 12; // FRM8(4) + size(8);form type 'DSD ' 已含
+  let rate = 0;
+  let chNum = 0;
+  let dsdStart = -1;
+  let dsdSize = 0;
+  for (let guard = 0; guard < 64; guard++) {
+    const hz = readZone(head, fileSize, off, 12);
+    if (hz.length < 12) {
+      break;
+    }
+    const id = latin1Decode(hz.subarray(0, 4));
+    const sz = Number(u64beFrom(hz, 4));
+    if (sz <= 0 || sz > 0x7fffffff) {
+      break;
+    }
+    if (id === 'FS  ') {
+      const z = readZone(head, fileSize, off + 12, 4);
+      if (z.length >= 4) {
+        rate = u32be(z, 0);
+      }
+    } else if (id === 'CHNL') {
+      const z = readZone(head, fileSize, off + 12, 2);
+      if (z.length >= 2) {
+        chNum = u16be(z, 0);
+      }
+    } else if (id === 'CMPR') {
+      const z = readZone(head, fileSize, off + 12, 4);
+      if (z.length >= 4 && latin1Decode(z.subarray(0, 4)) === 'DST ') {
+        return; // DST 压缩:P2 不支持
+      }
+    } else if (id === 'DSD ') {
+      dsdStart = off + 12;
+      dsdSize = sz;
+    }
+    off += 12 + sz + (sz % 2 === 1 ? 1 : 0);
+    if (dsdStart >= 0 && rate > 0 && chNum > 0) {
+      break;
+    }
+  }
+  if (dsdStart < 0 || rate < 1000000 || chNum < 1) {
+    return;
+  }
+  const bytesPerCh = Math.floor(dsdSize / chNum);
+  meta.durationMs = Math.round(bytesPerCh * 8 * 1000 / rate);
+  meta.sampleRate = rate;
+  meta.bitDepth = 1;
+  meta.channels = chNum;
+  meta.ok = true;
+}
+
+function u64leFrom(z: Uint8Array, off: number): bigint {
+  let v = BigInt(0);
+  for (let i = 7; i >= 0; i--) {
+    v = (v << BigInt(8)) | BigInt(z[off + i] ?? 0);
+  }
+  return v;
+}
+
+function u64beFrom(z: Uint8Array, off: number): bigint {
+  let v = BigInt(0);
+  for (let i = 0; i < 8; i++) {
+    v = (v << BigInt(8)) | BigInt(z[off + i] ?? 0);
+  }
+  return v;
+}
+
 export function parseAudioMeta(fileName: string, fileSize: number,
   head: ReadAt, tail: ReadAt): SongMeta {
   const meta = new SongMeta();
@@ -862,8 +963,12 @@ export function parseAudioMeta(fileName: string, fileSize: number,
     } else if (ext === 'aac') {
       parseAac(head, fileSize, meta, fileSize);
       meta.ok = meta.sampleRate > 0;
-    } else if (ext === 'dsf' || ext === 'dff' || ext === 'wv' || ext === 'wma') {
-      // P0 仅探测登记,P2 解码
+    } else if (ext === 'dsf') {
+      parseDsfHead(head, fileSize, meta);
+    } else if (ext === 'dff') {
+      parseDffHead(head, fileSize, meta);
+    } else if (ext === 'wv' || ext === 'wma') {
+      // 不支持的容器:仅登记文件名
       meta.ok = true;
     }
   } catch (e) {

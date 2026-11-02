@@ -14,6 +14,7 @@ interface NativeTrackInfo {
   sampleRate: number;
   channels: number;
   bitDepth: number;
+  dsdRate: number;
   totalFrames: number;
   codec: string;
 }
@@ -76,6 +77,7 @@ export class LosslessEngine implements IAudioEngine {
       this.info.channels = res.channels;
       this.info.bitDepth = res.bitDepth;
       this.info.codec = res.codec;
+      this.info.dsdRate = res.dsdRate;
       this.info.durationMs = res.totalFrames > 0 && this.info.sampleRate > 0
         ? Math.round(res.totalFrames * 1000 / this.info.sampleRate) : 0;
       hilog.info(DOMAIN, TAG, 'open ok %{public}s %{public}dHz %{public}dch %{public}dbit dur=%{public}d',

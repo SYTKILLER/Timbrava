@@ -11,11 +11,12 @@ namespace timbrava {
 enum class OutputFormat { U8, S16LE, S32LE, F32LE };
 
 struct TrackInfo {
-    int sampleRate = 0;
+    int sampleRate = 0;      // PCM 输出率(DSD 时为抽取后的 88200)
     int channels = 0;
-    int bitsPerSample = 0;   // 源位深(展示/路由用)
+    int bitsPerSample = 0;   // 源位深(展示/路由用;DSD 固定 1)
     int64_t totalFrames = 0; // 采样帧数;未知为 -1
-    const char *codec = "";  // flac / wav
+    const char *codec = "";  // flac / wav / dsd
+    int dsdRate = 0;         // 原始 DSD 采样率(Hz;PCM 为 0)
 };
 
 class IDecoder {
