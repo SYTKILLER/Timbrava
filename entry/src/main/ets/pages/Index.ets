@@ -13,6 +13,7 @@ import { FullPlayerDest } from './player/FullPlayer';
 import { SongListDest } from './detail/SongList';
 import { FolderTreeDest } from './detail/FolderTree';
 import { ScanSettingsDest } from './settings/ScanSettings';
+import { EqualizerDest } from './settings/Equalizer';
 import { AboutDest } from './settings/About';
 import { SearchDest } from './detail/Search';
 import { QueueBoardDest } from './queue/QueueBoard';
@@ -151,6 +152,8 @@ struct Index {
       FolderTreeDest()
     } else if (name === 'ScanSettings') {
       ScanSettingsDest()
+    } else if (name === 'Equalizer') {
+      EqualizerDest()
     } else if (name === 'About') {
       AboutDest()
     } else if (name === 'Search') {

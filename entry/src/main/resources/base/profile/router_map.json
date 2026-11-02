@@ -55,6 +55,14 @@
       "data": {
         "description": "队列板"
       }
+    },
+    {
+      "name": "Equalizer",
+      "pageSourceFile": "src/main/ets/pages/settings/Equalizer.ets",
+      "buildFunction": "EqualizerBuilder",
+      "data": {
+        "description": "31 段均衡器"
+      }
     }
   ]
 }

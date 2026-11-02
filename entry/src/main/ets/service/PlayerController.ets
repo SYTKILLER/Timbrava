@@ -14,7 +14,7 @@ import { QueueService } from './QueueService';
 import { Song, RepeatMode } from '../data/Model';
 import { IAudioEngine, EngineKind, EngineEventData, EngineEventKind, EngineTrackInfo } from './engine/EngineTypes';
 import { SystemEngine } from './engine/SystemEngine';
-import { LosslessEngine } from './engine/LosslessEngine';
+import { LosslessEngine, NativeAnalyzeResult } from './engine/LosslessEngine';
 import { PEQ_FREQS, presetBands } from './EqPresets';
 
 const TAG = '[Timbrava][Player]';
@@ -473,6 +473,16 @@ export class PlayerController {
 
   isSkipSilenceOn(): boolean {
     return SettingsService.get().skipSilence;
+  }
+
+  // ReplayGain 扫描通道(AnalysisService 用;无损引擎独有,系统引擎格式不支持)
+  async analyzeFdForScan(fd: number): Promise<NativeAnalyzeResult> {
+    return this.losslessEngine.analyzeFd(fd);
+  }
+
+  // 扫描完成后即时重应用 DSP(正在播放曲目用新增益)
+  reapplyCurrentDsp(): void {
+    this.applyDspToEngine();
   }
 
   toggleFavorite(): void {

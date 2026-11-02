@@ -450,6 +450,57 @@ bool Engine::dspActive() const
     return peqEnabled_.load() || rgMode_.load() != 0 || skipSilence_.load();
 }
 
+// ReplayGain 扫描:独立解码器全曲解码 → 50ms 块 RMS → 95 分位。
+// 在 napi 异步工作线程运行;与播放管线共享的只有 dsp.cpp 的分析静态区
+// (ArkTS 侧保证同一时间只有一次扫描)。
+bool Engine::analyzeTrack(int fd, float *outRmsDb, float *outPeak, int64_t *outDurationMs, std::string *errMsg)
+{
+    if (outRmsDb == nullptr || outPeak == nullptr || outDurationMs == nullptr || errMsg == nullptr) {
+        return false;
+    }
+    std::unique_ptr<IDecoder> dec;
+    auto flac = std::make_unique<FlacDecoder>();
+    if (flac->openFile(fd, TrackInfo{})) {
+        dec = std::move(flac);
+    } else {
+        auto wav = std::make_unique<WavDecoder>();
+        if (wav->openFile(fd, TrackInfo{})) {
+            dec = std::move(wav);
+        } else {
+            *errMsg = "unsupported codec for rg scan (flac/wav only)";
+            return false;
+        }
+    }
+    const TrackInfo info = dec->info();
+    const int ch = info.channels > 0 ? info.channels : 2;
+    const OutputFormat fmt = dec->outFormat();
+    const int bps = fmt == OutputFormat::U8 ? 1 : fmt == OutputFormat::S16LE ? 2 : 4;
+
+    timbrava::dspAnalyzeReset();
+    std::vector<uint8_t> buf(256 * 1024);
+    int64_t totalFrames = 0;
+    for (;;) {
+        const int64_t maxFrames = static_cast<int64_t>(buf.size()) / (static_cast<int64_t>(bps) * ch);
+        const int64_t got = dec->readFrames(buf.data(), maxFrames, buf.size());
+        if (got <= 0) {
+            break;
+        }
+        totalFrames += got;
+        std::vector<float> fbuf(static_cast<size_t>(got) * ch);
+        timbrava::convertToInterleavedF32(buf.data(), static_cast<size_t>(got) * ch * bps, fmt, fbuf.data());
+        timbrava::dspAnalyzeBlock(fbuf.data(), static_cast<size_t>(got), ch);
+    }
+    float rms = 0.0f;
+    float peak = 0.0f;
+    timbrava::dspAnalyzeFinish(&rms, &peak);
+    *outRmsDb = rms;
+    *outPeak = peak;
+    *outDurationMs = info.sampleRate > 0 ? totalFrames * 1000 / info.sampleRate : 0;
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "analyze done frames=%{public}lld rms=%{public}f peak=%{public}f",
+                 static_cast<long long>(totalFrames), rms, peak);
+    return true;
+}
+
 void Engine::setVolume(float vol)
 {
     volume_ = std::max(0.0f, std::min(1.0f, vol));

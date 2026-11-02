@@ -100,6 +100,7 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate('queueVer', 0);
     AppStorage.setOrCreate('scanVer', 0);
     AppStorage.setOrCreate('themeVer', 0);
+    AppStorage.setOrCreate('rgScanVer', 0);
     AppStorage.setOrCreate('prefThemeMode', 'system');
     AppStorage.setOrCreate('themePageBg', '');
     PlayerController.get().init(this.context).then(async (): Promise<void> => {

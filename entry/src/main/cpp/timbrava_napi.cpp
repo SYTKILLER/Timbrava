@@ -214,6 +214,67 @@ static napi_value JShutdown(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
+// ---------------- ReplayGain 扫描(napi 异步工作,Promise 返回) ----------------
+
+struct AnalyzeCarrier {
+    int fd = -1;
+    bool ok = false;
+    std::string errMsg;
+    float rmsDb = 0.0f;
+    float peak = 0.0f;
+    int64_t durationMs = 0;
+    napi_deferred deferred = nullptr;
+    napi_async_work work = nullptr;
+};
+
+static void ExecuteAnalyze(napi_env env, void *data)
+{
+    AnalyzeCarrier *c = static_cast<AnalyzeCarrier *>(data);
+    c->ok = timbrava::Engine::instance().analyzeTrack(c->fd, &c->rmsDb, &c->peak, &c->durationMs, &c->errMsg);
+}
+
+static void CompleteAnalyze(napi_env env, napi_status status, void *data)
+{
+    AnalyzeCarrier *c = static_cast<AnalyzeCarrier *>(data);
+    napi_value result = nullptr;
+    napi_create_object(env, &result);
+    napi_value v;
+    napi_get_boolean(env, c->ok, &v);
+    napi_set_named_property(env, result, "ok", v);
+    if (c->ok) {
+        napi_create_double(env, static_cast<double>(c->rmsDb), &v);
+        napi_set_named_property(env, result, "rmsDb", v);
+        napi_create_double(env, static_cast<double>(c->peak), &v);
+        napi_set_named_property(env, result, "peak", v);
+        napi_create_double(env, static_cast<double>(c->durationMs), &v);
+        napi_set_named_property(env, result, "durationMs", v);
+    } else {
+        napi_create_string_utf8(env, c->errMsg.c_str(), NAPI_AUTO_LENGTH, &v);
+        napi_set_named_property(env, result, "msg", v);
+    }
+    napi_resolve_deferred(env, c->deferred, result);
+    napi_delete_async_work(env, c->work);
+    delete c;
+}
+
+static napi_value JAnalyzeFd(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    AnalyzeCarrier *c = new AnalyzeCarrier();
+    if (argc >= 1) {
+        napi_get_value_int32(env, args[0], &c->fd);
+    }
+    napi_value promise;
+    napi_create_promise(env, &c->deferred, &promise);
+    napi_value name;
+    napi_create_string_utf8(env, "timbravaAnalyze", NAPI_AUTO_LENGTH, &name);
+    napi_create_async_work(env, nullptr, name, ExecuteAnalyze, CompleteAnalyze, c, &c->work);
+    napi_queue_async_work(env, c->work);
+    return promise;
+}
+
 static napi_value JSetSpeed(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -286,6 +347,7 @@ static napi_value Init(napi_env env, napi_value exports)
         {"setReplayGain", nullptr, JSetReplayGain, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setSpeed", nullptr, JSetSpeed, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setSkipSilence", nullptr, JSetSkipSilence, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"analyzeFd", nullptr, JAnalyzeFd, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

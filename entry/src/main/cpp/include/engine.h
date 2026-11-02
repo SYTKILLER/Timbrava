@@ -41,6 +41,9 @@ public:
     void setSkipSilence(bool on);
     void setSpeed(float speed);
     bool dspActive() const;
+    // ReplayGain 扫描(同步,重活;由 napi 异步工作线程调用,勿在 JS 线程调):
+    // 整曲解码测 95 分位块 RMS 与峰值。与播放引擎互不干扰(独立解码器实例)。
+    bool analyzeTrack(int fd, float *outRmsDb, float *outPeak, int64_t *outDurationMs, std::string *errMsg);
     void pollEvents(std::vector<std::string> &out);
     void shutdown();
 

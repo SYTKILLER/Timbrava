@@ -3,6 +3,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { LibraryStore } from '../../data/LibraryStore';
 import { Song, Artist, Genre } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';
+import { RgScanner } from '../../service/RgScanner';
 import { QueueService } from '../../service/QueueService';
 import { PlaylistRepo } from '../../data/PlaylistRepo';
 import { PlayerController } from '../../service/PlayerController';
@@ -100,6 +101,16 @@ export struct SongListDest {
     PlayerController.get().playQueueIndex(q.locateCurrent());
   }
 
+  @Builder
+  listMenu() {
+    Menu() {
+      MenuItem({ content: '扫描本列表 ReplayGain' })
+        .onClick(() => {
+          RgScanner.get().scan(this.songs);
+        })
+    }
+  }
+
   build() {
     NavDestination() {
       Column() {
@@ -111,6 +122,16 @@ export struct SongListDest {
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Button({ stateEffect: true }) {
+            SymbolGlyph($r('sys.symbol.waveform'))
+              .fontSize(16)
+              .fontColor([$r('app.color.text_primary')])
+          }
+          .width(34)
+          .height(34)
+          .backgroundColor(Color.Transparent)
+          .bindMenu(this.listMenu())
+
           Button('存为歌单')
             .fontSize(13)
             .fontColor($r('app.color.text_primary'))

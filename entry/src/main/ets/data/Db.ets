@@ -210,6 +210,17 @@ export class Db {
     await st.update(bucket, pred);
   }
 
+  // ReplayGain 扫描结果写回
+  async updateSongRg(id: number, trackGain: number, trackPeak: number, albumGain: number, albumPeak: number): Promise<void> {
+    const bucket: relationalStore.ValuesBucket = {
+      'rg_track_gain': trackGain,
+      'rg_track_peak': trackPeak,
+      'rg_album_gain': albumGain,
+      'rg_album_peak': albumPeak
+    };
+    await this.updateSongFields(id, bucket);
+  }
+
   async getSongsByPathPrefix(prefix: string): Promise<string[]> {
     const st = this.storeOrThrow();
     const rs = await st.querySql('SELECT path FROM songs WHERE path LIKE ?', [`${prefix}%`]);

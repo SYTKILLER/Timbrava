@@ -3,6 +3,8 @@
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SettingsService, ThemeMode } from '../../service/SettingsService';
+import { RgScanner, RgScanState } from '../../service/RgScanner';
+import { LibraryStore } from '../../data/LibraryStore';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 
 const TAG = '[Timbrava][SettingsTab]';
@@ -201,7 +203,20 @@ export struct SettingsTab {
                 sub: '按源采样率/位深建流;关闭后全部走系统引擎'
               })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
+              this.NavItem('均衡器(31 段 PEQ)', '预设 / 自定义曲线 / AutoEq 导入', (): void => {
+                this.nav().pushPathByName('Equalizer', null);
+              })
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              RgModeRow()
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
               this.InfoItem('系统引擎兜底', 'MP3/OGG/M4A/APE 等由 AVPlayer 播放;无损引擎出错自动回退')
+            }
+          }
+
+          // 响度分析(ReplayGain 扫描)
+          CardSection({ title: '响度分析' }) {
+            Column() {
+              RgScanSection()
             }
           }
 
@@ -304,3 +319,122 @@ const THEME_OPTIONS: ThemeOption[] = [
   new ThemeOption('dark'),
   new ThemeOption('black')
 ];
+
+// ReplayGain 应用模式行(0 关 / 1 按曲目 / 2 按专辑)
+@Component
+struct RgModeRow {
+  @StorageProp('prefRgMode') prefRgMode: number = 0;
+
+  private label(m: number): string {
+    if (m === 1) {
+      return '按曲目';
+    }
+    if (m === 2) {
+      return '按专辑';
+    }
+    return '关闭';
+  }
+
+  build() {
+    Column({ space: 8 }) {
+      Row({ space: 10 }) {
+        SymbolGlyph($r('sys.symbol.waveform'))
+          .fontSize(18)
+          .fontColor([$r('app.color.accent')])
+        Text('ReplayGain')
+          .fontSize(15)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      Text('先在「响度分析」里扫描曲库,再选择应用模式')
+        .fontSize(11)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+      Row({ space: 8 }) {
+        ForEach([0, 1, 2], (m: number) => {
+          Button(this.label(m))
+            .fontSize(13)
+            .fontColor(this.prefRgMode === m ? $r('app.color.on_accent') : $r('app.color.text_primary'))
+            .backgroundColor(this.prefRgMode === m ? $r('app.color.accent') : $r('app.color.badge_bg'))
+            .borderRadius(10)
+            .height(34)
+            .layoutWeight(1)
+            .onClick(() => {
+              SettingsService.get().setRgMode(m);
+            })
+        }, (m: number): string => `rg_${m}`)
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: 10, bottom: 10 })
+  }
+}
+
+// 响度分析扫描区:全库扫描按钮 + 进度
+@Component
+struct RgScanSection {
+  @StorageProp('rgScanVer') rgScanVer: number = 0;
+
+  private st(): RgScanState {
+    return RgScanner.get().state;
+  }
+
+  build() {
+    Column({ space: 8 }) {
+      Row({ space: 10 }) {
+        SymbolGlyph($r('sys.symbol.waveform'))
+          .fontSize(18)
+          .fontColor([$r('app.color.accent')])
+        Column({ space: 2 }) {
+          Text('ReplayGain 扫描')
+            .fontSize(15)
+            .fontColor($r('app.color.text_primary'))
+          Text('全曲解码测响度(仅 FLAC/WAV),耗时与曲库大小成正比')
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+      }
+      .width('100%')
+
+      if (this.rgScanVer < 0) {
+        Text('')
+      } else if (this.st().running) {
+        Text(`扫描中 ${this.st().current}/${this.st().total}${this.st().albumLabel.length > 0 ? ' · ' + this.st().albumLabel : ''}`)
+          .fontSize(12)
+          .fontColor($r('app.color.accent'))
+          .width('100%')
+        Button('取消扫描')
+          .fontSize(12)
+          .height(32)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.badge_bg'))
+          .onClick(() => {
+            RgScanner.get().cancel();
+          })
+      } else {
+        if (this.st().done) {
+          Text(`上次扫描完成${this.st().failCount > 0 ? ',失败 ' + this.st().failCount + ' 首' : ''}`)
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+        }
+        Button('扫描全库')
+          .fontSize(13)
+          .height(36)
+          .fontColor($r('app.color.on_accent'))
+          .backgroundColor($r('app.color.accent'))
+          .onClick(() => {
+            RgScanner.get().scan(LibraryStore.get().songs);
+          })
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: 10, bottom: 10 })
+  }
+}

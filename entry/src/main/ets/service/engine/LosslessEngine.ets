@@ -35,7 +35,16 @@ interface NativeModule {
   setReplayGain(trackGainDb: number, trackPeak: number, albumGainDb: number, albumPeak: number, mode: number): void;
   setSpeed(speed: number): void;
   setSkipSilence(on: boolean): void;
+  analyzeFd(fd: number): Promise<NativeAnalyzeResult>;
 };
+
+export interface NativeAnalyzeResult {
+  ok: boolean;
+  msg: string;
+  rmsDb: number;
+  peak: number;
+  durationMs: number;
+}
 
 export class LosslessEngine implements IAudioEngine {
   private cb: EngineEventCb | null = null;
@@ -162,6 +171,11 @@ export class LosslessEngine implements IAudioEngine {
 
   setSkipSilence(on: boolean): void {
     (timbravaCore as NativeModule).setSkipSilence(on);
+  }
+
+  // ReplayGain 扫描(native 异步工作线程;fd 在 promise 完成前保持有效)
+  async analyzeFd(fd: number): Promise<NativeAnalyzeResult> {
+    return (timbravaCore as NativeModule).analyzeFd(fd);
   }
 
   release(): void {
