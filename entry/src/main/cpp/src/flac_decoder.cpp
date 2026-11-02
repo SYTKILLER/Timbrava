@@ -60,6 +60,10 @@ bool FlacDecoder::openFile(int fd, const TrackInfo &hint)
         OH_LOG_Print(LOG_APP, LOG_ERROR, 0, LOG_TAG, "fdopen fail errno=%{public}d", errno);
         return false;
     }
+    // dup 共享文件偏移:前序探测可能已消费字节,统一回卷
+    if (fseek(file_, 0, SEEK_SET) != 0) {
+        OH_LOG_Print(LOG_APP, LOG_ERROR, 0, LOG_TAG, "fseek rewind fail errno=%{public}d", errno);
+    }
     flac_ = drflac_open(FlacReadCb, FlacSeekCb, FlacTellCb, file_, nullptr);
     if (flac_ == nullptr) {
         OH_LOG_Print(LOG_APP, LOG_ERROR, 0, LOG_TAG, "drflac_open fail(非 FLAC 或头损坏)");

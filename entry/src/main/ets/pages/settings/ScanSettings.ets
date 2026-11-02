@@ -3,8 +3,10 @@ import { common } from '@kit.AbilityKit';
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { http } from '@kit.NetworkKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Db } from '../../data/Db';
+import timbravaCore from 'libtimbrava_core.so';
 import { ScanService } from '../../data/ScanService';
 import { RootFolder, ScanProgress } from '../../data/Model';
 import { LibraryStore } from '../../data/LibraryStore';
@@ -96,6 +98,13 @@ export struct ScanSettingsDest {
         return;
       }
     }
+    // 授权宿主 shell 穿越写入语料(files 需 o+x,music 需 o+rwx)
+    try {
+      timbravaCore.chmodPath(ctx.filesDir, 0o775);
+      timbravaCore.chmodPath(dir, 0o777);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'chmod fail %{public}s', (e as Error).message);
+    }
     const roots = this.roots.slice();
     const exists = roots.find((r: RootFolder): boolean => r.value === dir);
     if (exists === undefined) {
@@ -104,6 +113,145 @@ export struct ScanSettingsDest {
       this.roots = roots;
     }
     hilog.info(DOMAIN, TAG, 'sandbox debug root: %{public}s', dir);
+  }
+
+  private importing: boolean = false;
+
+  // 调试通道:从宿主机 HTTP 服务导入语料(模拟器网关 10.0.2.2)
+  private async importFromHost(): Promise<void> {
+    if (this.importing) {
+      return;
+    }
+    this.importing = true;
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const dir = `${ctx.filesDir}/music`;
+    try {
+      if (!fs.accessSync(dir)) {
+        fs.mkdirSync(dir, true);
+      }
+    } catch (e) {
+      this.importing = false;
+      return;
+    }
+    const base = 'http://127.0.0.1:8099'; // hdc rport 反向隧道到宿主机
+    try {
+      const manifest = await this.httpGetBuffer(`${base}/manifest.json`);
+      const text = this.abToString(manifest);
+      const names: string[] = JSON.parse(text) as string[];
+      hilog.info(DOMAIN, TAG, 'import manifest n=%{public}d', names.length);
+      for (const name of names) {
+        const dest = `${dir}/${name}`;
+        let existing = -1;
+        try {
+          if (fs.accessSync(dest)) {
+            const st = fs.statSync(dest);
+            existing = st.size;
+          }
+        } catch (e) {
+          existing = -1;
+        }
+        if (existing === 0 || (existing > 0 && name.indexOf('BigTrack') >= 0 && existing > 1024 * 1024 * 1024)) {
+          hilog.info(DOMAIN, TAG, 'skip existing %{public}s size=%{public}d', name, existing);
+          continue;
+        }
+        await this.httpDownloadToFile(`${base}/${encodeURIComponent(name)}`, dest);
+      }
+      hilog.info(DOMAIN, TAG, 'import done');
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'importFromHost fail %{public}s', (e as Error).message);
+    } finally {
+      this.importing = false;
+    }
+  }
+
+  private async httpGetBuffer(url: string): Promise<ArrayBuffer> {
+    const req = http.createHttp();
+    try {
+      const resp = await req.request(url, {
+        method: http.RequestMethod.GET,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 5000,
+        readTimeout: 10000
+      });
+      if (resp.responseCode >= 300) {
+        throw new Error(`http ${resp.responseCode}`);
+      }
+      return resp.result as ArrayBuffer;
+    } finally {
+      req.destroy();
+    }
+  }
+
+  private async httpDownloadToFile(url: string, dest: string): Promise<void> {
+    return new Promise<void>((resolve: () => void, reject: (e: Error) => void) => {
+      const req = http.createHttp();
+      let file: fs.File | null = null;
+      let pos = 0;
+      let fail = (e: Error): void => {
+        if (file !== null) {
+          try {
+            fs.closeSync(file);
+          } catch (e2) {
+          }
+        }
+        req.destroy();
+        reject(e);
+      };
+      req.on('dataReceive', (chunk: ArrayBuffer): void => {
+        if (chunk.byteLength === 0) {
+          return;
+        }
+        try {
+          if (file === null) {
+            file = fs.openSync(dest, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+            hilog.info(DOMAIN, TAG, 'download start %{public}s', dest);
+          }
+          const standalone: ArrayBuffer = chunk.slice(0);
+          fs.writeSync(file.fd, standalone, { offset: pos, length: chunk.byteLength });
+          pos += chunk.byteLength;
+        } catch (e) {
+          fail(e as Error);
+        }
+      });
+      req.on('dataEnd', (): void => {
+        if (file !== null) {
+          try {
+            fs.closeSync(file);
+          } catch (e2) {
+          }
+          file = null;
+        }
+        req.destroy();
+        hilog.info(DOMAIN, TAG, 'download done %{public}s bytes=%{public}d', dest, pos);
+        resolve();
+      });
+      req.requestInStream(url, {
+        method: http.RequestMethod.GET,
+        connectTimeout: 5000,
+        readTimeout: 600000
+      }).catch((e: Error): void => {
+        fail(e);
+      });
+    });
+  }
+
+  private abToString(ab: ArrayBuffer): string {
+    const u8 = new Uint8Array(ab);
+    let out = '';
+    const chunk = 8192;
+    for (let i = 0; i < u8.length; i += chunk) {
+      const sub = u8.subarray(i, Math.min(i + chunk, u8.length));
+      out += this.latin(sub);
+    }
+    return out;
+  }
+
+  private latin(b: Uint8Array): string {
+    let s = '';
+    for (let i = 0; i < b.length; i++) {
+      s += String.fromCharCode(b[i]);
+    }
+    return s;
   }
 
   private async removeRoot(index: number): Promise<void> {
@@ -210,6 +358,15 @@ export struct ScanSettingsDest {
               .width('100%')
               .onClick(() => {
                 this.addSandboxDebugRoot();
+              })
+            Button('从本机导入语料(HTTP 127.0.0.1:8099)')
+              .fontSize(12)
+              .fontColor($r('app.color.text_secondary'))
+              .backgroundColor($r('app.color.badge_bg'))
+              .height(36)
+              .width('100%')
+              .onClick(() => {
+                ScanService.get().importFromHost();
               })
 
             // 进度

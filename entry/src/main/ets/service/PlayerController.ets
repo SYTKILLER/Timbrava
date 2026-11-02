@@ -111,7 +111,10 @@ export class PlayerController {
   private chooseEngine(song: Song): IAudioEngine {
     const losslessPref = SettingsService.get().losslessEngine;
     const isNativeCodec = song.codec === 'flac' || song.codec === 'wav';
-    if (losslessPref && isNativeCodec && this.losslessEngine.available()) {
+    const pick = losslessPref && isNativeCodec && this.losslessEngine.available();
+    hilog.info(DOMAIN, TAG, 'route codec=%{public}s losslessPref=%{public}s native=%{public}s -> %{public}d',
+      song.codec, String(losslessPref), String(isNativeCodec), pick ? 1 : 0);
+    if (pick) {
       return this.losslessEngine;
     }
     return this.systemEngine;

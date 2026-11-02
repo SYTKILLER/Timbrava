@@ -6,6 +6,7 @@ import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../service/PlayerController';
 import { AppTheme, SafeAreaResult } from '../common/Theme';
 import { formatDuration } from '../data/Model';
+import { MiniPlayer } from '../components/MiniPlayer';
 import { LibraryTab } from './library/LibraryTab';
 import { QueueTab } from './queue/QueueTab';
 import { SettingsTab } from './settings/SettingsTab';
@@ -51,17 +52,17 @@ struct Index {
           TabContent() {
             LibraryTab()
           }
-          .tabBar(new BottomTabBarStyle(this.tabSymbol($r('sys.symbol.music_note_list')), '音乐库'))
+          .tabBar(this.tabIcon($r('sys.symbol.music_note_list'), '音乐库', 0))
 
           TabContent() {
             QueueTab()
           }
-          .tabBar(new BottomTabBarStyle(this.tabSymbol($r('sys.symbol.list_bullet')), '队列'))
+          .tabBar(this.tabIcon($r('sys.symbol.list_bullet'), '队列', 1))
 
           TabContent() {
             SettingsTab()
           }
-          .tabBar(new BottomTabBarStyle(this.tabSymbol($r('sys.symbol.gearshape')), '设置'))
+          .tabBar(this.tabIcon($r('sys.symbol.gearshape'), '设置', 2))
         }
         .vertical(false)
         .scrollable(true)
@@ -71,7 +72,7 @@ struct Index {
         .width('100%')
         .height('100%')
 
-        this.MiniPlayer()
+        MiniPlayer()
       }
       .width('100%')
       .height('100%')
@@ -83,83 +84,18 @@ struct Index {
   }
 
   @Builder
-  MiniPlayer() {
-    Row({ space: 12 }) {
-      if (this.currentArt().length > 0) {
-        Image(this.currentArt())
-          .width(44)
-          .height(44)
-          .borderRadius(8)
-          .objectFit(ImageFit.Cover)
-      } else {
-        Column() {
-          SymbolGlyph($r('sys.symbol.music_note_list'))
-            .fontSize(20)
-            .fontColor([$r('app.color.accent')])
-        }
-        .width(44)
-        .height(44)
-        .borderRadius(8)
-        .backgroundColor($r('app.color.badge_bg'))
-        .justifyContent(FlexAlign.Center)
-      }
-      Column({ space: 2 }) {
-        Text(this.currentTitle())
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.currentArtist() + ' · ' + formatDuration(this.posMs()) + ' / ' + formatDuration(this.durMs()))
-          .fontSize(11)
-          .fontColor($r('app.color.text_secondary'))
-          .maxLines(1)
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      Button({ stateEffect: true }) {
-        SymbolGlyph(this.isPlayingNow() ? $r('sys.symbol.pause_fill') : $r('sys.symbol.play_fill'))
-          .fontSize(22)
-          .fontColor([$r('app.color.on_accent')])
-      }
-      .width(40)
-      .height(40)
-      .borderRadius(20)
-      .backgroundColor($r('app.color.accent'))
-      .onClick(() => {
-        PlayerController.get().playPause();
-      })
-
-      Button({ stateEffect: true }) {
-        SymbolGlyph($r('sys.symbol.forward_end_fill'))
-          .fontSize(20)
-          .fontColor([$r('app.color.text_primary')])
-      }
-      .width(36)
-      .height(36)
-      .backgroundColor(Color.Transparent)
-      .onClick(() => {
-        PlayerController.get().playNext();
-      })
+  tabIcon(res: Resource, label: string, idx: number) {
+    Column({ space: 3 }) {
+      SymbolGlyph(res)
+        .fontSize(22)
+        .fontColor([this.activeTab === idx ? $r('app.color.accent') : $r('app.color.text_secondary')])
+      Text(label)
+        .fontSize(10)
+        .fontColor(this.activeTab === idx ? $r('app.color.accent') : $r('app.color.text_secondary'))
     }
-    .width('96%')
-    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-    .borderRadius(16)
-    .backgroundColor($r('app.color.mini_player_bg'))
-    .shadow({ radius: 24, color: '#22000000', offsetX: 0, offsetY: 4 })
-    .margin({ bottom: this.bottomSafe + 66 })
-    .visibility(this.hasSong() ? Visibility.Visible : Visibility.None)
-    .onClick(() => {
-      this.navStack.pushPathByName('FullPlayer', null);
-    })
-  }
-
-  private tabSymbol(res: Resource): TabBarSymbol {
-    const sym = new TabBarSymbol();
-    sym.normal = new SymbolGlyphModifier(res);
-    sym.selected = new SymbolGlyphModifier(res);
-    return sym;
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .height(52)
   }
 
   private hasSong(): boolean {

@@ -5,6 +5,8 @@
 
 #include <string>
 #include <vector>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "include/engine.h"
 
@@ -155,6 +157,31 @@ static napi_value JShutdown(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
+
+// 调试/验证通道:应用对自己沙箱目录授权(宿主 shell uid 需穿越写入语料)
+static napi_value JChmodPath(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    char path[512] = {0};
+    size_t len = 0;
+    int mode = 0;
+    if (argc >= 1) {
+        napi_get_value_string_utf8(env, args[0], path, sizeof(path), &len);
+    }
+    if (argc >= 2) {
+        napi_get_value_int32(env, args[1], &mode);
+    }
+    int rc = ::chmod(path, static_cast<mode_t>(mode));
+    if (rc != 0) {
+        OH_LOG_Print(LOG_APP, LOG_WARN, 0, LOG_TAG, "chmod %{public}s -> %{public}d fail errno=%{public}d", path, mode, errno);
+    }
+    napi_value result;
+    napi_get_boolean(env, rc == 0, &result);
+    return result;
+}
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
 {
@@ -170,6 +197,7 @@ static napi_value Init(napi_env env, napi_value exports)
         {"getTrackInfo", nullptr, JGetTrackInfo, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"pollEvents", nullptr, JPollEvents, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"shutdown", nullptr, JShutdown, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"chmodPath", nullptr, JChmodPath, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

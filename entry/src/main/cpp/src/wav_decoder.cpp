@@ -36,6 +36,10 @@ bool WavDecoder::openFile(int fd, const TrackInfo &hint)
         return false;
     }
 
+    // dup 共享文件偏移:前序探测可能已消费字节,统一回卷
+    if (fseek(file_, 0, SEEK_SET) != 0) {
+        OH_LOG_Print(LOG_APP, LOG_ERROR, 0, LOG_TAG, "fseek rewind fail errno=%{public}d", errno);
+    }
     uint8_t hdr[12];
     if (fread(hdr, 1, 12, file_) != 12 || std::memcmp(hdr, "RIFF", 4) != 0 || std::memcmp(hdr + 8, "WAVE", 4) != 0) {
         OH_LOG_Print(LOG_APP, LOG_ERROR, 0, LOG_TAG, "非 RIFF/WAVE 头");

@@ -98,7 +98,17 @@ export class SystemEngine implements IAudioEngine {
       const f = await fs.open(uri, fs.OpenMode.READ_ONLY);
       this.fd = f.fd;
       p.url = `fd://${this.fd}`;
-      this.state = 'initialized';
+      // url 设置是异步迁移,必须等 initialized 事件再 prepare
+      const waitInit = async (): Promise<void> => {
+        for (let i = 0; i < 50; i++) {
+          if (this.state === 'initialized') {
+            return;
+          }
+          await new Promise<void>((r: () => void) => setTimeout(r, 20));
+        }
+        throw new Error('timeout waiting initialized state');
+      };
+      await waitInit();
       await p.prepare();
       this.durationMs = p.duration > 0 ? p.duration : 0;
       hilog.info(DOMAIN, TAG, 'open ok dur=%{public}d uri_len=%{public}d', this.durationMs, uri.length);

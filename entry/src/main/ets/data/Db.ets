@@ -283,6 +283,26 @@ export class Db {
     }
   }
 
+  async dumpArtPaths(): Promise<void> {
+    const st = this.storeOrThrow();
+    const rs = await st.querySql('SELECT title, art_path FROM songs LIMIT 12');
+    while (rs.goToNextRow()) {
+      hilog.info(DOMAIN, TAG, 'art[%{public}s] = %{public}s', rs.getString(0), rs.getString(1));
+    }
+    rs.close();
+  }
+
+  // 迁移:存量 art_path 补 file:// 前缀
+  async migrateArtUri(): Promise<void> {
+    const st = this.storeOrThrow();
+    try {
+      await st.executeSql(
+        "UPDATE songs SET art_path = 'file://' || art_path WHERE art_path != '' AND art_path NOT LIKE 'file://%'");
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'migrateArtUri fail %{public}s', (e as Error).message);
+    }
+  }
+
   // ============ 队列持久化(双写:内存为权威) ============
 
   async saveQueue(queueId: string, title: string, songIds: number[], activeIndex: number, activePosMs: number,

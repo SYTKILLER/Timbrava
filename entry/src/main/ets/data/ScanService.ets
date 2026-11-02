@@ -1,6 +1,7 @@
 // 媒体库扫描:根目录(路径/URI)递归遍历 → 扩展名过滤 → 标签解析 → 差分入库 → 封面缓存。
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
+import { http } from '@kit.NetworkKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { relationalStore } from '@kit.ArkData';
 import { Db } from './Db';
@@ -10,6 +11,11 @@ import { isAudioExt, parseAudioMeta, SongMeta } from './tag/MetaParse';
 import { fnv1a } from './tag/Bytes';
 
 const TAG = '[Timbrava][Scan]';
+
+class ManifestEntry {
+  name: string = '';
+  size: number = 0;
+}
 const DOMAIN = 0x0001;
 
 export class ScanService {
@@ -136,6 +142,146 @@ export class ScanService {
     }
   }
 
+  // ============ 调试导入通道(宿主机 HTTP,经 hdc rport 反向隧道) ============
+
+  private importing: boolean = false;
+
+  async importFromHost(): Promise<void> {
+    if (this.importing) {
+      return;
+    }
+    this.importing = true;
+    if (this.context === null) {
+      this.importing = false;
+      return;
+    }
+    const dir = `${this.context.filesDir}/music`;
+    try {
+      if (!fs.accessSync(dir)) {
+        fs.mkdirSync(dir, true);
+      }
+    } catch (e) {
+      this.importing = false;
+      return;
+    }
+    const base = 'http://127.0.0.1:8099';
+    try {
+      const manifest = await this.httpGetBuffer(`${base}/manifest.json`);
+      const entries: ManifestEntry[] = JSON.parse(this.abToString(manifest)) as ManifestEntry[];
+      hilog.info(DOMAIN, TAG, 'import manifest n=%{public}d', entries.length);
+      for (const ent of entries) {
+        const dest = `${dir}/${ent.name}`;
+        let existing = -1;
+        try {
+          if (fs.accessSync(dest)) {
+            existing = fs.statSync(dest).size;
+          }
+        } catch (e) {
+          existing = -1;
+        }
+        if (existing === ent.size) {
+          hilog.info(DOMAIN, TAG, 'skip ok %{public}s size=%{public}d', ent.name, existing);
+          continue;
+        }
+        hilog.info(DOMAIN, TAG, 'need %{public}s existing=%{public}d want=%{public}d', ent.name, existing, ent.size);
+        let ok = false;
+        for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+          try {
+            await this.httpDownloadToFile(`${base}/${encodeURIComponent(ent.name)}`, dest, ent.size);
+            ok = true;
+          } catch (e) {
+            hilog.warn(DOMAIN, TAG, 'attempt %{public}d fail %{public}s', attempt, (e as Error).message);
+          }
+        }
+      }
+      hilog.info(DOMAIN, TAG, 'import done');
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'importFromHost fail %{public}s', (e as Error).message);
+    } finally {
+      this.importing = false;
+    }
+  }
+
+  private async httpGetBuffer(url: string): Promise<ArrayBuffer> {
+    const req = http.createHttp();
+    try {
+      const resp = await req.request(url, {
+        method: http.RequestMethod.GET,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 5000,
+        readTimeout: 10000
+      });
+      if (resp.responseCode >= 300) {
+        throw new Error(`http ${resp.responseCode}`);
+      }
+      return resp.result as ArrayBuffer;
+    } finally {
+      req.destroy();
+    }
+  }
+
+  // Range 分块下载:每 48KB 一条新连接(绕模拟器 rport 隧道 64KB 停摆问题)
+  private async httpDownloadToFile(url: string, dest: string, wantSize: number): Promise<void> {
+    const CHUNK = 48 * 1024;
+    let file: fs.File | null = null;
+    try {
+      file = fs.openSync(dest, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      let pos = 0;
+      while (pos < wantSize) {
+        const end = Math.min(pos + CHUNK, wantSize) - 1;
+        const buf = await this.httpGetRange(`${url}`, pos, end);
+        if (buf.byteLength <= 0) {
+          throw new Error(`empty chunk at ${pos}`);
+        }
+        const standalone: ArrayBuffer = buf.slice(0);
+        fs.writeSync(file.fd, standalone, { offset: pos, length: buf.byteLength });
+        pos += buf.byteLength;
+      }
+      hilog.info(DOMAIN, TAG, 'download done %{public}s bytes=%{public}d', dest, pos);
+    } finally {
+      if (file !== null) {
+        try {
+          fs.closeSync(file);
+        } catch (e2) {
+        }
+      }
+    }
+  }
+
+  private async httpGetRange(url: string, from: number, to: number): Promise<ArrayBuffer> {
+    let lastErr: Error = new Error('range fetch failed');
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const req = http.createHttp();
+      try {
+        const resp = await req.request(url, {
+          method: http.RequestMethod.GET,
+          expectDataType: http.HttpDataType.ARRAY_BUFFER,
+          connectTimeout: 4000,
+          readTimeout: 12000,
+          header: { 'Range': `bytes=${from}-${to}` }
+        });
+        if (resp.responseCode === 206 || resp.responseCode === 200) {
+          return resp.result as ArrayBuffer;
+        }
+        lastErr = new Error(`http ${resp.responseCode}`);
+      } catch (e) {
+        lastErr = e as Error;
+      } finally {
+        req.destroy();
+      }
+    }
+    throw lastErr;
+  }
+
+  private abToString(ab: ArrayBuffer): string {
+    const u8 = new Uint8Array(ab);
+    let out = '';
+    for (let i = 0; i < u8.length; i++) {
+      out += String.fromCharCode(u8[i]);
+    }
+    return out;
+  }
+
   // 解析单文件并入库(含封面缓存)
   async parseAndStore(cand: FileCandidate, mtime: number, fsize: number): Promise<boolean> {
     if (this.context === null) {
@@ -240,7 +386,7 @@ export class ScanService {
       const standalone: ArrayBuffer = data.slice().buffer as ArrayBuffer;
       fs.writeSync(f.fd, standalone);
       fs.closeSync(f);
-      return path;
+      return `file://${path}`; // Image 组件需要 file:// URI;AVSession mediaImage 同样兼容
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'saveCover fail %{public}s', (e as Error).message);
       return '';
