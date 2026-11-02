@@ -33,6 +33,8 @@ export class AppTheme {
   }
 
   // 页面安全区:沉浸式后需要避让状态栏/导航条(px → vp)
+  // 结果同步写 AppStorage token(topSafeVp/bottomSafeVp):兄弟组件(MiniPlayer 等)经 @StorageProp 绑定,
+  // 底部避让硬性下限 28vp。
   static async safeAreas(ctx: common.Context | null): Promise<SafeAreaResult> {
     const fallback = new SafeAreaResult();
     try {
@@ -45,11 +47,16 @@ export class AppTheme {
       const density = display.getDefaultDisplaySync().densityPixels;
       fallback.topVp = sys.topRect.height / (density > 0 ? density : 3);
       fallback.bottomVp = Math.max(nav.bottomRect.height / (density > 0 ? density : 3), 28);
-      return fallback;
     } catch (e) {
-      return fallback;
+      // 保持回退值
     }
+    AppStorage.setOrCreate('topSafeVp', fallback.topVp);
+    AppStorage.setOrCreate('bottomSafeVp', fallback.bottomVp);
+    return fallback;
   }
+
+  // 悬浮页签(HdsTabs barFloatingStyle)总占位:栏高 56 + barBottomMargin 预留 8
+  static readonly FLOAT_BAR_GAP: number = 64;
 }
 
 export class SafeAreaResult {

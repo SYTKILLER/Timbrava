@@ -1,11 +1,14 @@
 // 迷你播放条(独立组件:@StorageProp 绑定刷新依赖,build 内重求值)
+// 底部抬升 = 导航条避让(bottomSafeVp,≥28) + 悬浮页签占位(56) + 间距,避免被导航条/页签遮挡。
 import { PlayerController } from '../service/PlayerController';
+import { AppTheme } from '../common/Theme';
 import { formatDuration } from '../data/Model';
 
 @Component
 export struct MiniPlayer {
   @StorageProp('playerVer') @Watch('onChange') playerVer: number = 0;
   @StorageProp('posVer') @Watch('onChange') posVer: number = 0;
+  @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State visible: boolean = false;
   @State title: string = '';
   @State artist: string = '';
@@ -113,6 +116,7 @@ export struct MiniPlayer {
     }
     .width('96%')
     .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+    .margin({ bottom: this.bottomSafeVp + AppTheme.FLOAT_BAR_GAP + 8 })
     .borderRadius(16)
     .backgroundColor($r('app.color.mini_player_bg'))
     .shadow({ radius: 24, color: '#22000000', offsetX: 0, offsetY: 4 })

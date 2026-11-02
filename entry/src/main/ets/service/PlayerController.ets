@@ -539,6 +539,7 @@ export class PlayerController {
       : this.queue.repeat === RepeatMode.ALL ? avSession.LoopMode.LOOP_MODE_LIST : avSession.LoopMode.LOOP_MODE_SEQUENCE;
     const state: avSession.AVPlaybackState = { loopMode: loop };
     s.setAVPlaybackState(state).catch((e: Error): void => {
+      hilog.warn(DOMAIN, TAG, 'setAVPlaybackState loopMode fail %{public}s', e.message);
     });
   }
 

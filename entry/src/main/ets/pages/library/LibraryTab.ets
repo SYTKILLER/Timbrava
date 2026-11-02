@@ -49,6 +49,7 @@ export struct LibraryTab {
   @StorageProp('libVer') @Watch('onLibChanged') libVer: number = 0;
   @StorageProp('scanVer') scanVer: number = 0;
   @StorageProp('themePageBg') themePageBg: string = '';
+  @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State segmentIndex: number = 0;
   @State topSafe: number = 36;
   private songSrc: SongSource = new SongSource();
@@ -181,7 +182,7 @@ export struct LibraryTab {
       .width('100%')
       .height('100%')
       .cachedCount(8)
-      .padding({ bottom: 140 })
+      .padding({ bottom: this.bottomSafeVp + 140 })
       .scrollBar(BarState.Auto)
     }
   }
@@ -220,7 +221,7 @@ export struct LibraryTab {
       .columnsTemplate('1fr 1fr 1fr')
       .columnsGap(12)
       .rowsGap(16)
-      .padding({ left: 16, right: 16, bottom: 140 })
+      .padding({ left: 16, right: 16, bottom: this.bottomSafeVp + 140 })
       .width('100%')
       .height('100%')
       .scrollBar(BarState.Auto)
@@ -268,7 +269,7 @@ export struct LibraryTab {
       }
       .width('100%')
       .height('100%')
-      .padding({ bottom: 140 })
+      .padding({ bottom: this.bottomSafeVp + 140 })
       .scrollBar(BarState.Auto)
     }
   }
@@ -306,7 +307,7 @@ export struct LibraryTab {
       }
       .width('100%')
       .height('100%')
-      .padding({ bottom: 140 })
+      .padding({ bottom: this.bottomSafeVp + 140 })
       .scrollBar(BarState.Auto)
     }
   }
@@ -350,7 +351,7 @@ export struct LibraryTab {
       }
       .width('100%')
       .height('100%')
-      .padding({ bottom: 140 })
+      .padding({ bottom: this.bottomSafeVp + 140 })
       .scrollBar(BarState.Auto)
     }
   }

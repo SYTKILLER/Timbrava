@@ -15,6 +15,7 @@ export struct QueueTab {
   @StorageProp('queueVer') @Watch('onQueueChanged') queueVer: number = 0;
   @StorageProp('playerVer') playerVer: number = 0;
   @StorageProp('themePageBg') themePageBg: string = '';
+  @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State topSafe: number = 36;
   @State items: Song[] = [];
   @State curIndex: number = -1;
@@ -109,7 +110,7 @@ export struct QueueTab {
         }
         .width('100%')
         .layoutWeight(1)
-        .padding({ bottom: 140 })
+        .padding({ bottom: this.bottomSafeVp + 140 })
         .scrollBar(BarState.Auto)
       }
     }
@@ -166,7 +167,7 @@ export struct QueueTab {
     Button({ stateEffect: true }) {
       SymbolGlyph(this.repeatIcon())
         .fontSize(18)
-        .fontColor([$r('app.color.text_primary')])
+        .fontColor([QueueService.get().repeat === RepeatMode.OFF ? $r('app.color.text_primary') : $r('app.color.accent')])
     }
     .width(36)
     .height(36)
@@ -182,9 +183,6 @@ export struct QueueTab {
     const r = QueueService.get().repeat;
     if (r === RepeatMode.ONE) {
       return $r('sys.symbol.repeat_1');
-    }
-    if (r === RepeatMode.ALL) {
-      return $r('sys.symbol.repeat');
     }
     return $r('sys.symbol.repeat');
   }

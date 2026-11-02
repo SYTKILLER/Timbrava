@@ -5,7 +5,6 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../service/PlayerController';
 import { AppTheme, SafeAreaResult } from '../common/Theme';
-import { formatDuration } from '../data/Model';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { LibraryTab } from './library/LibraryTab';
 import { QueueTab } from './queue/QueueTab';

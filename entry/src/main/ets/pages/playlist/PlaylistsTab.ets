@@ -21,6 +21,7 @@ function safeFileName(name: string): string {
 export struct PlaylistsTab {
   @StorageProp('libVer') @Watch('onLibChanged') libVer: number = 0;
   @StorageProp('themePageBg') themePageBg: string = '';
+  @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State topSafe: number = 36;
   @State playlists: PlaylistInfo[] = [];
   @State newName: string = '';
@@ -219,7 +220,7 @@ export struct PlaylistsTab {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
-        .padding({ bottom: 140 })
+        .padding({ bottom: this.bottomSafeVp + 140 })
       }
     }
     .width('100%')
