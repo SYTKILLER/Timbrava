@@ -979,6 +979,78 @@
     {
       "name": "cancel",
       "value": "Cancel"
+    },
+    {
+      "name": "tab_pro",
+      "value": "Pro"
+    },
+    {
+      "name": "tab_mine",
+      "value": "Me"
+    },
+    {
+      "name": "pro_output",
+      "value": "Live output"
+    },
+    {
+      "name": "pro_idle",
+      "value": "Not playing"
+    },
+    {
+      "name": "pro_tools",
+      "value": "Pro tools"
+    },
+    {
+      "name": "pro_cap_flac",
+      "value": "FLAC 24bit"
+    },
+    {
+      "name": "pro_cap_dsd",
+      "value": "DSD engine"
+    },
+    {
+      "name": "pro_cap_cue",
+      "value": "CUE sheets"
+    },
+    {
+      "name": "pro_cap_gapless",
+      "value": "Gapless"
+    },
+    {
+      "name": "mine_stats_total",
+      "value": "Total played"
+    },
+    {
+      "name": "mine_general",
+      "value": "General"
+    },
+    {
+      "name": "smart_recent",
+      "value": "Recently played"
+    },
+    {
+      "name": "smart_most",
+      "value": "Most played"
+    },
+    {
+      "name": "recent_added",
+      "value": "Recently added"
+    },
+    {
+      "name": "lrc_tool",
+      "value": "Lyrics timing"
+    },
+    {
+      "name": "lrc_tool_sub",
+      "value": "Time-align tags for current song"
+    },
+    {
+      "name": "mine_browse",
+      "value": "Browse"
+    },
+    {
+      "name": "browse_folder",
+      "value": "Folder browser"
     }
   ]
 }

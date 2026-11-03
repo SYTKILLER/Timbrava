@@ -138,7 +138,7 @@
     },
     {
       "name": "tab_library",
-      "value": "音乐库"
+      "value": "曲库"
     },
     {
       "name": "folder_empty_hint",
@@ -979,6 +979,78 @@
     {
       "name": "cancel",
       "value": "取消"
+    },
+    {
+      "name": "tab_pro",
+      "value": "专业"
+    },
+    {
+      "name": "tab_mine",
+      "value": "我的"
+    },
+    {
+      "name": "pro_output",
+      "value": "实时输出"
+    },
+    {
+      "name": "pro_idle",
+      "value": "暂无播放"
+    },
+    {
+      "name": "pro_tools",
+      "value": "专业工具"
+    },
+    {
+      "name": "pro_cap_flac",
+      "value": "FLAC 24bit 硬解"
+    },
+    {
+      "name": "pro_cap_dsd",
+      "value": "DSD 引擎"
+    },
+    {
+      "name": "pro_cap_cue",
+      "value": "CUE 分轨"
+    },
+    {
+      "name": "pro_cap_gapless",
+      "value": "Gapless 无缝"
+    },
+    {
+      "name": "mine_stats_total",
+      "value": "累计播放"
+    },
+    {
+      "name": "mine_general",
+      "value": "通用"
+    },
+    {
+      "name": "smart_recent",
+      "value": "最近播放"
+    },
+    {
+      "name": "smart_most",
+      "value": "最常播放"
+    },
+    {
+      "name": "recent_added",
+      "value": "最近添加"
+    },
+    {
+      "name": "lrc_tool",
+      "value": "歌词打轴"
+    },
+    {
+      "name": "lrc_tool_sub",
+      "value": "对当前播放歌曲打轴编辑"
+    },
+    {
+      "name": "mine_browse",
+      "value": "浏览"
+    },
+    {
+      "name": "browse_folder",
+      "value": "文件夹浏览"
     }
   ]
 }
