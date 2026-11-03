@@ -51,6 +51,10 @@
     {
       "name": "control_fg",
       "value": "#3A2A20"
+    },
+    {
+      "name": "tab_bar_mask",
+      "value": "#CCF7F7F8"
     }
   ]
 }

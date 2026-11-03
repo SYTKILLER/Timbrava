@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 底部页签渐变蒙版(参考 PixLume):HdsTabs barFloatingStyle 的 gradientMask 由全透明改为半透明渐变蒙版——新增 `app.color.tab_bar_mask` token(浅色 #CCF7F7F8 / 深色 #99000000,随主题切换),maskHeight 72(栏高 56+16),内容滚入页签栏下方时呈现柔和渐隐。
+
 ### Fixed
 
 - 二级页面状态栏避让:窗口为全屏沉浸布局(setWindowLayoutFullScreen)时系统默认避让失效,NavDestination 默认标题栏顶到状态栏下。为 歌词打轴/歌曲列表/文件夹树/搜索/标签编辑/均衡器/重复清理/队列管理 8 个二级页面的 NavDestination 统一补 `.padding({ top: topSafeVp })`(读 AppStorage 'topSafeVp',由 AppTheme.safeAreas 写入);FullPlayer/扫描设置/关于 此前已自行避让,未动。

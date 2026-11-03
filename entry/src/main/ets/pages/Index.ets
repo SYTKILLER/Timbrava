@@ -97,7 +97,8 @@ struct Index {
     const st: HdsTabsFloatingStyle = {
       barSideMargin: 16,
       barBottomMargin: 28, // 抬起高度 28vp
-      gradientMask: { maskColor: '#00000000' },
+      // 半透明渐变蒙版(参考 PixLume):浅色/深色各一份 token,高度=栏高56+16
+      gradientMask: { maskColor: $r('app.color.tab_bar_mask'), maskHeight: 72 },
       systemMaterialEffect: { // 沉浸光感材质
         materialType: hdsMaterial.MaterialType.IMMERSIVE,
         materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
