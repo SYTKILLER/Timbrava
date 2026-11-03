@@ -57,6 +57,33 @@ export class AppTheme {
 
   // 悬浮页签(HdsTabs barFloatingStyle)总占位:栏高 56 + barBottomMargin 预留 8
   static readonly FLOAT_BAR_GAP: number = 64;
+
+  // 实时监听避让区变化(参考 PixLume AvoidanceManager):全屏布局生效/旋转/折叠屏时
+  // 系统会触发 avoidAreaChange,把最新值回写 AppStorage,页面经 @StorageProp 自动刷新。
+  // 必须监听:safeAreas 只在启动读一次,会早于 setWindowLayoutFullScreen 生效拿到旧值。
+  static watchAvoidAreas(ctx: common.Context | null): void {
+    try {
+      if (ctx === null) {
+        return;
+      }
+      window.getLastWindow(ctx).then((win: window.Window): void => {
+        win.on('avoidAreaChange', (data: window.AvoidAreaOptions): void => {
+          const density = display.getDefaultDisplaySync().densityPixels;
+          const d = density > 0 ? density : 3;
+          if (data.type === window.AvoidAreaType.TYPE_SYSTEM) {
+            const topVp = data.area.topRect.height / d;
+            AppStorage.setOrCreate('topSafeVp', topVp);
+            hilog.info(DOMAIN, TAG, 'avoidArea top=%{public}d', Math.round(topVp));
+          } else if (data.type === window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) {
+            const bottomVp = Math.max(data.area.bottomRect.height / d, 28);
+            AppStorage.setOrCreate('bottomSafeVp', bottomVp);
+          }
+        });
+      });
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'watchAvoidAreas fail %{public}s', (e as Error).message);
+    }
+  }
 }
 
 export class SafeAreaResult {
