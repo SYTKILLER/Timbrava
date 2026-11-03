@@ -736,11 +736,7 @@
       "name": "theme_dark",
       "value": "深色"
     },
-    {
-      "name": "theme_black",
-      "value": "纯黑"
-    },
-    {
+        {
       "name": "follow_system",
       "value": "跟随系统"
     },
@@ -955,6 +951,34 @@
     {
       "name": "scan_progress_stats",
       "value": "新增 %d · 更新 %d · 移除 %d"
+    },
+    {
+      "name": "check_update",
+      "value": "检查更新"
+    },
+    {
+      "name": "checking_update",
+      "value": "正在检查…"
+    },
+    {
+      "name": "already_latest",
+      "value": "已是最新版本"
+    },
+    {
+      "name": "new_version_found",
+      "value": "发现新版本 %s"
+    },
+    {
+      "name": "view_release",
+      "value": "前往发布页"
+    },
+    {
+      "name": "check_update_failed",
+      "value": "检查更新失败"
+    },
+    {
+      "name": "cancel",
+      "value": "取消"
     }
   ]
 }

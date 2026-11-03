@@ -20,7 +20,6 @@ export class ThemeMode {
   static readonly SYSTEM: string = 'system';
   static readonly LIGHT: string = 'light';
   static readonly DARK: string = 'dark';
-  static readonly BLACK: string = 'black';
 }
 
 export class SettingsService {
@@ -59,6 +58,9 @@ export class SettingsService {
     }
     const db = Db.get();
     this.themeMode = await db.getSetting('themeMode', ThemeMode.SYSTEM);
+    if (this.themeMode === 'black') {
+      this.themeMode = ThemeMode.DARK; // 纯黑选项已移除,旧值迁移为深色
+    }
     this.losslessEngine = (await db.getSetting('losslessEngine', '1')) === '1';
     this.pauseOnHeadphoneOff = (await db.getSetting('pauseOnHeadphoneOff', '1')) === '1';
     this.pauseOnBtOff = (await db.getSetting('pauseOnBtOff', '1')) === '1';

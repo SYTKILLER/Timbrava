@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- 关于页新增"检查更新":请求 GitHub Releases 最新版(api.github.com),与包版本号逐段数字比较;有新版弹窗(版本号+发布页链接,可跳系统浏览器),无新版/失败 toast 反馈;按钮带检查中状态。
+
+### Changed
+
+- 主题移除"纯黑"选项(跟随系统/浅色/深色三选);AppTheme 删除 BLACK 分支,SettingsService 加载时把存量 'black' 值迁移为深色。
+- 关于页状态栏避让补齐:改用 @StorageProp('topSafeVp')+NavDestination 根 padding(此前只避让了内容区,默认标题栏仍顶到状态栏)。
+
 ### Fixed
 
 - 二级页面状态栏避让未生效根因修复:AppTheme.safeAreas 只在 Index.aboutToAppear 读一次,早于 setWindowLayoutFullScreen(true) 生效(时序在 loadContent 回调内),拿到的是全屏前的旧避让值且此后无人更新。对齐 PixLume AvoidanceManager 与《踩坑记录汇总》§4.3/《开发规范》§4:全屏生效后重读一次避让区,并新增 AppTheme.watchAvoidAreas 实时监听 window.on('avoidAreaChange')(TYPE_SYSTEM→topSafeVp / TYPE_NAVIGATION_INDICATOR→bottomSafeVp,px→vp,底部兜底≥28vp),页面 @StorageProp 自动刷新。

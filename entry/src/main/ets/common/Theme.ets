@@ -16,9 +16,6 @@ export class AppTheme {
       cm = ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT;
     } else if (mode === ThemeMode.DARK) {
       cm = ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
-    } else if (mode === ThemeMode.BLACK) {
-      cm = ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
-      bgOverride = '#000000';
     }
     if (ctx !== null) {
       try {

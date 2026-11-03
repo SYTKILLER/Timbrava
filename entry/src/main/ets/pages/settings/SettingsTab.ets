@@ -112,9 +112,6 @@ struct ThemeRow {
     if (mode === ThemeMode.DARK) {
       return $r('app.string.theme_dark');
     }
-    if (mode === ThemeMode.BLACK) {
-      return $r('app.string.theme_black');
-    }
     return $r('app.string.follow_system');
   }
 
@@ -343,8 +340,7 @@ class ThemeOption {
 const THEME_OPTIONS: ThemeOption[] = [
   new ThemeOption('system'),
   new ThemeOption('light'),
-  new ThemeOption('dark'),
-  new ThemeOption('black')
+  new ThemeOption('dark')
 ];
 
 // 播放页皮肤(#53):标准(大封面)/极简

@@ -736,11 +736,7 @@
       "name": "theme_dark",
       "value": "Dark"
     },
-    {
-      "name": "theme_black",
-      "value": "Pure Black"
-    },
-    {
+        {
       "name": "follow_system",
       "value": "Follow System"
     },
@@ -955,6 +951,34 @@
     {
       "name": "scan_progress_stats",
       "value": "Added %d · Updated %d · Removed %d"
+    },
+    {
+      "name": "check_update",
+      "value": "Check for updates"
+    },
+    {
+      "name": "checking_update",
+      "value": "Checking…"
+    },
+    {
+      "name": "already_latest",
+      "value": "Already up to date"
+    },
+    {
+      "name": "new_version_found",
+      "value": "New version %s available"
+    },
+    {
+      "name": "view_release",
+      "value": "Open release page"
+    },
+    {
+      "name": "check_update_failed",
+      "value": "Update check failed"
+    },
+    {
+      "name": "cancel",
+      "value": "Cancel"
     }
   ]
 }
