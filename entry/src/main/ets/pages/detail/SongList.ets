@@ -16,6 +16,7 @@ const DOMAIN = 0x0001;
 @Component
 export struct SongListDest {
   @StorageProp('libVer') @Watch('onLibChanged') libVer: number = 0;
+  @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
   @State songs: Song[] = [];
   @State title: ResourceStr = '';
   @State param: SongListParam = new SongListParam();
@@ -196,6 +197,7 @@ export struct SongListDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
+    .padding({ top: this.topSafeVp })
     .title(this.title)
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;

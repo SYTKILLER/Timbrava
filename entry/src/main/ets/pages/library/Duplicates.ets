@@ -21,6 +21,7 @@ function normKey(s: string): string {
 @Component
 export struct DuplicatesDest {
   @StorageProp('libVer') libVer: number = 0;
+  @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
   @State groups: DupGroup[] = [];
   private pathStack: NavPathStack | null = null;
 
@@ -150,6 +151,7 @@ export struct DuplicatesDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
+    .padding({ top: this.topSafeVp })
     .title($r('app.string.duplicates_title'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;

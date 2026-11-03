@@ -37,6 +37,7 @@ function fmtLrcTime(ms: number): string {
 export struct LyricsEditorDest {
   @StorageProp('playerVer') playerVer: number = 0;
   @StorageProp('posVer') posVer: number = 0;
+  @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
   @State lines: EditorLine[] = [];
   @State songId: number = -1;
   @State loaded: boolean = false;
@@ -323,6 +324,7 @@ export struct LyricsEditorDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
+    .padding({ top: this.topSafeVp })
     .title($r('app.string.lyrics_sync_title'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;

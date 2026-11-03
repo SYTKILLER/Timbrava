@@ -18,6 +18,7 @@ export class TagEditorParam {
 
 @Component
 export struct TagEditorDest {
+  @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
   @State songId: number = -1;
   @State batch: boolean = false;
   @State batchIds: number[] = [];
@@ -223,6 +224,7 @@ export struct TagEditorDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
+    .padding({ top: this.topSafeVp })
     .title(this.batch ? $r('app.string.batch_tag_title') : $r('app.string.edit_tags'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;

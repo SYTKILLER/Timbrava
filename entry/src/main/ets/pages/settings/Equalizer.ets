@@ -78,6 +78,7 @@ struct EqTextDialog {
 
 @Component
 export struct EqualizerDest {
+  @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
   @StorageProp('prefEqOn') prefEqOn: boolean = false;
   @StorageProp('prefEqPreset') prefEqPreset: string = 'flat';
   @State bands: number[] = flatBands();
@@ -367,6 +368,7 @@ export struct EqualizerDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
+    .padding({ top: this.topSafeVp })
     .title($r('app.string.equalizer'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;

@@ -19,6 +19,7 @@ class FlatRow {
 @Component
 export struct FolderTreeDest {
   @StorageProp('libVer') libVer: number = 0;
+  @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
   @State rows: FlatRow[] = [];
   @State expanded: Set<string> = new Set<string>();
   @State title: ResourceStr = $r('app.string.str_folder');
@@ -104,6 +105,7 @@ export struct FolderTreeDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
+    .padding({ top: this.topSafeVp })
     .title($r('app.string.str_folder'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;

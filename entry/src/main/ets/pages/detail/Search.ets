@@ -12,6 +12,7 @@ const DOMAIN = 0x0001;
 
 @Component
 export struct SearchDest {
+  @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
   @State keyword: string = '';
   @State results: Song[] = [];
   @State searched: boolean = false;
@@ -102,6 +103,7 @@ export struct SearchDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
+    .padding({ top: this.topSafeVp })
     .title($r('app.string.str_search'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;

@@ -156,6 +156,7 @@ export struct QueueBoardDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
+    .padding({ top: this.topSafe })
     .title($r('app.string.queue_board'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
