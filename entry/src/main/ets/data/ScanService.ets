@@ -213,9 +213,24 @@ export class ScanService {
       this.importing = false;
       return;
     }
-    const base = 'http://127.0.0.1:8100';
+    // 调试通道:真机/hdc fport 走 127.0.0.1;模拟器依次尝试 QEMU 网关与宿主机网卡地址
+    const bases: string[] = ['http://127.0.0.1:8100', 'http://10.0.2.2:8100', 'http://172.20.16.1:8100'];
+    let base = bases[0];
     try {
-      const manifestBuf = await this.httpGetBuffer(`${base}/manifest.json`);
+      let manifestBuf: ArrayBuffer = new ArrayBuffer(0);
+      for (const b of bases) {
+        try {
+          manifestBuf = await this.httpGetBuffer(`${b}/manifest.json`);
+          base = b;
+          hilog.info(DOMAIN, TAG, 'import host %{public}s ok', b);
+          break;
+        } catch (e) {
+          hilog.info(DOMAIN, TAG, 'import host %{public}s unreachable', b);
+        }
+      }
+      if (manifestBuf.byteLength === 0) {
+        throw new Error('no host reachable');
+      }
       const entries: ManifestEntry[] = JSON.parse(this.abToString(new Uint8Array(manifestBuf))) as ManifestEntry[];
       hilog.info(DOMAIN, TAG, 'import manifest n=%{public}d', entries.length);
       for (const ent of entries) {

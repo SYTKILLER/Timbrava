@@ -141,6 +141,7 @@ export struct MineTab {
             .backgroundColor($r('app.color.card_bg'))
           }
           .width('100%')
+          .padding({ left: 16, right: 16 })
 
           Blank().height(this.bottomSafeVp + 140)
         }
