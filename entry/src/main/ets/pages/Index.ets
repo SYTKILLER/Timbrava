@@ -1,6 +1,6 @@
 // 应用根:Navigation + 底部 HdsTabs(音乐库/队列/设置)+ 迷你播放条(悬浮)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { HdsTabs, HdsTabsFloatingStyle } from '@kit.UIDesignKit';
+import { HdsTabs, HdsTabsFloatingStyle, hdsMaterial } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../service/PlayerController';
@@ -71,6 +71,7 @@ struct Index {
         }
         .vertical(false)
         .scrollable(true)
+        .barOverlap(true) // 悬浮约束:页签栏叠加在内容之上,barFloatingStyle 生效前提
         .barFloatingStyle(this.floatingStyle())
         .onChange((index: number) => {
           this.activeTab = index;
@@ -95,8 +96,12 @@ struct Index {
   private floatingStyle(): HdsTabsFloatingStyle {
     const st: HdsTabsFloatingStyle = {
       barSideMargin: 16,
-      barBottomMargin: this.bottomSafe + 8,
-      gradientMask: { maskColor: '#00000000' }
+      barBottomMargin: 28, // 抬起高度 28vp
+      gradientMask: { maskColor: '#00000000' },
+      systemMaterialEffect: { // 沉浸光感材质
+        materialType: hdsMaterial.MaterialType.IMMERSIVE,
+        materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+      }
     };
     return st;
   }

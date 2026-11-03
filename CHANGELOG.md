@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 底部页签真正悬浮:Index.ets 的 HdsTabs 此前缺少 `barOverlap(true)`,悬浮胶囊样式未生效、页签贴底;补上后页签抬起固定 28vp,并开启沉浸光感材质(`systemMaterialEffect: IMMERSIVE` + ADAPTIVE 档)。窗口已是全屏沉浸布局,各 Tab 页已有 bottomSafeVp+140 底部避让,无需改动。
+
 ## [0.5.0] - 2026-11-02
 
 ### Added(P2 收尾,M-H 多语言)
