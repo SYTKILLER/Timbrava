@@ -95,6 +95,29 @@ void Engine::clearNextTrack()
     hasNext_ = false;
 }
 
+// 渲染回调消费 frames 帧后调用:扣减交接账本头,扣穿(播到交界)即通知上层。
+// 事件与实际听感同步(解码器读尽≠播到交界);回调块 ~10ms,一次消费穿两界概率≈0,不循环。
+void Engine::consumeGaplessFrames(int64_t frames)
+{
+    if (frames <= 0) {
+        return;
+    }
+    std::lock_guard<std::mutex> lk(boundsM_);
+    if (gaplessBounds_.empty()) {
+        return;
+    }
+    gaplessBounds_.front() -= frames;
+    if (gaplessBounds_.front() <= 0) {
+        const int64_t spill = -gaplessBounds_.front(); // 本块跨入新曲的帧数
+        gaplessBounds_.erase(gaplessBounds_.begin());
+        // 位置归位:新曲从 spill 起计(帧计数此前连续跨曲累计,若在交换时清零会把旧曲
+        // 尾部时长误计入新曲位置——必须在渲染真正播到交界时归位)
+        framesConsumed_.store(spill);
+        pushEvent("{\"ev\":\"gaplessNext\"}");
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "gapless reached, notified");
+    }
+}
+
 void Engine::ensureThread()
 {
     std::lock_guard<std::mutex> lk(wakeM_);
@@ -203,10 +226,13 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
                     }
                     n = floatOut;
                     framesConsumed_ += static_cast<int64_t>(frames);
+                    consumeGaplessFrames(static_cast<int64_t>(frames));
                 }
             } else {
                 n = ring_.read(static_cast<uint8_t *>(buffer), static_cast<size_t>(length));
-                framesConsumed_ += static_cast<int64_t>(n / static_cast<size_t>(frameBytes));
+                const int64_t framesRead = static_cast<int64_t>(n / static_cast<size_t>(frameBytes));
+                framesConsumed_ += framesRead;
+                consumeGaplessFrames(framesRead);
             }
             if (n < static_cast<size_t>(length)) {
                 std::memset(static_cast<uint8_t *>(buffer) + n, 0, static_cast<size_t>(length) - n);
@@ -280,6 +306,11 @@ void Engine::stopTrack()
     std::lock_guard<std::mutex> lk(stateM_);
     nextDecoder_.reset(); // gapless 预排随当前曲一并废弃(含 IDLE 早退分支)
     hasNext_ = false;
+    {
+        std::lock_guard<std::mutex> lk(boundsM_);
+        gaplessBounds_.clear();
+    }
+    curWrittenFrames_ = 0;
     if (mode_.load() == EngineMode::IDLE) {
         return;
     }
@@ -349,6 +380,11 @@ void Engine::applySeek()
     }
     framesConsumed_ = target;
     eof_ = false;
+    {
+        std::lock_guard<std::mutex> lk(boundsM_);
+        gaplessBounds_.clear(); // seek 打乱时间轴:放弃挂起的交接通知,重新记账
+    }
+    curWrittenFrames_ = 0;
     ring_.reset();
     // 重采样游标对齐 seek 目标(fifo 由渲染线程在下次回调时惰性重建)
     resFifo_.clear();
@@ -400,14 +436,19 @@ void Engine::decodeLoop()
                 std::lock_guard<std::mutex> lk(stateM_);
                 if (nextDecoder_ != nullptr && decoder_ != nullptr) {
                     if (speed_.load() == 1.0f) {
+                        // 记账:本曲实际写入 ring 的帧数 = 渲染到下曲交界的距离
+                        {
+                            std::lock_guard<std::mutex> lk(boundsM_);
+                            gaplessBounds_.push_back(curWrittenFrames_);
+                        }
+                        curWrittenFrames_ = 0;
                         decoder_ = std::move(nextDecoder_);
                         info_ = nextInfo_;
-                        framesConsumed_ = 0;
                         eof_ = false;
                         hasNext_ = false;
-                        pushEvent("{\"ev\":\"gaplessNext\"}");
-                        OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "gapless advanced frames=%{public}lld",
-                                     static_cast<long long>(info_.totalFrames));
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG,
+                                     "gapless decoder swapped next_frames=%{public}lld pending_bounds=%{public}zu",
+                                     static_cast<long long>(info_.totalFrames), gaplessBounds_.size());
                         continue;
                     }
                     nextDecoder_.reset(); // 倍速:放弃无缝
@@ -457,6 +498,7 @@ void Engine::decodeLoop()
         }
         int bytesPerSample = fmtNow == OutputFormat::U8 ? 1 : fmtNow == OutputFormat::S16LE ? 2 : 4;
         size_t bytes = static_cast<size_t>(got) * channels * bytesPerSample;
+        curWrittenFrames_ += got; // 交接账本:按解码产出帧数记(部分写仅发生于 stop/seek,届时账本已清)
         size_t written = ring_.write(chunk.data(), bytes);
         if (written < bytes) {
             // 被暂停/中止打断:本段作废;P0 简化(暂停场景 write 不会被截断,只有 stop/seek)

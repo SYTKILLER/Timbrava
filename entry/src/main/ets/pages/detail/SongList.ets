@@ -116,7 +116,7 @@ export struct SongListDest {
             const stack = AppStorage.get<NavPathStack>('navStack');
             if (stack !== undefined && stack !== null) {
               stack.pushPathByName('Equalizer',
-                new EqScopeParam(`album:${this.param.key}${this.param.subKey}`,
+                new EqScopeParam(`album:${this.param.key}\u0001${this.param.subKey}`,
                   this.param.subKey));
             }
           })
@@ -157,7 +157,7 @@ export struct SongListDest {
           .width(34)
           .height(34)
           .backgroundColor(Color.Transparent)
-          .bindMenu(this.listMenu())
+          .bindMenu(this.listMenu)
 
           Button($r('app.string.save_as_pl'))
             .fontSize(13)

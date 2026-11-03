@@ -39,6 +39,12 @@ async function runDebugCommands(ctx: common.UIAbilityContext, params: Record<str
       await ScanService.get().ensureSandboxRoot();
       await ScanService.get().importFromHost();
     }
+    if (get('debugGenCorpus') === '1') {
+      // SELinux 拦 shell 写沙箱时的语料通道:应用内生成正弦波 WAV+CUE
+      await ScanService.get().ensureSandboxRoot();
+      await ScanService.get().genDebugCorpus();
+      await ScanService.get().rescan();
+    }
     if (get('debugScan') === '1') {
       await ScanService.get().rescan();
     }

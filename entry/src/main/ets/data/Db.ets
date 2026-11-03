@@ -10,7 +10,7 @@ const DOMAIN = 0x0001;
 const SQL_CREATE: string[] = [
   `CREATE TABLE IF NOT EXISTS songs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    path TEXT UNIQUE NOT NULL,
+    path TEXT NOT NULL,
     file_size INTEGER DEFAULT 0, mtime INTEGER DEFAULT 0,
     title TEXT NOT NULL DEFAULT '', artist TEXT DEFAULT '', album TEXT DEFAULT '', album_artist TEXT DEFAULT '',
     genre TEXT DEFAULT '', year INTEGER DEFAULT 0, track_no INTEGER DEFAULT 0, disc_no INTEGER DEFAULT 0,
@@ -21,7 +21,8 @@ const SQL_CREATE: string[] = [
     art_path TEXT DEFAULT '',
     rg_track_gain REAL DEFAULT 0, rg_track_peak REAL DEFAULT 0,
     rg_album_gain REAL DEFAULT 0, rg_album_peak REAL DEFAULT 0,
-    date_added INTEGER DEFAULT 0, last_played INTEGER DEFAULT 0
+    date_added INTEGER DEFAULT 0, last_played INTEGER DEFAULT 0,
+    UNIQUE(path, cue_start_ms)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_songs_album ON songs(album_artist, album, disc_no, track_no)`,
   `CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist)`,
@@ -109,6 +110,7 @@ export class Db {
     };
     try {
       this.store = await relationalStore.getRdbStore(context, cfg);
+      await this.migrateSongsUnique();
       for (const sql of SQL_CREATE) {
         await this.store.executeSql(sql);
       }
@@ -116,6 +118,51 @@ export class Db {
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'init fail %{public}s', (e as Error).message);
       throw e as Error;
+    }
+  }
+
+  // 迁移:songs 唯一键 path -> (path, cue_start_ms)(CUE 分轨同 path 多行的前提;
+  // 旧库重建表保数据,幂等由 app_settings 标记保证)
+  private async migrateSongsUnique(): Promise<void> {
+    const st = this.store;
+    if (st === null) {
+      return;
+    }
+    const mark = await this.getSetting('dbSongsUnique2', '0');
+    if (mark === '1') {
+      return;
+    }
+    try {
+      const rs = await st.querySql(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='songs'");
+      let ddl = '';
+      if (rs.goToFirstRow()) {
+        ddl = rs.getString(0);
+      }
+      rs.close();
+      if (ddl.indexOf('UNIQUE(path, cue_start_ms)') < 0) {
+        await st.executeSql('ALTER TABLE songs RENAME TO songs_old');
+        await st.executeSql(`CREATE TABLE songs(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          path TEXT NOT NULL, file_size INTEGER DEFAULT 0, mtime INTEGER DEFAULT 0,
+          title TEXT NOT NULL DEFAULT '', artist TEXT DEFAULT '', album TEXT DEFAULT '', album_artist TEXT DEFAULT '',
+          genre TEXT DEFAULT '', year INTEGER DEFAULT 0, track_no INTEGER DEFAULT 0, disc_no INTEGER DEFAULT 0,
+          duration_ms INTEGER DEFAULT 0,
+          sample_rate INTEGER DEFAULT 0, bit_depth INTEGER DEFAULT 0, channels INTEGER DEFAULT 0,
+          bitrate_kbps INTEGER DEFAULT 0, codec TEXT DEFAULT '',
+          cue_start_ms INTEGER DEFAULT 0, cue_end_ms INTEGER DEFAULT -1,
+          art_path TEXT DEFAULT '',
+          rg_track_gain REAL DEFAULT 0, rg_track_peak REAL DEFAULT 0,
+          rg_album_gain REAL DEFAULT 0, rg_album_peak REAL DEFAULT 0,
+          date_added INTEGER DEFAULT 0, last_played INTEGER DEFAULT 0,
+          UNIQUE(path, cue_start_ms))`);
+        await st.executeSql('INSERT INTO songs SELECT * FROM songs_old');
+        await st.executeSql('DROP TABLE songs_old');
+        hilog.info(DOMAIN, TAG, 'songs unique migrated to (path,cue_start_ms)');
+      }
+      await this.setSetting('dbSongsUnique2', '1');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'migrateSongsUnique fail %{public}s', (e as Error).message);
     }
   }
 
@@ -528,6 +575,7 @@ export class Db {
          ON CONFLICT(song_id) DO UPDATE SET count = count + 1, total_ms = total_ms + ?, last_played = ?`,
         [songId, msPlayed, now, msPlayed, now]);
       await st.executeSql('UPDATE songs SET last_played = ? WHERE id = ?', [now, songId]);
+      hilog.info(DOMAIN, TAG, 'recordPlay song=%{public}d ms=%{public}d', songId, msPlayed);
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'recordPlay fail %{public}s', (e as Error).message);
     }
@@ -558,8 +606,8 @@ export class Db {
     const out: HistoryRow[] = [];
     try {
       const rs = await st.querySql(
-        `SELECT h.id AS hist_id, h.played_at, h.ms_played, ${Db.SONG_COLS} FROM history h
-         JOIN songs ON songs.id = h.song_id ORDER BY h.played_at DESC LIMIT ${limit}`);
+        `SELECT h.id AS hist_id, h.played_at, h.ms_played, s.* FROM history h
+         JOIN songs s ON s.id = h.song_id ORDER BY h.played_at DESC LIMIT ${limit}`);
       while (rs.goToNextRow()) {
         const row = new HistoryRow();
         row.id = rs.getLong(rs.getColumnIndex('hist_id'));
@@ -581,8 +629,8 @@ export class Db {
     const out: MostRow[] = [];
     try {
       const rs = await st.querySql(
-        `SELECT p.count AS pc_count, p.total_ms AS pc_total, p.last_played AS pc_last, ${Db.SONG_COLS}
-         FROM play_count p JOIN songs ON songs.id = p.song_id
+        `SELECT p.count AS pc_count, p.total_ms AS pc_total, p.last_played AS pc_last, s.*
+         FROM play_count p JOIN songs s ON s.id = p.song_id
          ORDER BY p.count DESC, p.last_played DESC LIMIT ${limit}`);
       while (rs.goToNextRow()) {
         const row = new MostRow();

@@ -57,6 +57,7 @@ private:
 
     void ensureThread();
     void decodeLoop();
+    void consumeGaplessFrames(int64_t frames);
     void pushEvent(const std::string &json);
     void applySeek();
     // 倍速输出:读 ring → F32 → DSP → 线性插值(speed 变速变调)→ 按渲染格式打包。
@@ -84,6 +85,12 @@ private:
     std::mutex wakeM_;
 
     std::atomic<int64_t> framesConsumed_{0};
+    // gapless 交接账本:每项 = 到下一曲交界还剩多少帧(按"实际写入 ring 的帧数"记账)。
+    // 解码线程换曲时 push,渲染回调消费后扣减,扣穿即发 gaplessNext——事件与听感同步,
+    // 且天然支持多曲连环预缓冲(ring 内排多曲时逐界通知)。seek/stop 清空。
+    std::mutex boundsM_;
+    std::vector<int64_t> gaplessBounds_;
+    int64_t curWrittenFrames_ = 0; // 本曲已写入 ring 帧数(仅解码线程维护)
     std::atomic<bool> eof_{false};
     std::atomic<bool> seeking_{false};
     std::atomic<bool> underrunSinceSeek_{false};

@@ -8,7 +8,7 @@ import { Db } from './Db';
 import { LibraryStore } from './LibraryStore';
 import { Song, ScanProgress, RootFolder } from './Model';
 import { isAudioExt, parseAudioMeta, SongMeta } from './tag/MetaParse';
-import { parseCue, looksLikeCue, CueSheet } from './cue/CueParser';
+import { parseCue, looksLikeCue, CueSheet, CueTrack } from './cue/CueParser';
 import { ReadAt } from './tag/MetaParse';
 import timbravaCore from 'libtimbrava_core.so';
 import { fnv1a } from './tag/Bytes';
@@ -102,12 +102,15 @@ export class ScanService {
         let st: fs.Stat | null = null;
         try {
           st = await fs.stat(cand.uriOrPath);
-          if (st !== null && !isAudioExt(cand.name)) {
-            continue;
+          if (st !== null && !isAudioExt(cand.name) && !cand.name.toLowerCase().endsWith('.cue')) {
+            continue; // 非音频也非 CUE(修复:.cue 在此被误拦,从未进入 parseAndStore)
           }
           const mtime = st !== null ? Math.floor(st.mtime) : 0;
           const fsize = st !== null ? st.size : 0;
-          const known = await Db.get().querySongs('path = ?', [cand.path], '', 1, 0);
+          // 差分基准只看整轨行(cue_start_ms=0);CUE 分轨行 path 与音频相同但不作基准
+          const known = await Db.get().querySongs(
+            cand.name.toLowerCase().endsWith('.cue') ? 'path = ?' : 'path = ? AND cue_start_ms = 0',
+            [cand.path], '', 1, 0);
           if (known.length === 1 && known[0].mtime === mtime && known[0].fileSize === fsize) {
             // 未变化
           } else {
@@ -367,6 +370,12 @@ export class ScanService {
         hilog.warn(DOMAIN, TAG, 'parse fail(跳过) %{public}s', cand.path);
         return false;
       }
+      // 同 path 已有 CUE 分轨行 → 不再落整轨行(两者共用 path UNIQUE,分轨为准)
+      const cueRows = await Db.get().querySongs('path = ? AND cue_start_ms > 0', [cand.path], '', 1, 0);
+      if (cueRows.length > 0) {
+        hilog.info(DOMAIN, TAG, 'skip fulltrack (cue tracks exist) %{public}s', cand.name);
+        return true;
+      }
       const s = new Song();
       s.path = cand.path;
       s.fileSize = fsize;
@@ -452,7 +461,9 @@ export class ScanService {
         let codec = '';
         let sr = 0;
         let bd = 0;
-        const known = await Db.get().querySongs('path = ? AND cue_start_ms = 0', [audioPath], '', 1, 0);
+        // 整轨行 = cue_start=0 且 cue_end=-1(排除 CueA 这类 start=0 的分轨行,否则末轨时长算错)
+        const known = await Db.get().querySongs('path = ? AND cue_start_ms = 0 AND cue_end_ms = -1',
+          [audioPath], '', 1, 0);;
         if (known.length > 0) {
           audioDurMs = known[0].durationMs;
           audioArt = known[0].artPath;
@@ -486,6 +497,12 @@ export class ScanService {
             hilog.warn(DOMAIN, TAG, 'cue audio probe fail %{public}s', (e as Error).message);
           }
         }
+        // 清掉同 path 整轨行(先扫到音频后扫到 cue 的顺序),分轨为准
+        const fullRow = await Db.get().querySongs('path = ? AND cue_start_ms = 0', [audioPath], '', 1, 0);
+        if (fullRow.length > 0) {
+          await Db.get().removeSongCompletely(fullRow[0].id);
+          hilog.info(DOMAIN, TAG, 'cue replaces fulltrack row %{public}s', audioPath);
+        }
         let added = 0;
         for (const t of sheet.tracks) {
           const song = new Song();
@@ -504,9 +521,16 @@ export class ScanService {
           song.cueStartMs = t.startMs;
           song.cueEndMs = t.endMs;
           song.artPath = audioArt;
-          const dup = await Db.get().querySongs('path = ? AND cue_start_ms = ?', [audioPath, t.startMs], '', 1, 0);
+          const dup = await Db.get().querySongs('path = ? AND cue_start_ms = ?', [audioPath, t.startMs], '', 50, 0);
+          if (dup.length > 1) {
+            // 同键重复行(历史脏数据):仅留首行
+            for (let d = 1; d < dup.length; d++) {
+              await Db.get().removeSongCompletely(dup[d].id);
+            }
+          }
           if (dup.length > 0) {
-            if (dup[0].mtime === mtime && dup[0].fileSize === fsize && dup[0].title === song.title) {
+            if (dup[0].mtime === mtime && dup[0].fileSize === fsize && dup[0].title === song.title &&
+              dup[0].durationMs === song.durationMs) {
               continue;
             }
             song.id = dup[0].id;
@@ -520,6 +544,15 @@ export class ScanService {
           } else {
             await Db.get().upsertSong(song, false);
             added++;
+          }
+        }
+        // 清理本 cue 的过期分轨行(同 path 但起点不在本 sheet 轨道集合——cue 时间轴变更残留)
+        const startList: number[] = sheet.tracks.map((t: CueTrack): number => t.startMs);
+        const staleRows = await Db.get().querySongs('path = ? AND cue_start_ms > 0', [audioPath], '', 50, 0);
+        for (const r of staleRows) {
+          if (startList.indexOf(r.cueStartMs) < 0) {
+            await Db.get().removeSongCompletely(r.id);
+            hilog.info(DOMAIN, TAG, 'cue stale row removed %{public}s start=%{public}d', audioPath, r.cueStartMs);
           }
         }
         hilog.info(DOMAIN, TAG, 'cue stored %{public}s tracks=%{public}d added=%{public}d',
@@ -619,6 +652,80 @@ export class ScanService {
       }
     }
     return out;
+  }
+  // ===== 调试语料生成(SELinux 拦 shell 写沙箱时的验证通道) =====
+  // 正弦波 PCM16/44.1 mono WAV + CUE 表;gapless/CUE 区间/统计验证用。
+  async genDebugCorpus(): Promise<void> {
+    if (this.context === null) {
+      return;
+    }
+    const dir = `${this.context.filesDir}/music`;
+    const sr = 44100;
+    const mkWav = (name: string, freq: number, seconds: number): void => {
+      const n = sr * seconds;
+      const buf = new ArrayBuffer(44 + n * 2);
+      const dv = new DataView(buf);
+      const ws = (off: number, txt: string): void => {
+        for (let i = 0; i < txt.length; i++) {
+          dv.setUint8(off + i, txt.charCodeAt(i));
+        }
+      };
+      ws(0, 'RIFF');
+      dv.setUint32(4, 36 + n * 2, true);
+      ws(8, 'WAVE');
+      ws(12, 'fmt ');
+      dv.setUint32(16, 16, true);
+      dv.setUint16(20, 1, true);
+      dv.setUint16(22, 1, true);
+      dv.setUint32(24, sr, true);
+      dv.setUint32(28, sr * 2, true);
+      dv.setUint16(32, 2, true);
+      dv.setUint16(34, 16, true);
+      ws(36, 'data');
+      dv.setUint32(40, n * 2, true);
+      for (let i = 0; i < n; i++) {
+        const v = Math.sin(2 * Math.PI * freq * i / sr);
+        dv.setInt16(44 + i * 2, Math.round(v * 28000), true);
+      }
+      let f: fs.File | null = null;
+      try {
+        f = fs.openSync(`${dir}/${name}`,
+          fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+        fs.writeSync(f.fd, buf);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'gen wav %{public}s fail %{public}s', name, (e as Error).message);
+      } finally {
+        if (f !== null) {
+          try {
+            fs.closeSync(f);
+          } catch (e2) {
+          }
+        }
+      }
+    };
+    try {
+      mkWav('dbg_a.wav', 440, 10);
+      mkWav('dbg_b.wav', 660, 10);
+      mkWav('dbg_cue.wav', 220, 28);
+      const cueText = 'FILE "dbg_cue.wav" WAVE\n  TRACK 01 AUDIO\n    TITLE "CueA"\n    INDEX 01 00:00:00\n' +
+        '  TRACK 02 AUDIO\n    TITLE "CueB"\n    INDEX 01 00:12:00\n';
+      let cf: fs.File | null = null;
+      try {
+        cf = fs.openSync(`${dir}/dbg_cue.cue`,
+          fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+        fs.writeSync(cf.fd, cueText);
+      } finally {
+        if (cf !== null) {
+          try {
+            fs.closeSync(cf);
+          } catch (e3) {
+          }
+        }
+      }
+      hilog.info(DOMAIN, TAG, 'debug corpus generated');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'genDebugCorpus fail %{public}s', (e as Error).message);
+    }
   }
 }
 
