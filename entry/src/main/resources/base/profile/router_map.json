@@ -87,6 +87,14 @@
       "data": {
         "description": "重复清理"
       }
+    },
+    {
+      "name": "PlayHistory",
+      "pageSourceFile": "src/main/ets/pages/detail/PlayHistory.ets",
+      "buildFunction": "PlayHistoryBuilder",
+      "data": {
+        "description": "统计回顾(最近/最常播放)"
+      }
     }
   ]
 }

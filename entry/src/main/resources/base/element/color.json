@@ -55,6 +55,10 @@
     {
       "name": "tab_bar_mask",
       "value": "#CCF7F7F8"
+    },
+    {
+      "name": "danger",
+      "value": "#E5443D"
     }
   ]
 }

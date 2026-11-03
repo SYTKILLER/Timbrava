@@ -736,7 +736,7 @@
       "name": "theme_dark",
       "value": "Dark"
     },
-        {
+    {
       "name": "follow_system",
       "value": "Follow System"
     },
@@ -1051,6 +1051,66 @@
     {
       "name": "browse_folder",
       "value": "Folder browser"
+    },
+    {
+      "name": "form_play_card_desc",
+      "value": "Playback control widget"
+    },
+    {
+      "name": "card_idle_title",
+      "value": "Timbrava"
+    },
+    {
+      "name": "card_idle_sub",
+      "value": "Nothing playing"
+    },
+    {
+      "name": "history_title",
+      "value": "Play History"
+    },
+    {
+      "name": "history_recent",
+      "value": "Recent"
+    },
+    {
+      "name": "history_most",
+      "value": "Most Played"
+    },
+    {
+      "name": "history_empty",
+      "value": "No play history yet"
+    },
+    {
+      "name": "history_plays",
+      "value": "Played %1$d times"
+    },
+    {
+      "name": "eq_scope_song",
+      "value": "Equalizer · This Song"
+    },
+    {
+      "name": "eq_scope_album",
+      "value": "Equalizer · This Album"
+    },
+    {
+      "name": "eq_scope_global",
+      "value": "Global"
+    },
+    {
+      "name": "eq_scope_current_song",
+      "value": "Current Song"
+    },
+    {
+      "name": "eq_scope_current_album",
+      "value": "Current Album"
+    },
+    {
+      "name": "eq_follow_global",
+      "value": "Follow Global"
+    },
+    {
+      "name": "eq_scope_hint",
+      "value": "This curve applies to the selected scope only"
     }
   ]
 }

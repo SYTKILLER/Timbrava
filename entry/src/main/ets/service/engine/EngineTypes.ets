@@ -25,6 +25,7 @@ export enum EngineEventKind {
   INTERRUPT = 2,     // 音频焦点中断(force/hint 附带)
   SEEK_DONE = 3,
   UNDERRUN = 4,
+  GAPLESS_NEXT = 5,  // gapless 预排曲已无缝接续(引擎未重开,上层需同步曲目状态)
 }
 
 export class EngineEventData {

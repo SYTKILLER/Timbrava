@@ -736,7 +736,7 @@
       "name": "theme_dark",
       "value": "深色"
     },
-        {
+    {
       "name": "follow_system",
       "value": "跟随系统"
     },
@@ -1051,6 +1051,66 @@
     {
       "name": "browse_folder",
       "value": "文件夹浏览"
+    },
+    {
+      "name": "form_play_card_desc",
+      "value": "播放控制卡片"
+    },
+    {
+      "name": "card_idle_title",
+      "value": "听韵 Timbrava"
+    },
+    {
+      "name": "card_idle_sub",
+      "value": "暂无播放"
+    },
+    {
+      "name": "history_title",
+      "value": "统计回顾"
+    },
+    {
+      "name": "history_recent",
+      "value": "最近播放"
+    },
+    {
+      "name": "history_most",
+      "value": "最常播放"
+    },
+    {
+      "name": "history_empty",
+      "value": "暂无播放记录"
+    },
+    {
+      "name": "history_plays",
+      "value": "%1$d 次播放"
+    },
+    {
+      "name": "eq_scope_song",
+      "value": "均衡器 · 当前曲目"
+    },
+    {
+      "name": "eq_scope_album",
+      "value": "均衡器 · 本专辑"
+    },
+    {
+      "name": "eq_scope_global",
+      "value": "全局"
+    },
+    {
+      "name": "eq_scope_current_song",
+      "value": "当前曲目"
+    },
+    {
+      "name": "eq_scope_current_album",
+      "value": "当前专辑"
+    },
+    {
+      "name": "eq_follow_global",
+      "value": "跟随全局"
+    },
+    {
+      "name": "eq_scope_hint",
+      "value": "此曲线仅作用于所选作用域"
     }
   ]
 }

@@ -1,0 +1,20 @@
+{
+  "forms": [
+    {
+      "name": "PlayCard",
+      "description": "$string:form_play_card_desc",
+      "isDefault": true,
+      "src": "./ets/widget/PlayCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720
+      },
+      "formConfigAbility": "ability://EntryFormAbility",
+      "supportDimensions": ["2*4"],
+      "defaultDimension": "2*4",
+      "updateEnabled": true,
+      "scheduledUpdateTime": "10:30",
+      "updateDuration": 1
+    }
+  ]
+}

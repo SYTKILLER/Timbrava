@@ -1,13 +1,27 @@
 // 31 段参数均衡器编辑页(#29):竖向滑条逐段编辑 + 内置/自定义预设 + AutoEq 导入。
+// 作用域(EQ 按曲目/按专辑):路由参数 EqScopeParam 携带 target(song:{id}/album:{key});
+// 无参数 = 全局编辑;有 target 时滑条曲线读写该作用域覆盖,清除后跟随全局。
 // 频点公式与 native dspPeqDefaultFreqs 一致(20Hz~16kHz 几何均分);拖动即时下发引擎。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SettingsService } from '../../service/SettingsService';
 import { Db, EqPresetRow } from '../../data/Db';
+import { PlayerController } from '../../service/PlayerController';
 import { PEQ_FREQS, flatBands, presetBands, isBuiltinPreset, parseAutoEq } from '../../service/EqPresets';
 import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][Equalizer]';
 const DOMAIN = 0x0001;
+
+// 路由参数:作用域覆盖目标
+export class EqScopeParam {
+  target: string = '';        // 'song:{id}' | 'album:{artist}\u0001{album}';空=全局
+  scopeLabel: string = '';    // 展示名(曲名/专辑名)
+
+  constructor(target: string, scopeLabel: string) {
+    this.target = target;
+    this.scopeLabel = scopeLabel;
+  }
+}
 
 @CustomDialog
 struct EqTextDialog {
@@ -83,6 +97,9 @@ export struct EqualizerDest {
   @StorageProp('prefEqPreset') prefEqPreset: string = 'flat';
   @State bands: number[] = flatBands();
   @State savedPresets: EqPresetRow[] = [];
+  // 作用域(EQ 按曲目/按专辑)
+  private scope: EqScopeParam = new EqScopeParam('', '');
+  @State hasOverride: boolean = false;
   private saveCtrl: CustomDialogController | null = null;
   private importCtrl: CustomDialogController | null = null;
   private pathStack: NavPathStack | null = null;
@@ -92,13 +109,32 @@ export struct EqualizerDest {
     this.reloadSaved();
   }
 
+  private isScoped(): boolean {
+    return this.scope.target.length > 0;
+  }
+
   private reloadBands(): void {
+    if (this.isScoped()) {
+      // 作用域覆盖优先;未覆盖时回落展示全局曲线(保存动作才写覆盖)
+      Db.get().getEqAssign(this.scope.target).then((ov: number[] | null): void => {
+        this.hasOverride = ov !== null;
+        if (ov !== null) {
+          this.bands = ov!.slice();
+        } else {
+          this.bands = this.globalBands();
+        }
+      });
+      return;
+    }
+    this.bands = this.globalBands();
+  }
+
+  private globalBands(): number[] {
     const s = SettingsService.get();
     if (s.eqPreset === 'custom' && s.eqBands.length === 31) {
-      this.bands = s.eqBands.slice();
-    } else {
-      this.bands = presetBands(s.eqPreset);
+      return s.eqBands.slice();
     }
+    return presetBands(s.eqPreset);
   }
 
   private reloadSaved(): void {
@@ -108,8 +144,28 @@ export struct EqualizerDest {
   }
 
   private async persistBands(): Promise<void> {
+    if (this.isScoped()) {
+      // 写作用域覆盖并立即对引擎生效(当前曲命中时)
+      await Db.get().setEqAssign(this.scope.target, this.bands.slice());
+      this.hasOverride = true;
+      PlayerController.get().reapplyCurrentDsp();
+      hilog.info(DOMAIN, TAG, 'scoped bands saved target=%{public}s', this.scope.target);
+      return;
+    }
     await SettingsService.get().setEqBands(this.bands.slice());
     hilog.info(DOMAIN, TAG, 'bands saved');
+  }
+
+  // 清除作用域覆盖(跟随全局)
+  private async clearOverride(): Promise<void> {
+    if (!this.isScoped()) {
+      return;
+    }
+    await Db.get().deleteEqAssign(this.scope.target);
+    this.hasOverride = false;
+    this.bands = this.globalBands();
+    PlayerController.get().reapplyCurrentDsp();
+    hilog.info(DOMAIN, TAG, 'scope override cleared');
   }
 
   // 预设选项名(内置 + 自定义保存)
@@ -162,6 +218,11 @@ export struct EqualizerDest {
     const saved = this.savedPresets.find((r: EqPresetRow): boolean => r.name === name);
     const bands = saved !== undefined ? saved.bands.slice() : presetBands(name);
     this.bands = bands;
+    if (this.isScoped()) {
+      // 作用域模式:预设仅作为曲线来源写入覆盖,不动全局设置
+      await this.persistBands();
+      return;
+    }
     await SettingsService.get().setEq(true, name);
     await SettingsService.get().setEqBands(bands);
     hilog.info(DOMAIN, TAG, 'preset -> %{public}s', name);
@@ -217,6 +278,37 @@ export struct EqualizerDest {
   build() {
     NavDestination() {
       Column() {
+        // 作用域条(EQ 按曲目/按专辑):显示目标 + 清除覆盖
+        if (this.isScoped()) {
+          Row({ space: 8 }) {
+            SymbolGlyph($r('sys.symbol.music_note_list'))
+              .fontSize(14)
+              .fontColor([$r('app.color.accent')])
+            Text(this.scope.scopeLabel)
+              .fontSize(12)
+              .fontColor($r('app.color.text_secondary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+            if (this.hasOverride) {
+              Button($r('app.string.eq_follow_global'))
+                .fontSize(11)
+                .height(26)
+                .fontColor($r('app.color.text_primary'))
+                .backgroundColor($r('app.color.badge_bg'))
+                .onClick(() => {
+                  this.clearOverride();
+                })
+            } else {
+              Text($r('app.string.eq_scope_hint'))
+                .fontSize(10)
+                .fontColor($r('app.color.text_secondary'))
+            }
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 8 })
+        }
+
         // 开关 + 预设行
         Row({ space: 12 }) {
           Text($r('app.string.equalizer'))
@@ -369,9 +461,16 @@ export struct EqualizerDest {
       .backgroundColor($r('app.color.page_bg'))
     }
     .padding({ top: this.topSafeVp })
-    .title($r('app.string.equalizer'))
+    .title(this.scope.target.startsWith('album:') ? $r('app.string.eq_scope_album')
+      : this.isScoped() ? $r('app.string.eq_scope_song') : $r('app.string.equalizer'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
+      const p = ctx.pathInfo.param as EqScopeParam;
+      if (p !== null && p !== undefined && p instanceof EqScopeParam && p.target.length > 0) {
+        this.scope = p;
+        this.reloadBands();
+        hilog.info(DOMAIN, TAG, 'scoped eq target=%{public}s', p.target);
+      }
     })
   }
 

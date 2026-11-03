@@ -37,6 +37,64 @@ void Engine::pollEvents(std::vector<std::string> &out)
     }
 }
 
+// gapless 预排:探测下一曲并与当前曲做格式一致性校验(不一致返回 false,ArkTS 走普通切曲)。
+// 探测的 openFile 内部 dup fd,调用方可在返回后立即关 fd(与 openTrack 契约一致)。
+// 探测(重活)在锁外做,最终锁内复核当前曲仍在播放且格式一致。
+bool Engine::openNextTrack(int fd)
+{
+    if (fd < 0) {
+        return false;
+    }
+    // 探测链与 openTrack 一致(DSD→FLAC→WAV)
+    auto probe = [](int fdIn) -> std::unique_ptr<IDecoder> {
+        auto dsd = std::make_unique<DsdDecoder>();
+        if (dsd->openFile(fdIn, TrackInfo{})) {
+            return dsd;
+        }
+        auto flac = std::make_unique<FlacDecoder>();
+        if (flac->openFile(fdIn, TrackInfo{})) {
+            return flac;
+        }
+        auto wav = std::make_unique<WavDecoder>();
+        if (wav->openFile(fdIn, TrackInfo{})) {
+            return wav;
+        }
+        return nullptr;
+    };
+    std::unique_ptr<IDecoder> dec = probe(fd);
+    if (dec == nullptr) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lk(stateM_);
+    if (mode_.load() == EngineMode::IDLE || decoder_ == nullptr) {
+        return false;
+    }
+    const TrackInfo ni = dec->info();
+    // 格式一致才可共用当前 renderer(采样率/通道/位深/DSD 率;codec 允许不同——同为 PCM 流)
+    if (ni.sampleRate != info_.sampleRate || ni.channels != info_.channels ||
+        ni.bitsPerSample != info_.bitsPerSample || ni.dsdRate != info_.dsdRate) {
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG,
+                     "gapless prefetch rejected: %{public}d/%{public}d/%{public}d/%{public}lld vs "
+                     "%{public}d/%{public}d/%{public}d/%{public}lld",
+                     ni.sampleRate, ni.channels, ni.bitsPerSample, static_cast<long long>(ni.dsdRate),
+                     info_.sampleRate, info_.channels, info_.bitsPerSample, static_cast<long long>(info_.dsdRate));
+        return false;
+    }
+    nextDecoder_ = std::move(dec);
+    nextInfo_ = nextDecoder_->info();
+    hasNext_ = true;
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "gapless prefetch ok frames=%{public}lld",
+                 static_cast<long long>(nextInfo_.totalFrames));
+    return true;
+}
+
+void Engine::clearNextTrack()
+{
+    std::lock_guard<std::mutex> lk(stateM_);
+    nextDecoder_.reset();
+    hasNext_ = false;
+}
+
 void Engine::ensureThread()
 {
     std::lock_guard<std::mutex> lk(wakeM_);
@@ -220,6 +278,8 @@ void Engine::pause()
 void Engine::stopTrack()
 {
     std::lock_guard<std::mutex> lk(stateM_);
+    nextDecoder_.reset(); // gapless 预排随当前曲一并废弃(含 IDLE 早退分支)
+    hasNext_ = false;
     if (mode_.load() == EngineMode::IDLE) {
         return;
     }
@@ -333,6 +393,28 @@ void Engine::decodeLoop()
             continue;
         }
         if (eof_.load()) {
+            // gapless(M3):当前曲解码尽且已预排下一曲 → 交换解码器无缝续填 ring。
+            // ring 内剩余旧曲尾部照常渲染,新曲数据直接续写,renderer 无感——真无缝。
+            // 倍速≠1 时禁用(重采样游标跨曲不可拼接):丢弃预排,走下方普通 end 路径。
+            if (hasNext_.load()) {
+                std::lock_guard<std::mutex> lk(stateM_);
+                if (nextDecoder_ != nullptr && decoder_ != nullptr) {
+                    if (speed_.load() == 1.0f) {
+                        decoder_ = std::move(nextDecoder_);
+                        info_ = nextInfo_;
+                        framesConsumed_ = 0;
+                        eof_ = false;
+                        hasNext_ = false;
+                        pushEvent("{\"ev\":\"gaplessNext\"}");
+                        OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "gapless advanced frames=%{public}lld",
+                                     static_cast<long long>(info_.totalFrames));
+                        continue;
+                    }
+                    nextDecoder_.reset(); // 倍速:放弃无缝
+                    hasNext_ = false;
+                }
+                continue;
+            }
             if (ring_.sizeLocked() == 0) {
                 // 倍速时等渲染线程把重采样尾部播完再发 end(否则最多截尾 ~1s)
                 if (speed_.load() != 1.0f && !resDrained_.load()) {

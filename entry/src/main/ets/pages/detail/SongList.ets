@@ -8,6 +8,7 @@ import { TagEditorParam } from './TagEditor';
 import { QueueService } from '../../service/QueueService';
 import { PlaylistRepo } from '../../data/PlaylistRepo';
 import { PlayerController } from '../../service/PlayerController';
+import { EqScopeParam } from '../settings/Equalizer';
 import { L, Ls } from '../../common/Lang';
 
 const TAG = '[Timbrava][SongList]';
@@ -108,6 +109,18 @@ export struct SongListDest {
   @Builder
   listMenu() {
     Menu() {
+      if (this.param.mode === 'album') {
+        // EQ 按专辑:整专辑曲线覆盖(target 与 LibraryStore 分组键一致)
+        MenuItem({ content: $r('app.string.eq_scope_current_album') })
+          .onClick(() => {
+            const stack = AppStorage.get<NavPathStack>('navStack');
+            if (stack !== undefined && stack !== null) {
+              stack.pushPathByName('Equalizer',
+                new EqScopeParam(`album:${this.param.key}${this.param.subKey}`,
+                  this.param.subKey));
+            }
+          })
+      }
       MenuItem({ content: $r('app.string.menu_rg_scan') })
         .onClick(() => {
           RgScanner.get().scan(this.songs);

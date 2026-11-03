@@ -118,7 +118,37 @@ function wantParamsOf(want: Want): Record<string, Object> {
   for (const k of keys) {
     p[k] = (want.parameters as Record<string, Object>)[k];
   }
+  // 服务卡片(M5) router 事件:postCardAction params 打包在 want.parameters.params(JSON 串)
+  const cardParams = p['params'];
+  if (typeof cardParams === 'string' && cardParams.length > 0) {
+    try {
+      const inner = JSON.parse(cardParams) as Record<string, Object>;
+      const cmd = inner['cardCmd'];
+      if (typeof cmd === 'string' && cmd.length > 0) {
+        p['cardCmd'] = cmd;
+      }
+    } catch (e) {
+      hilog.warn(DBG_DOMAIN, DBG_TAG, 'card params parse fail');
+    }
+  }
   return p;
+}
+
+// 服务卡片控制命令(toggle/next/prev):与 debug 通道共用 want 参数管线
+async function runCardCommands(params: Record<string, Object>): Promise<void> {
+  const cmd = params['cardCmd'];
+  if (typeof cmd !== 'string' || cmd.length === 0) {
+    return;
+  }
+  const player = PlayerController.get();
+  hilog.info(DBG_DOMAIN, DBG_TAG, 'card cmd %{public}s', cmd);
+  if (cmd === 'toggle') {
+    await player.playPause();
+  } else if (cmd === 'next') {
+    await player.playNext();
+  } else if (cmd === 'prev') {
+    await player.playPrev();
+  }
 }
 
 const DOMAIN = 0x0001;
@@ -140,13 +170,16 @@ export default class EntryAbility extends UIAbility {
     PlayerController.get().init(this.context).then(async (): Promise<void> => {
       hilog.info(DOMAIN, TAG, 'controller ready');
       AppTheme.apply(this.context);
-      await runDebugCommands(this.context, wantParamsOf(want));
+      const params = wantParamsOf(want);
+      await runCardCommands(params);
+      await runDebugCommands(this.context, params);
     });
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, 'onNewWant');
-    runDebugCommands(this.context, wantParamsOf(want));
+    const params = wantParamsOf(want);
+    runCardCommands(params).then((): Promise<void> => runDebugCommands(this.context, params));
   }
 
   onDestroy(): void {

@@ -3,7 +3,9 @@ import { Song, formatDuration } from '../data/Model';
 import { LibraryStore } from '../data/LibraryStore';
 import { PlayerController } from '../service/PlayerController';
 import { QueueService } from '../service/QueueService';
+import { EqScopeParam } from '../pages/settings/Equalizer';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { L } from '../common/Lang';
 
 const TAG = '[Timbrava][SongRow]';
 const DOMAIN = 0x0001;
@@ -137,6 +139,14 @@ export struct SongRow {
           const stack = this.navStack();
           if (stack !== null) {
             stack.pushPathByName('TagEditor', this.song.id);
+          }
+        })
+      MenuItem({ content: L($r('app.string.eq_scope_current_song')) })
+        .onClick(() => {
+          const stack = this.navStack();
+          if (stack !== null) {
+            stack.pushPathByName('Equalizer',
+              new EqScopeParam(`song:${this.song.id}`, this.song.displayTitle()));
           }
         })
       MenuItem({ content: $r('app.string.menu_view_album') })

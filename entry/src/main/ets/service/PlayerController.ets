@@ -4,6 +4,7 @@ import { common, wantAgent, WantAgent, Want } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { avSession } from '@kit.AVSessionKit';
 import { audio } from '@kit.AudioKit';
+import { formBindingData, formProvider } from '@kit.FormKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Db } from '../data/Db';
 import { LibraryStore } from '../data/LibraryStore';
@@ -55,6 +56,11 @@ export class PlayerController {
   currentLyrics: string = '';          // 当前曲 LRC 原文(缓存/文件头/LRCLIB;空=无)
   private lyricsLoadedFor: number = -1;
 
+  // gapless(M3):预排目标(队列 index;-1 未预排)。引擎不重开,native 尾部无缝交接。
+  private gaplessTargetIdx: number = -1;
+  private gaplessCheckTick: number = 0;   // ticker 周期校验队列是否仍指向预排目标
+  private cueAdvancing: boolean = false;  // CUE 区间切换哨兵(seek 生效前 ticker 防重入)
+
   private session: avSession.AVSession | null = null;
   private ticker: number = -1;
   private pausedByInterrupt: boolean = false;
@@ -64,6 +70,7 @@ export class PlayerController {
 
   private bumpPlayer(): void {
     AppStorage.setOrCreate('playerVer', (AppStorage.get<number>('playerVer') ?? 0) + 1);
+    this.pushCardThrottled(); // 服务卡片(M5):状态变化节流推送
   }
 
   private bumpPos(): void {
@@ -131,10 +138,10 @@ export class PlayerController {
         const rawPos = this.engine.getPositionMs();
         this.positionMs = rawPos - cueStart;
         this.bumpPos();
-        // CUE 区间终点 → 切下一曲
+        // CUE 区间终点 → 区间衔接(同文件下一轨保引擎 seek 衔接,跨文件走普通切曲)
         if (song !== null && song.cueEndMs > song.cueStartMs && rawPos >= song.cueEndMs) {
           hilog.info(DOMAIN, TAG, 'cue range end -> next');
-          this.autoNext();
+          this.cueAdvance();
         } else if (this.abStartMs >= 0 && this.abEndMs > this.abStartMs && this.positionMs >= this.abEndMs) {
           // A-B 重复:到 B 点回跳 A 点
           hilog.info(DOMAIN, TAG, 'ab repeat loop back %{public}d', Math.round(this.abStartMs));
@@ -143,6 +150,13 @@ export class PlayerController {
       }
       if (this.engineKind === EngineKind.LOSSLESS) {
         this.losslessEngine.pollNativeEvents();
+      }
+      // gapless 预排周期校验(队列被编辑/随机/删除后失效则重排;~2s 一次)
+      if (this.gaplessTargetIdx >= 0 && (++this.gaplessCheckTick % 8) === 0) {
+        if (this.gaplessTargetIdx !== this.queue.nextIndex(true)) {
+          hilog.info(DOMAIN, TAG, 'gapless target stale, refresh');
+          this.refreshGaplessPrefetch();
+        }
       }
     }, 250) as number;
   }
@@ -208,6 +222,7 @@ export class PlayerController {
     this.currentSong = song;
     this.abStartMs = -1;
     this.abEndMs = -1;
+    this.cueAdvancing = false;
     const cueStart = song.cueStartMs > 0 ? song.cueStartMs : 0;
     this.durationMs = song.cueEndMs > song.cueStartMs ? song.cueEndMs - song.cueStartMs
       : (info.durationMs > 0 ? info.durationMs : song.durationMs);
@@ -220,18 +235,7 @@ export class PlayerController {
     // ReplayGain/PEQ/跳过静音/倍速:按设置应用到本曲
     target.setSpeed(this.speed);
     target.setSkipSilence(SettingsService.get().skipSilence);
-    if (this.engineKind === EngineKind.LOSSLESS) {
-      const settings = SettingsService.get();
-      const mode = settings.rgMode;
-      if (mode > 0) {
-        (target as LosslessEngine).setReplayGain(song.rgTrackGain, song.rgTrackPeak > 0 ? song.rgTrackPeak : 1,
-          song.rgAlbumGain, song.rgAlbumPeak > 0 ? song.rgAlbumPeak : 1, mode);
-      }
-      (target as LosslessEngine).setPeq(settings.eqOn);
-      if (settings.eqOn) {
-        this.applyEqToEngine();
-      }
-    }
+    this.applySongDsp(song);
     target.play();
     this.isPlaying = true;
     if (prevSong !== null && previousPlayedMs > 10000 && prevSong.id !== song.id) {
@@ -242,8 +246,25 @@ export class PlayerController {
     this.syncSessionState();
     this.bumpPlayer();
     this.loadLyricsAsync(song);
+    this.refreshGaplessPrefetch();
     hilog.info(DOMAIN, TAG, 'playSong [%{public}s] %{public}s via %{public}s', song.codec, song.displayTitle(),
       this.engineInfo);
+  }
+
+  // RG/EQ(含按曲目/按专辑覆盖)下发无损引擎;playSong 与 gapless/CUE 衔接共用
+  private applySongDsp(song: Song): void {
+    if (this.engineKind !== EngineKind.LOSSLESS || this.engine === null) {
+      return;
+    }
+    const settings = SettingsService.get();
+    if (settings.rgMode > 0) {
+      this.losslessEngine.setReplayGain(song.rgTrackGain, song.rgTrackPeak > 0 ? song.rgTrackPeak : 1,
+        song.rgAlbumGain, song.rgAlbumPeak > 0 ? song.rgAlbumPeak : 1, settings.rgMode);
+    }
+    this.losslessEngine.setPeq(settings.eqOn);
+    if (settings.eqOn) {
+      this.applyEqToEngine();
+    }
   }
 
   // 歌词按需加载:缓存 → 文件头内嵌 → LRCLIB(默认关,显式开关)。完成后 bump + 同步桌面歌词。
@@ -308,6 +329,9 @@ export class PlayerController {
         await Db.get().recordPlay(this.currentSong.id, this.durationMs);
       }
       await this.autoNext();
+    } else if (ev.kind === EngineEventKind.GAPLESS_NEXT) {
+      // native 已无缝交接解码器(引擎/renderer 未动),此处仅同步曲目状态
+      await this.onGaplessAdvanced();
     } else if (ev.kind === EngineEventKind.INTERRUPT) {
       await this.onInterruptHint(ev.hint);
     } else if (ev.kind === EngineEventKind.ERROR) {
@@ -359,6 +383,126 @@ export class PlayerController {
     if (song !== null) {
       await this.playSong(song, 0);
     }
+  }
+
+  // ===== gapless(M3) =====
+
+  // 预排下一曲:无损引擎 + 倍速为 1 + 自然推进可达下一曲时,提前把 fd 交给 native。
+  // native 在当前曲 EOF 后交换解码器续填 ring,渲染无感;格式不一致时 openNext 返回 false 走普通路径。
+  private refreshGaplessPrefetch(): void {
+    this.losslessEngine.clearNext();
+    this.gaplessTargetIdx = -1;
+    if (this.engineKind !== EngineKind.LOSSLESS || this.engine === null || this.currentSong === null) {
+      return;
+    }
+    if (this.speed !== 1.0) {
+      return; // 倍速重采样游标跨曲不可拼接(native 侧同样防御)
+    }
+    if (this.queue.stopAfterCurrent) {
+      return;
+    }
+    const cur = this.currentSong;
+    const isCueRange = cur.cueEndMs > cur.cueStartMs; // 当前曲为 CUE 区间:终点走 cueAdvance,不预排
+    if (isCueRange) {
+      return;
+    }
+    const next = this.queue.nextIndex(true);
+    if (next < 0) {
+      return; // 队列尽头/受推进边界限制
+    }
+    const song = this.queue.songAt(next);
+    if (song === null) {
+      return;
+    }
+    if (song.cueEndMs > song.cueStartMs || song.cueStartMs > 0) {
+      return; // 下一曲是 CUE 区间(需要区间播放,交接后要走 cueAdvance 语义)
+    }
+    if (this.losslessEngine.openNext(song.path)) {
+      this.gaplessTargetIdx = next;
+      hilog.info(DOMAIN, TAG, 'gapless prefetch idx=%{public}d', next);
+    }
+  }
+
+  // native 无缝交接完成:同步曲目状态(引擎继续播,不重开)
+  private async onGaplessAdvanced(): Promise<void> {
+    const prev = this.currentSong;
+    if (prev !== null) {
+      await Db.get().recordPlay(prev.id, this.durationMs);
+    }
+    const nextIdx = this.gaplessTargetIdx >= 0 ? this.gaplessTargetIdx : this.queue.nextIndex(true);
+    this.gaplessTargetIdx = -1;
+    if (nextIdx < 0) {
+      // 异常兜底:按普通路径处理
+      hilog.warn(DOMAIN, TAG, 'gapless advanced but no target, stop');
+      this.isPlaying = false;
+      this.stopEngine();
+      this.syncSessionState();
+      this.bumpPlayer();
+      return;
+    }
+    const song = this.queue.songAt(nextIdx);
+    if (song === null) {
+      this.isPlaying = false;
+      this.stopEngine();
+      this.syncSessionState();
+      this.bumpPlayer();
+      return;
+    }
+    this.queue.jumpTo(nextIdx);
+    this.currentSong = song;
+    this.abStartMs = -1;
+    this.abEndMs = -1;
+    this.durationMs = song.durationMs;
+    this.positionMs = 0;
+    // engineInfo:格式一致才 gapless,文案按新曲 spec 更新
+    if (song.codec === 'dsd') {
+      this.engineInfo = L($r('app.string.engine_dsd'), Math.round(song.sampleRate * 8 / 44100));
+    } else {
+      this.engineInfo = L($r('app.string.engine_lossless'), song.codec.toUpperCase(), song.bitDepth, song.sampleRate);
+    }
+    this.applySongDsp(song);
+    this.syncSessionNowPlaying();
+    this.syncSessionState();
+    this.bumpPlayer();
+    this.loadLyricsAsync(song);
+    this.refreshGaplessPrefetch(); // 链式:继续预排下下曲
+    hilog.info(DOMAIN, TAG, 'gapless advanced to [%{public}s]', song.displayTitle());
+  }
+
+  // CUE 区间终点衔接:同文件连续轨保引擎 seek 衔接(不重开);其余走普通切曲
+  private cueAdvance(): void {
+    if (this.cueAdvancing) {
+      return; // seek 生效前 ticker 防重入
+    }
+    this.cueAdvancing = true;
+    const done = (): void => {
+      this.cueAdvancing = false;
+    };
+    const next = this.queue.nextIndex(true);
+    const cur = this.currentSong;
+    const nextSong = next >= 0 ? this.queue.songAt(next) : null;
+    if (cur !== null && nextSong !== null && nextSong.path === cur.path &&
+      this.engineKind === EngineKind.LOSSLESS && this.engine !== null) {
+      // 区间 gapless:同一解码文件内 seek 到下一轨起点,renderer 连续
+      Db.get().recordPlay(cur.id, cur.cueEndMs - cur.cueStartMs).then((): void => {
+        this.queue.jumpTo(next);
+        this.currentSong = nextSong;
+        this.abStartMs = -1;
+        this.abEndMs = -1;
+        this.durationMs = nextSong.cueEndMs > nextSong.cueStartMs
+          ? nextSong.cueEndMs - nextSong.cueStartMs : nextSong.durationMs;
+        this.positionMs = 0;
+        this.engine?.seek(nextSong.cueStartMs);
+        this.applySongDsp(nextSong);
+        this.syncSessionNowPlaying();
+        this.syncSessionState();
+        this.bumpPlayer();
+        this.loadLyricsAsync(nextSong);
+        hilog.info(DOMAIN, TAG, 'cue advance(seek) to [%{public}s]', nextSong.displayTitle());
+      }).then(done, done);
+      return;
+    }
+    this.autoNext().then(done, done);
   }
 
   // ============ 对外控制 ============
@@ -437,12 +581,29 @@ export class PlayerController {
     }
   }
 
-  // 把设置中的 EQ 曲线(内置预设名或自定义 31 段)下发无损引擎
+  // EQ 曲线解析:按曲目覆盖 > 按专辑覆盖 > 全局(内置预设名或自定义 31 段)。
+  // override 查询为异步,应用时校验仍处同一曲防切曲竞态。
   private applyEqToEngine(): void {
     const settings = SettingsService.get();
-    const bands = settings.eqPreset === 'custom' && settings.eqBands.length === 31
+    const globalBands = settings.eqPreset === 'custom' && settings.eqBands.length === 31
       ? settings.eqBands : presetBands(settings.eqPreset);
-    this.applyEqBands(bands);
+    const song = this.currentSong;
+    if (song === null) {
+      this.applyEqBands(globalBands);
+      return;
+    }
+    const songId = song.id;
+    const albumTarget = `album:${song.albumArtist}\u0001${song.displayAlbum()}`;
+    const applyResolved = (albumBands: number[] | null): Promise<void> => {
+      return Db.get().getEqAssign(`song:${songId}`).then((songBands: number[] | null): void => {
+        if (this.currentSong === null || this.currentSong.id !== songId) {
+          return; // 已切曲,丢弃过期结果
+        }
+        const use = songBands !== null ? songBands : (albumBands !== null ? albumBands : globalBands);
+        this.applyEqBands(use);
+      });
+    };
+    Db.get().getEqAssign(albumTarget).then(applyResolved);
   }
 
   private applyEqBands(bands: number[]): void {
@@ -460,13 +621,7 @@ export class PlayerController {
       return;
     }
     const settings = SettingsService.get();
-    const song = this.currentSong;
-    this.losslessEngine.setReplayGain(song.rgTrackGain, song.rgTrackPeak > 0 ? song.rgTrackPeak : 1,
-      song.rgAlbumGain, song.rgAlbumPeak > 0 ? song.rgAlbumPeak : 1, settings.rgMode);
-    this.losslessEngine.setPeq(settings.eqOn);
-    if (settings.eqOn) {
-      this.applyEqToEngine();
-    }
+    this.applySongDsp(this.currentSong);
     this.losslessEngine.setSkipSilence(settings.skipSilence);
     // 设置变更即时生效:重新 openTrack 太重,P1 简化为下次切曲应用(PEQ 开关即时,曲线即时)
     hilog.info(DOMAIN, TAG, 'dsp settings applied rg=%{public}d eq=%{public}s skip=%{public}s',
@@ -488,6 +643,7 @@ export class PlayerController {
     }
     this.syncSessionState();
     this.bumpPlayer();
+    this.refreshGaplessPrefetch(); // 倍速变化影响 gapless 有效性(≠1 禁用,回 1 恢复)
     hilog.info(DOMAIN, TAG, 'speed -> %{public}d', Math.round(this.speed * 100));
   }
 
@@ -798,6 +954,51 @@ export class PlayerController {
       hilog.info(DOMAIN, TAG, 'sleep timer set %{public}dmin', minutes);
     }
     AppStorage.setOrCreate('sleepVer', (AppStorage.get<number>('sleepVer') ?? 0) + 1);
+  }
+
+  // ============ 服务卡片推送(M5) ============
+  // formId 由 EntryFormAbility 持久化在 RDB(跨进程);此处节流读列表并 formProvider.updateForm。
+  private cardPushTimer: number = -1;
+  private cardFormIds: string[] = [];
+  private cardFormIdsLoaded: boolean = false;
+
+  private pushCardThrottled(): void {
+    if (this.cardPushTimer >= 0) {
+      return;
+    }
+    this.cardPushTimer = setTimeout((): void => {
+      this.cardPushTimer = -1;
+      this.pushCardNow();
+    }, 600) as number;
+  }
+
+  private pushCardNow(): void {
+    if (!this.cardFormIdsLoaded) {
+      Db.get().getSetting('cardFormIds', '').then((raw: string): void => {
+        this.cardFormIds = raw.length > 0 ? raw.split(',').filter((s: string): boolean => s.length > 0) : [];
+        this.cardFormIdsLoaded = true;
+        if (this.cardFormIds.length > 0) {
+          this.pushCardNow();
+        }
+      });
+      return;
+    }
+    if (this.cardFormIds.length === 0) {
+      return;
+    }
+    const song = this.currentSong;
+    const data: Record<string, Object> = {
+      'title': song !== null ? song.displayTitle() : '',
+      'artist': song !== null ? song.displayArtist() : '',
+      'playing': this.isPlaying,
+      'hasSong': song !== null
+    };
+    const fb = formBindingData.createFormBindingData(data);
+    for (const id of this.cardFormIds) {
+      formProvider.updateForm(id, fb).catch((e: Error): void => {
+        hilog.warn(DOMAIN, TAG, 'updateForm %{public}s fail %{public}s', id, e.message);
+      });
+    }
   }
 
   sleepRemainMin(): number {

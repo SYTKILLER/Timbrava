@@ -59,6 +59,29 @@ static napi_value JVoidCmd(napi_env env, napi_callback_info info, void (timbrava
     return nullptr;
 }
 
+// gapless 预排(M3):下一曲 fd,格式一致才接受(fd 由 ArkTS 打开,native dup 后即可关)
+static napi_value JOpenNextFd(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    int fd = -1;
+    if (argc >= 1) {
+        napi_get_value_int32(env, args[0], &fd);
+    }
+    napi_value result;
+    napi_get_boolean(env, timbrava::Engine::instance().openNextTrack(fd), &result);
+    return result;
+}
+
+static napi_value JClearNextTrack(napi_env env, napi_callback_info info)
+{
+    (void)env;
+    (void)info;
+    timbrava::Engine::instance().clearNextTrack();
+    return nullptr;
+}
+
 static napi_value JPlay(napi_env env, napi_callback_info info)
 {
     return JVoidCmd(env, info, &timbrava::Engine::play);
@@ -407,6 +430,8 @@ static napi_value Init(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
         {"openFd", nullptr, JOpenFd, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"openNextFd", nullptr, JOpenNextFd, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"clearNextTrack", nullptr, JClearNextTrack, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"play", nullptr, JPlay, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"pause", nullptr, JPause, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"stop", nullptr, JStop, nullptr, nullptr, nullptr, napi_default, nullptr},

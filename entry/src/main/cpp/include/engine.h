@@ -26,6 +26,10 @@ public:
 
     // JS 线程命令
     bool openTrack(int fd, std::string *errMsg, TrackInfo *outInfo);
+    // gapless(M3):预排下一曲(fd 生命周期同 openTrack:native dup)。采样率/通道/位深
+    // (及 DSD 率)与当前曲一致才接受;解码线程在当前曲 EOF 后交换解码器无缝续填。
+    bool openNextTrack(int fd);
+    void clearNextTrack();
     void play();
     void pause();
     void stopTrack();
@@ -69,6 +73,10 @@ private:
     std::unique_ptr<AudioOutput> out_;
 
     RingBuffer ring_{8u * 1024u * 1024u}; // 8MB,24/192/S32 约 5.3s
+    // gapless 预排(nextDecoder_ 本体 stateM_ 保护;hasNext_ 供解码线程无锁快查)
+    std::unique_ptr<IDecoder> nextDecoder_;
+    TrackInfo nextInfo_{};
+    std::atomic<bool> hasNext_{false};
     std::thread decodeThread_;
     bool threadStarted_ = false;
     std::atomic<bool> quit_{false};

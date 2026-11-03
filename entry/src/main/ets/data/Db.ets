@@ -52,6 +52,9 @@ const SQL_CREATE: string[] = [
     song_id INTEGER PRIMARY KEY, lrc TEXT DEFAULT '', source INTEGER DEFAULT 0, offset_ms INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS eq_presets(
     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, bands TEXT DEFAULT '[]')`,
+  // EQ 作用域覆盖(M3 批次):target = 'song:{id}' | 'album:{albumArtist}\u0001{album}'(与 LibraryStore 分组键一致)
+  `CREATE TABLE IF NOT EXISTS eq_assign(
+    target TEXT PRIMARY KEY, bands TEXT NOT NULL DEFAULT '[]')`,
   `CREATE TABLE IF NOT EXISTS app_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)`
 ];
 
@@ -68,6 +71,21 @@ export class EqPresetRow {
   id: number = 0;
   name: string = '';
   bands: number[] = [];
+}
+
+// 播放统计行(M6 统计回顾)
+export class HistoryRow {
+  id: number = 0;        // history 行 id(滑动删除用)
+  playedAt: number = 0;
+  msPlayed: number = 0;
+  song: Song = new Song();
+}
+
+export class MostRow {
+  song: Song = new Song();
+  count: number = 0;
+  totalMs: number = 0;
+  lastPlayed: number = 0;
 }
 
 export class Db {
@@ -530,6 +548,101 @@ export class Db {
       hilog.warn(DOMAIN, TAG, 'getPlayStatsTotal fail %{public}s', (e as Error).message);
       return 0;
     }
+  }
+
+  // ============ 播放统计(M6 统计回顾) ============
+
+  // 最近播放:history JOIN songs(一条播放一条记录,可单删;hist_id 别名避免遮蔽 songs.id)
+  async listRecentHistory(limit: number): Promise<HistoryRow[]> {
+    const st = this.storeOrThrow();
+    const out: HistoryRow[] = [];
+    try {
+      const rs = await st.querySql(
+        `SELECT h.id AS hist_id, h.played_at, h.ms_played, ${Db.SONG_COLS} FROM history h
+         JOIN songs ON songs.id = h.song_id ORDER BY h.played_at DESC LIMIT ${limit}`);
+      while (rs.goToNextRow()) {
+        const row = new HistoryRow();
+        row.id = rs.getLong(rs.getColumnIndex('hist_id'));
+        row.playedAt = rs.getLong(rs.getColumnIndex('played_at'));
+        row.msPlayed = rs.getLong(rs.getColumnIndex('ms_played'));
+        row.song = Db.rowToSong(rs);
+        out.push(row);
+      }
+      rs.close();
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'listRecentHistory fail %{public}s', (e as Error).message);
+    }
+    return out;
+  }
+
+  // 最常播放:play_count JOIN songs(按次数降序;pc_* 别名避免遮蔽)
+  async listMostPlayed(limit: number): Promise<MostRow[]> {
+    const st = this.storeOrThrow();
+    const out: MostRow[] = [];
+    try {
+      const rs = await st.querySql(
+        `SELECT p.count AS pc_count, p.total_ms AS pc_total, p.last_played AS pc_last, ${Db.SONG_COLS}
+         FROM play_count p JOIN songs ON songs.id = p.song_id
+         ORDER BY p.count DESC, p.last_played DESC LIMIT ${limit}`);
+      while (rs.goToNextRow()) {
+        const row = new MostRow();
+        row.count = rs.getLong(rs.getColumnIndex('pc_count'));
+        row.totalMs = rs.getLong(rs.getColumnIndex('pc_total'));
+        row.lastPlayed = rs.getLong(rs.getColumnIndex('pc_last'));
+        row.song = Db.rowToSong(rs);
+        out.push(row);
+      }
+      rs.close();
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'listMostPlayed fail %{public}s', (e as Error).message);
+    }
+    return out;
+  }
+
+  async deleteHistoryRow(id: number): Promise<void> {
+    const st = this.storeOrThrow();
+    const pred = new relationalStore.RdbPredicates('history');
+    pred.equalTo('id', id);
+    await st.delete(pred);
+  }
+
+  async deletePlayCountRow(songId: number): Promise<void> {
+    const st = this.storeOrThrow();
+    const pred = new relationalStore.RdbPredicates('play_count');
+    pred.equalTo('song_id', songId);
+    await st.delete(pred);
+  }
+
+  // ============ EQ 作用域覆盖(song:/album: target) ============
+
+  async getEqAssign(target: string): Promise<number[] | null> {
+    const st = this.storeOrThrow();
+    try {
+      const rs = await st.querySql('SELECT bands FROM eq_assign WHERE target = ?', [target]);
+      let out: number[] | null = null;
+      if (rs.goToFirstRow()) {
+        const bands = Db.parseBands(rs.getString(0));
+        out = bands.length === 31 ? bands : null;
+      }
+      rs.close();
+      return out;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'getEqAssign fail %{public}s', (e as Error).message);
+      return null;
+    }
+  }
+
+  async setEqAssign(target: string, bands: number[]): Promise<void> {
+    const st = this.storeOrThrow();
+    const bucket: relationalStore.ValuesBucket = { 'target': target, 'bands': Db.stringifyBands(bands) };
+    await st.insert('eq_assign', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+  }
+
+  async deleteEqAssign(target: string): Promise<void> {
+    const st = this.storeOrThrow();
+    const pred = new relationalStore.RdbPredicates('eq_assign');
+    pred.equalTo('target', target);
+    await st.delete(pred);
   }
 
   // ============ EQ 预设 / 频段 JSON 编解码 ============

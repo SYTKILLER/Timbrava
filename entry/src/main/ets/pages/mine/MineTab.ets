@@ -4,6 +4,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Db } from '../../data/Db';
 import { LibraryStore } from '../../data/LibraryStore';
 import { SongListParam } from '../../components/SongRow';
+import { PlayHistoryParam } from '../detail/PlayHistory';
 import { PlaylistsTab } from '../playlist/PlaylistsTab';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { formatDuration } from '../../data/Model';
@@ -47,10 +48,6 @@ export struct MineTab {
     return stack !== undefined && stack !== null ? stack : new NavPathStack();
   }
 
-  private openSmart(kind: string, titleRes: Resource): void {
-    this.nav().pushPathByName('SongList', SongListParam.smart(kind, L(titleRes)));
-  }
-
   private openFavorites(): void {
     this.nav().pushPathByName('SongList', SongListParam.favorites());
   }
@@ -80,9 +77,9 @@ export struct MineTab {
           .width('100%')
           .padding({ left: 16, right: 16 })
 
-          // 智能列表入口
+          // 统计回顾入口(最近/最常播放页)+收藏
           Row({ space: 8 }) {
-            Button($r('app.string.smart_recent'))
+            Button($r('app.string.history_recent'))
               .fontSize(12)
               .fontColor($r('app.color.text_primary'))
               .backgroundColor($r('app.color.badge_bg'))
@@ -90,9 +87,9 @@ export struct MineTab {
               .height(32)
               .layoutWeight(1)
               .onClick(() => {
-                this.openSmart('recent', $r('app.string.smart_recent'));
+                this.nav().pushPathByName('PlayHistory', new PlayHistoryParam(0));
               })
-            Button($r('app.string.smart_most'))
+            Button($r('app.string.history_most'))
               .fontSize(12)
               .fontColor($r('app.color.text_primary'))
               .backgroundColor($r('app.color.badge_bg'))
@@ -100,7 +97,7 @@ export struct MineTab {
               .height(32)
               .layoutWeight(1)
               .onClick(() => {
-                this.openSmart('most', $r('app.string.smart_most'));
+                this.nav().pushPathByName('PlayHistory', new PlayHistoryParam(1));
               })
             Button($r('app.string.str_favorites'))
               .fontSize(12)

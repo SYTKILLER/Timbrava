@@ -21,6 +21,8 @@ interface NativeTrackInfo {
 
 interface NativeModule {
   openFd(fd: number): NativeTrackInfo;
+  openNextFd(fd: number): boolean;
+  clearNextTrack(): void;
   play(): void;
   pause(): void;
   stop(): void;
@@ -99,6 +101,30 @@ export class LosslessEngine implements IAudioEngine {
     m.play();
   }
 
+  // gapless(M3):预排下一曲(fd 打开→native 探测+格式校验→立即关;native 已 dup)。
+  // 返回 false = 格式不一致/探测失败,上层走普通切曲路径。
+  openNext(uri: string): boolean {
+    const m: NativeModule = timbravaCore as NativeModule;
+    let f: fs.File | null = null;
+    try {
+      f = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      return m.openNextFd(f.fd);
+    } catch (e) {
+      return false;
+    } finally {
+      if (f !== null) {
+        try {
+          fs.closeSync(f);
+        } catch (e2) {
+        }
+      }
+    }
+  }
+
+  clearNext(): void {
+    (timbravaCore as NativeModule).clearNextTrack();
+  }
+
   pause(): void {
     const m: NativeModule = timbravaCore as NativeModule;
     m.pause();
@@ -143,6 +169,8 @@ export class LosslessEngine implements IAudioEngine {
       const kind = String(ev['ev'] ?? '');
       if (kind === 'end') {
         this.emit(EngineEventKind.TRACK_END, 0, 'native end');
+      } else if (kind === 'gaplessNext') {
+        this.emit(EngineEventKind.GAPLESS_NEXT, 0, 'native gapless advanced');
       } else if (kind === 'error') {
         this.emit(EngineEventKind.ERROR, Number(ev['code'] ?? 0), `native error src=${String(ev['src'] ?? '')}`);
       } else if (kind === 'interrupt') {
