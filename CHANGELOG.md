@@ -9,6 +9,12 @@
 
 ### Added
 
+- 页面架构 3 页签改版(0.6.0,#首页重构):移除在线曲库形态,**曲库升级为首页**;新增**专业**页(实时输出卡/无损引擎/EQ 入口/ReplayGain 模式与全库扫描/歌词打轴/重复清理工具集中承载);新增**我的**页(曲库统计四宫格含累计播放时长、最近播放/最常播放/收藏智能入口、歌单嵌入、设置/关于入口);**设置降级为我的页二级路由页**(SettingsDest,NavDestination 默认标题栏+状态栏避让);**队列页签移除**,睡眠定时器/循环扩展(播完停止+专辑/艺人/文件夹边界)/多队列管理/清空队列全部迁入全屏播放器队列抽屉顶栏。
+- 曲库首页增强:智能列表入口行(最近播放/最常播放/收藏,复用 PlaylistRepo.getSmartSongs + SongListParam,补齐"有数据无入口");最近添加专辑横滑卡(按 date_added 去重取前 10,点击进专辑 SongList);Song 模型补 dateAdded 字段映射。
+- 新增 Db.getPlayStatsTotal()(play_count.total_ms 求和);PlaylistsTab 支持 embed 嵌入模式;版本号 0.6.0/versionCode 6000。
+
+### Added
+
 - 关于页新增"检查更新":请求 GitHub Releases 最新版(api.github.com),与包版本号逐段数字比较;有新版弹窗(版本号+发布页链接,可跳系统浏览器),无新版/失败 toast 反馈;按钮带检查中状态。
 
 ### Changed

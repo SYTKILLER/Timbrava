@@ -515,6 +515,23 @@ export class Db {
     }
   }
 
+  // 累计播放时长(ms):play_count.total_ms 求和,无记录返回 0
+  async getPlayStatsTotal(): Promise<number> {
+    const st = this.storeOrThrow();
+    try {
+      const pred = new relationalStore.RdbPredicates('play_count');
+      const rs = await st.query(pred, ['SUM(total_ms) AS total']);
+      if (rs.goToFirstRow()) {
+        const idx = rs.getColumnIndex('total');
+        return rs.isColumnNull(idx) ? 0 : rs.getLong(idx);
+      }
+      return 0;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'getPlayStatsTotal fail %{public}s', (e as Error).message);
+      return 0;
+    }
+  }
+
   // ============ EQ 预设 / 频段 JSON 编解码 ============
 
   // bands JSON → 31 段增益数组(不足补 0,超出截断)

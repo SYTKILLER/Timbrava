@@ -26,6 +26,7 @@ export struct PlaylistsTab {
   @State topSafe: number = 36;
   @State playlists: PlaylistInfo[] = [];
   @State newName: string = '';
+  @Prop embed: boolean = false; // 嵌入"我的"页时:隐藏页头、自适应高度
 
   aboutToAppear(): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -154,16 +155,36 @@ export struct PlaylistsTab {
   }
 
   build() {
-    Column() {
-      Row() {
-        Text($r('app.string.str_playlists'))
-          .fontSize(22)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
+    if (this.embed) {
+      Column() {
+        this.RootContent()
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: this.topSafe + 8, bottom: 8 })
+      .backgroundColor(this.pageBg())
+    } else {
+      Column() {
+        this.RootContent()
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(this.pageBg())
+    }
+  }
+
+  @Builder
+  RootContent() {
+    Column() {
+      if (!this.embed) {
+        Row() {
+          Text($r('app.string.str_playlists'))
+            .fontSize(22)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: this.topSafe + 8, bottom: 8 })
+      }
 
       // 新建歌单:行内输入 + 确定
       Row({ space: 8 }) {
@@ -219,13 +240,12 @@ export struct PlaylistsTab {
           }, (pl: PlaylistInfo): string => `${pl.id}_${pl.name}_${pl.songCount}`)
         }
         .width('100%')
-        .layoutWeight(1)
+        .layoutWeight(this.embed ? 0 : 1)
         .scrollBar(BarState.Auto)
-        .padding({ bottom: this.bottomSafeVp + 140 })
+        .padding({ bottom: this.embed ? 8 : this.bottomSafeVp + 140 })
       }
     }
     .width('100%')
-    .height('100%')
     .backgroundColor(this.pageBg())
   }
 

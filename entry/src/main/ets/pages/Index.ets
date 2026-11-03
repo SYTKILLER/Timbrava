@@ -7,8 +7,9 @@ import { PlayerController } from '../service/PlayerController';
 import { AppTheme, SafeAreaResult } from '../common/Theme';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { LibraryTab } from './library/LibraryTab';
-import { QueueTab } from './queue/QueueTab';
-import { SettingsTab } from './settings/SettingsTab';
+import { ProTab } from './pro/ProTab';
+import { MineTab } from './mine/MineTab';
+import { SettingsDest } from './settings/SettingsTab';
 import { FullPlayerDest } from './player/FullPlayer';
 import { LyricsEditorDest } from './player/LyricsEditor';
 import { SongListDest } from './detail/SongList';
@@ -60,14 +61,14 @@ struct Index {
           .tabBar(this.tabIcon($r('sys.symbol.music_note_list'), $r('app.string.tab_library'), 0))
 
           TabContent() {
-            QueueTab()
+            ProTab()
           }
-          .tabBar(this.tabIcon($r('sys.symbol.list_bullet'), $r('app.string.str_queue'), 1))
+          .tabBar(this.tabIcon($r('sys.symbol.waveform'), $r('app.string.tab_pro'), 1))
 
           TabContent() {
-            SettingsTab()
+            MineTab()
           }
-          .tabBar(this.tabIcon($r('sys.symbol.gearshape'), $r('app.string.str_settings'), 2))
+          .tabBar(this.tabIcon($r('sys.symbol.person'), $r('app.string.tab_mine'), 2))
         }
         .vertical(false)
         .scrollable(true)
@@ -178,6 +179,8 @@ struct Index {
       TagEditorDest()
     } else if (name === 'Duplicates') {
       DuplicatesDest()
+    } else if (name === 'Settings') {
+      SettingsDest()
     }
   }
 }

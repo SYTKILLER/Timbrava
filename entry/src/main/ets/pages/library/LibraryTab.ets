@@ -23,6 +23,21 @@ class ArtistSource extends BasicDataSource<Artist> {
 class GenreSource extends BasicDataSource<Genre> {
 }
 
+// 曲库首页横滑卡:最近添加专辑
+class RecentAlbum {
+  key: string;
+  album: string;
+  artist: string;
+  artPath: string;
+
+  constructor(key: string, album: string, artist: string, artPath: string) {
+    this.key = key;
+    this.album = album;
+    this.artist = artist;
+    this.artPath = artPath;
+  }
+}
+
 @Builder
 export function AlbumCover(artPath: string, sizeVp: number) {
   if (artPath.length > 0) {
@@ -53,6 +68,7 @@ export struct LibraryTab {
   @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State segmentIndex: number = 0;
   @State topSafe: number = 36;
+  @State recentAlbums: RecentAlbum[] = [];
   private songSrc: SongSource = new SongSource();
   private albumSrc: AlbumSource = new AlbumSource();
   private artistSrc: ArtistSource = new ArtistSource();
@@ -80,10 +96,44 @@ export struct LibraryTab {
     this.artistSrc.setData(lib.artists);
     this.genreSrc.setData(lib.genres);
     hilog.debug(DOMAIN, TAG, 'refresh songs=%{public}d albums=%{public}d', songs.length, lib.albums.length);
+    this.rebuildRecent();
   }
 
   private navStack(): NavPathStack | null {
     return AppStorage.get<NavPathStack>('navStack') ?? null;
+  }
+
+  // 最近添加专辑:按入库时间去重取前 10 张(曲库首页横滑卡)
+  private rebuildRecent(): void {
+    const seen: Set<string> = new Set<string>();
+    const list: RecentAlbum[] = [];
+    const songs = LibraryStore.get().songs.slice().sort((a: Song, b: Song): number => b.dateAdded - a.dateAdded);
+    for (const s of songs) {
+      const key = `${s.albumArtist || s.artist}||${s.album}`;
+      if (seen.has(key) || s.dateAdded <= 0) {
+        continue;
+      }
+      seen.add(key);
+      list.push(new RecentAlbum(key, s.album, s.displayArtist(), s.artPath));
+      if (list.length >= 10) {
+        break;
+      }
+    }
+    this.recentAlbums = list;
+  }
+
+  private openSmart(kind: string, titleRes: Resource): void {
+    const stack = this.navStack();
+    if (stack !== null) {
+      stack.pushPathByName('SongList', SongListParam.smart(kind, L(titleRes)));
+    }
+  }
+
+  private openFavorites(): void {
+    const stack = this.navStack();
+    if (stack !== null) {
+      stack.pushPathByName('SongList', SongListParam.favorites());
+    }
   }
 
   build() {
@@ -114,6 +164,83 @@ export struct LibraryTab {
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: this.topSafe + 8, bottom: 4 })
+
+      // 智能列表入口(最近播放/最常播放/收藏)
+      Row({ space: 8 }) {
+        Button($r('app.string.smart_recent'))
+          .fontSize(12)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.badge_bg'))
+          .borderRadius(14)
+          .height(30)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.openSmart('recent', $r('app.string.smart_recent'));
+          })
+        Button($r('app.string.smart_most'))
+          .fontSize(12)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.badge_bg'))
+          .borderRadius(14)
+          .height(30)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.openSmart('most', $r('app.string.smart_most'));
+          })
+        Button($r('app.string.str_favorites'))
+          .fontSize(12)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.badge_bg'))
+          .borderRadius(14)
+          .height(30)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.openFavorites();
+          })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, bottom: 8 })
+
+      // 最近添加专辑横滑卡
+      if (this.recentAlbums.length > 0) {
+        Text($r('app.string.recent_added'))
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .padding({ left: 16, right: 16, bottom: 4 })
+        List({ space: 10 }) {
+          ForEach(this.recentAlbums, (a: RecentAlbum) => {
+            ListItem() {
+              Column({ space: 4 }) {
+                AlbumCover(a.artPath, 88)
+                Text(a.album)
+                  .fontSize(11)
+                  .fontColor($r('app.color.text_primary'))
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(a.artist)
+                  .fontSize(10)
+                  .fontColor($r('app.color.text_secondary'))
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .width(88)
+            }
+              .onClick(() => {
+                const parts = a.key.split('||');
+                const stack = this.navStack();
+                if (stack !== null) {
+                  stack.pushPathByName('SongList', SongListParam.album(parts[0], parts.length > 1 ? parts[1] : a.album));
+                }
+              })
+          }, (a: RecentAlbum): string => a.key)
+        }
+        .width('100%')
+        .height(130)
+        .padding({ left: 16, right: 16, bottom: 8 })
+        .scrollBar(BarState.Off)
+      }
 
       Row() {
         TabSegmentButtonV2({

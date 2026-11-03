@@ -6,14 +6,14 @@ import { SettingsService, ThemeMode } from '../../service/SettingsService';
 import { RgScanner, RgScanState } from '../../service/RgScanner';
 import { BackupService } from '../../service/BackupService';
 import { LibraryStore } from '../../data/LibraryStore';
-import { AppTheme, SafeAreaResult } from '../../common/Theme';
+import { AppTheme } from '../../common/Theme';
 import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][SettingsTab]';
 const DOMAIN = 0x0001;
 
 @Component
-struct CardSection {
+export struct CardSection {
   title: ResourceStr = '';
   @BuilderParam content: () => void = this.emptyContent;
 
@@ -38,7 +38,7 @@ struct CardSection {
 }
 
 @Component
-struct PrefToggleRow {
+export struct PrefToggleRow {
   @StorageProp('prefLossless') prefLossless: boolean = true;
   @StorageProp('prefPauseHeadphone') prefPauseHeadphone: boolean = true;
   @StorageProp('prefPauseBt') prefPauseBt: boolean = true;
@@ -152,17 +152,10 @@ struct ThemeRow {
   }
 }
 
+// 设置页主体(降级为"我的"页二级路由页,由 SettingsDest 包 NavDestination)
 @Component
 export struct SettingsTab {
   @StorageProp('themePageBg') themePageBg: string = '';
-  @State topSafe: number = 36;
-
-  aboutToAppear(): void {
-    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    AppTheme.safeAreas(ctx).then((r: SafeAreaResult): void => {
-      this.topSafe = r.topVp;
-    });
-  }
 
   private pageBg(): ResourceColor {
     return this.themePageBg.length > 0 ? this.themePageBg : $r('app.color.page_bg');
@@ -175,13 +168,6 @@ export struct SettingsTab {
 
   build() {
     Column() {
-      Text($r('app.string.str_settings'))
-        .fontSize(22)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .padding({ left: 16, right: 16, top: this.topSafe + 8, bottom: 8 })
-
       Scroll() {
         Column({ space: 12 }) {
           // 媒体库
@@ -194,32 +180,6 @@ export struct SettingsTab {
               this.NavItem($r('app.string.duplicates_title'), $r('app.string.duplicates_sub'), (): void => {
                 this.nav().pushPathByName('Duplicates', null);
               })
-            }
-          }
-
-          // 引擎
-          CardSection({ title: $r('app.string.audio_engine') }) {
-            Column() {
-              PrefToggleRow({
-                prefKey: 'lossless',
-                title: $r('app.string.lossless_pref'),
-                sub: $r('app.string.lossless_sub')
-              })
-              Divider().color($r('app.color.divider')).margin({ left: 0 })
-              this.NavItem($r('app.string.eq_entry'), $r('app.string.eq_entry_sub'), (): void => {
-                this.nav().pushPathByName('Equalizer', null);
-              })
-              Divider().color($r('app.color.divider')).margin({ left: 0 })
-              RgModeRow()
-              Divider().color($r('app.color.divider')).margin({ left: 0 })
-              this.InfoItem($r('app.string.system_fallback'), $r('app.string.system_fallback_sub'))
-            }
-          }
-
-          // 响度分析(ReplayGain 扫描)
-          CardSection({ title: $r('app.string.loudness') }) {
-            Column() {
-              RgScanSection()
             }
           }
 
@@ -420,7 +380,7 @@ struct OnlineLyricsRow {
 
 // ReplayGain 应用模式行(0 关 / 1 按曲目 / 2 按专辑)
 @Component
-struct RgModeRow {
+export struct RgModeRow {
   @StorageProp('prefRgMode') prefRgMode: number = 0;
 
   private label(m: number): ResourceStr {
@@ -473,7 +433,7 @@ struct RgModeRow {
 
 // 响度分析扫描区:全库扫描按钮 + 进度
 @Component
-struct RgScanSection {
+export struct RgScanSection {
   @StorageProp('rgScanVer') rgScanVer: number = 0;
 
   private st(): RgScanState {
@@ -534,5 +494,23 @@ struct RgScanSection {
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .padding({ top: 10, bottom: 10 })
+  }
+}
+
+// 设置二级路由壳:NavDestination 默认标题栏 + 状态栏避让(与 QueueBoard 同模式)
+@Component
+export struct SettingsDest {
+  @StorageProp('topSafeVp') topSafeVp: number = 36;
+  private pathStack: NavPathStack | null = null;
+
+  build() {
+    NavDestination() {
+      SettingsTab()
+    }
+    .padding({ top: this.topSafeVp })
+    .title($r('app.string.str_settings'))
+    .onReady((ctx: NavDestinationContext): void => {
+      this.pathStack = ctx.pathStack;
+    })
   }
 }

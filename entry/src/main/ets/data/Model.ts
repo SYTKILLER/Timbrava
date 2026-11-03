@@ -28,6 +28,7 @@ export class Song {
   cueStartMs: number = 0;
   cueEndMs: number = -1;
   artPath: string = '';
+  dateAdded: number = 0; // 入库时间(最近添加排序用)
   rgTrackGain: number = 0;
   rgTrackPeak: number = 0;
   rgAlbumGain: number = 0;
@@ -86,6 +87,7 @@ export class Song {
     s.cueStartMs = Number(o['cue_start_ms'] ?? 0);
     s.cueEndMs = Number(o['cue_end_ms'] ?? -1);
     s.artPath = String(o['art_path'] ?? '');
+    s.dateAdded = Number(o['date_added'] ?? 0);
     s.rgTrackGain = Number(o['rg_track_gain'] ?? 0);
     s.rgTrackPeak = Number(o['rg_track_peak'] ?? 0);
     s.rgAlbumGain = Number(o['rg_album_gain'] ?? 0);

@@ -439,6 +439,50 @@ export struct FullPlayerDest {
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
+        // 多队列管理(原队列页签入口迁移至此)
+        Button({ stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.square_stack_3d'))
+            .fontSize(16)
+            .fontColor([$r('app.color.text_primary')])
+        }
+        .width(32)
+        .height(32)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.showQueue = false;
+          this.pathStack?.pushPathByName('QueueBoard', null);
+        })
+        // 循环模式 + 播完停止 + 推进边界(原队列页签菜单迁移)
+        Button({ stateEffect: true }) {
+          SymbolGlyph(this.repeatIcon())
+            .fontSize(16)
+            .fontColor([this.repeatAccent() ? $r('app.color.accent') : $r('app.color.text_primary')])
+        }
+        .width(32)
+        .height(32)
+        .backgroundColor(Color.Transparent)
+        .bindMenu(this.repeatMenu())
+        // 睡眠定时器(原队列页签入口迁移)
+        Button({ stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.timer'))
+            .fontSize(16)
+            .fontColor([PlayerController.get().sleepRemainMin() > 0 ? $r('app.color.accent') : $r('app.color.text_primary')])
+        }
+        .width(32)
+        .height(32)
+        .backgroundColor(Color.Transparent)
+        .bindMenu(this.sleepMenu())
+        Button({ stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.trash'))
+            .fontSize(16)
+            .fontColor([$r('app.color.text_secondary')])
+        }
+        .width(32)
+        .height(32)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          QueueService.get().clear();
+        })
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.xmark'))
             .fontSize(16)
@@ -500,6 +544,72 @@ export struct FullPlayerDest {
     .shadow({ radius: 32, color: '#33000000', offsetX: 0, offsetY: -6 })
   }
 
+  // ---- 队列抽屉迁移自原队列页签的循环/睡眠菜单 ----
+
+  @Builder
+  repeatMenu() {
+    Menu() {
+      MenuItem({ content: $r('app.string.loop_off') })
+        .onClick(() => {
+          PlayerController.get().setRepeat(RepeatMode.OFF);
+        })
+      MenuItem({ content: $r('app.string.loop_all') })
+        .onClick(() => {
+          PlayerController.get().setRepeat(RepeatMode.ALL);
+        })
+      MenuItem({ content: $r('app.string.loop_one') })
+        .onClick(() => {
+          PlayerController.get().setRepeat(RepeatMode.ONE);
+        })
+      MenuItem({ content: QueueService.get().stopAfterCurrent ? $r('app.string.stop_after_on') : $r('app.string.stop_after') })
+        .onClick(() => {
+          QueueService.get().setStopAfterCurrent(!QueueService.get().stopAfterCurrent);
+        })
+      MenuItem({ content: QueueService.get().boundary === 'album' ? $r('app.string.album_boundary_on') : $r('app.string.album_boundary') })
+        .onClick(() => {
+          QueueService.get().setBoundary(QueueService.get().boundary === 'album' ? 'none' : 'album');
+        })
+      MenuItem({ content: QueueService.get().boundary === 'artist' ? $r('app.string.artist_boundary_on') : $r('app.string.artist_boundary') })
+        .onClick(() => {
+          QueueService.get().setBoundary(QueueService.get().boundary === 'artist' ? 'none' : 'artist');
+        })
+      MenuItem({ content: QueueService.get().boundary === 'folder' ? $r('app.string.folder_boundary_on') : $r('app.string.folder_boundary') })
+        .onClick(() => {
+          QueueService.get().setBoundary(QueueService.get().boundary === 'folder' ? 'none' : 'folder');
+        })
+    }
+  }
+
+  @Builder
+  sleepMenu() {
+    Menu() {
+      MenuItem({ content: $r('app.string.sleep_off') })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(0);
+        })
+      MenuItem({ content: $r('app.string.sleep_15') })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(15);
+        })
+      MenuItem({ content: $r('app.string.sleep_30') })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(30);
+        })
+      MenuItem({ content: $r('app.string.sleep_45') })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(45);
+        })
+      MenuItem({ content: $r('app.string.sleep_60') })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(60);
+        })
+      MenuItem({ content: $r('app.string.sleep_90') })
+        .onClick(() => {
+          PlayerController.get().setSleepTimer(90);
+        })
+    }
+  }
+
   private sliderValue(): number {
     if (this.seeking) {
       return Math.round(this.seekPreviewMs);
@@ -526,6 +636,12 @@ export struct FullPlayerDest {
       return $r('sys.symbol.repeat_1');
     }
     return $r('sys.symbol.repeat');
+  }
+
+  // 循环扩展高亮:非默认循环 / 有边界推进 / 播完停止 任一开启(队列抽屉复用)
+  private repeatAccent(): boolean {
+    const q = QueueService.get();
+    return q.repeat !== RepeatMode.OFF || q.boundary !== 'none' || q.stopAfterCurrent;
   }
 
   // ===== 功能行辅助(playerVer 驱动重渲染) =====
