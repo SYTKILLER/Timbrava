@@ -7,6 +7,7 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { PlaylistRepo, PlaylistInfo } from '../../data/PlaylistRepo';
 import { M3UEntry, buildM3U } from '../../data/m3u/M3U';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][Playlists]';
 const DOMAIN = 0x0001;
@@ -59,19 +60,19 @@ export struct PlaylistsTab {
     return this.themePageBg.length > 0 ? this.themePageBg : $r('app.color.page_bg');
   }
 
-  private toast(msg: string): void {
+  private toast(msg: ResourceStr): void {
     this.getUIContext().getPromptAction().showToast({ message: msg, duration: 2000 });
   }
 
   private async createPlaylist(): Promise<void> {
     const name = this.newName.trim();
     if (name.length === 0) {
-      this.toast('请输入歌单名称');
+      this.toast($r('app.string.pl_name_required'));
       return;
     }
     const id = await PlaylistRepo.get().createPlaylist(name);
     if (id < 0) {
-      this.toast('名称已存在');
+      this.toast($r('app.string.pl_name_exists'));
       return;
     }
     this.newName = '';
@@ -87,17 +88,17 @@ export struct PlaylistsTab {
 
   private confirmDelete(pl: PlaylistInfo): void {
     this.getUIContext().showAlertDialog({
-      title: '删除歌单',
-      message: `确定删除「${pl.name}」?仅移除歌单记录,不影响歌曲文件。`,
+      title: $r('app.string.delete_pl'),
+      message: L($r('app.string.pl_delete_confirm'), pl.name),
       autoCancel: true,
       alignment: DialogAlignment.Center,
       primaryButton: {
-        value: '取消',
+        value: $r('app.string.str_cancel'),
         action: (): void => {
         }
       },
       secondaryButton: {
-        value: '删除',
+        value: $r('app.string.str_delete'),
         fontColor: $r('app.color.accent'),
         action: (): void => {
           this.doDelete(pl);
@@ -119,7 +120,7 @@ export struct PlaylistsTab {
     try {
       const songs = await PlaylistRepo.get().getPlaylistSongs(pl.id);
       if (songs.length === 0) {
-        this.toast('歌单为空,无需导出');
+        this.toast($r('app.string.pl_empty_no_export'));
         return;
       }
       const items: M3UEntry[] = [];
@@ -144,18 +145,18 @@ export struct PlaylistsTab {
       const f = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
       fs.writeSync(f.fd, text);
       fs.closeSync(f);
-      this.toast(`已导出:${path}`);
+      this.toast(L($r('app.string.m3u_exported'), path));
       hilog.info(DOMAIN, TAG, 'export %{public}d songs -> %{public}s', songs.length, path);
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'export fail %{public}s', (e as Error).message);
-      this.toast('导出失败');
+      this.toast($r('app.string.str_export_failed'));
     }
   }
 
   build() {
     Column() {
       Row() {
-        Text('歌单')
+        Text($r('app.string.str_playlists'))
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -166,7 +167,7 @@ export struct PlaylistsTab {
 
       // 新建歌单:行内输入 + 确定
       Row({ space: 8 }) {
-        TextInput({ text: this.newName, placeholder: '新建歌单名称' })
+        TextInput({ text: this.newName, placeholder: $r('app.string.new_pl_name') })
           .height(38)
           .layoutWeight(1)
           .fontSize(14)
@@ -182,7 +183,7 @@ export struct PlaylistsTab {
           .onSubmit(() => {
             this.createPlaylist();
           })
-        Button('确定')
+        Button($r('app.string.str_ok'))
           .fontSize(14)
           .fontColor($r('app.color.on_accent'))
           .backgroundColor($r('app.color.accent'))
@@ -200,10 +201,10 @@ export struct PlaylistsTab {
           SymbolGlyph($r('sys.symbol.music_note_list'))
             .fontSize(42)
             .fontColor([$r('app.color.text_secondary')])
-          Text('还没有歌单')
+          Text($r('app.string.no_playlists'))
             .fontSize(14)
             .fontColor($r('app.color.text_secondary'))
-          Text('输入名称并点击「确定」创建')
+          Text($r('app.string.pl_create_hint'))
             .fontSize(12)
             .fontColor($r('app.color.text_secondary'))
         }
@@ -248,7 +249,7 @@ export struct PlaylistsTab {
           .fontColor($r('app.color.text_primary'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(`${pl.songCount} 首`)
+        Text(L($r('app.string.count_songs'), pl.songCount))
           .fontSize(12)
           .fontColor($r('app.color.text_secondary'))
           .maxLines(1)
@@ -271,11 +272,11 @@ export struct PlaylistsTab {
   @Builder
   rowMenu(pl: PlaylistInfo) {
     Menu() {
-      MenuItem({ content: '导出 M3U' })
+      MenuItem({ content: $r('app.string.export_m3u') })
         .onClick(() => {
           this.exportM3U(pl);
         })
-      MenuItem({ content: '删除' })
+      MenuItem({ content: $r('app.string.str_delete') })
         .onClick(() => {
           this.confirmDelete(pl);
         })

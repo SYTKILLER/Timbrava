@@ -4,6 +4,7 @@ import { common } from '@kit.AbilityKit';
 import { QueueService, QueueBrief } from '../../service/QueueService';
 import { PlayerController } from '../../service/PlayerController';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][QueueBoard]';
 const DOMAIN = 0x0001;
@@ -33,7 +34,7 @@ export struct QueueBoardDest {
   private async onSwitch(id: string): Promise<void> {
     const q = QueueService.get();
     if (id === q.currentQueueId()) {
-      this.getUIContext().getPromptAction().showToast({ message: '已是当前队列' });
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.already_active') });
       return;
     }
     const songIds = await q.switchTo(id);
@@ -42,14 +43,14 @@ export struct QueueBoardDest {
       const idx = q.locateCurrent();
       PlayerController.get().playQueueIndex(idx >= 0 ? idx : 0);
     }
-    this.getUIContext().getPromptAction().showToast({ message: '已切换队列' });
+    this.getUIContext().getPromptAction().showToast({ message: $r('app.string.queue_switched') });
   }
 
   build() {
     NavDestination() {
       Column() {
         Row({ space: 8 }) {
-          TextInput({ text: this.newTitle, placeholder: '新队列名称' })
+          TextInput({ text: this.newTitle, placeholder: $r('app.string.new_queue_name') })
             .height(40)
             .fontSize(13)
             .borderRadius(10)
@@ -57,7 +58,7 @@ export struct QueueBoardDest {
             .onChange((v: string): void => {
               this.newTitle = v;
             })
-          Button('保存当前队列')
+          Button($r('app.string.save_current_queue'))
             .fontSize(12)
             .height(40)
             .fontColor($r('app.color.on_accent'))
@@ -65,15 +66,15 @@ export struct QueueBoardDest {
             .onClick(() => {
               const t = this.newTitle.trim();
               if (t.length === 0) {
-                this.getUIContext().getPromptAction().showToast({ message: '请输入名称' });
+                this.getUIContext().getPromptAction().showToast({ message: $r('app.string.name_required') });
                 return;
               }
               QueueService.get().saveCurrentAs(t).then((ok: boolean): void => {
                 if (ok) {
                   this.newTitle = '';
-                  this.getUIContext().getPromptAction().showToast({ message: '已保存' });
+                  this.getUIContext().getPromptAction().showToast({ message: $r('app.string.str_saved') });
                 } else {
-                  this.getUIContext().getPromptAction().showToast({ message: '队列为空' });
+                  this.getUIContext().getPromptAction().showToast({ message: $r('app.string.queue_empty_toast') });
                 }
               });
             })
@@ -86,7 +87,7 @@ export struct QueueBoardDest {
             SymbolGlyph($r('sys.symbol.list_bullet'))
               .fontSize(40)
               .fontColor([$r('app.color.text_secondary')])
-            Text('还没有保存的队列')
+            Text($r('app.string.no_saved_queues'))
               .fontSize(13)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -107,14 +108,14 @@ export struct QueueBoardDest {
                       .fontColor(b.isActive ? $r('app.color.accent') : $r('app.color.text_primary'))
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    Text(`${b.songCount} 首`)
+                    Text(L($r('app.string.count_songs'), b.songCount))
                       .fontSize(11)
                       .fontColor($r('app.color.text_secondary'))
                   }
                   .alignItems(HorizontalAlign.Start)
                   .layoutWeight(1)
                   if (!b.isActive) {
-                    Button('切换')
+                    Button($r('app.string.str_switch'))
                       .fontSize(12)
                       .height(30)
                       .fontColor($r('app.color.on_accent'))
@@ -155,7 +156,7 @@ export struct QueueBoardDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
-    .title('队列板')
+    .title($r('app.string.queue_board'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
     })

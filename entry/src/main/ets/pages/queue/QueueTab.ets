@@ -52,7 +52,7 @@ export struct QueueTab {
   build() {
     Column() {
       Row() {
-        Text('队列')
+        Text($r('app.string.str_queue'))
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -94,7 +94,7 @@ export struct QueueTab {
           SymbolGlyph($r('sys.symbol.list_bullet'))
             .fontSize(42)
             .fontColor([$r('app.color.text_secondary')])
-          Text('队列为空:在曲库中长按歌曲加入')
+          Text($r('app.string.queue_empty_hint'))
             .fontSize(14)
             .fontColor($r('app.color.text_secondary'))
         }
@@ -135,27 +135,27 @@ export struct QueueTab {
   @Builder
   sleepMenu() {
     Menu() {
-      MenuItem({ content: '关闭睡眠定时' })
+      MenuItem({ content: $r('app.string.sleep_off') })
         .onClick(() => {
           PlayerController.get().setSleepTimer(0);
         })
-      MenuItem({ content: '15 分钟' })
+      MenuItem({ content: $r('app.string.sleep_15') })
         .onClick(() => {
           PlayerController.get().setSleepTimer(15);
         })
-      MenuItem({ content: '30 分钟' })
+      MenuItem({ content: $r('app.string.sleep_30') })
         .onClick(() => {
           PlayerController.get().setSleepTimer(30);
         })
-      MenuItem({ content: '45 分钟' })
+      MenuItem({ content: $r('app.string.sleep_45') })
         .onClick(() => {
           PlayerController.get().setSleepTimer(45);
         })
-      MenuItem({ content: '60 分钟' })
+      MenuItem({ content: $r('app.string.sleep_60') })
         .onClick(() => {
           PlayerController.get().setSleepTimer(60);
         })
-      MenuItem({ content: '90 分钟' })
+      MenuItem({ content: $r('app.string.sleep_90') })
         .onClick(() => {
           PlayerController.get().setSleepTimer(90);
         })
@@ -191,31 +191,31 @@ export struct QueueTab {
   @Builder
   repeatMenu() {
     Menu() {
-      MenuItem({ content: '顺序播放(不循环)' })
+      MenuItem({ content: $r('app.string.loop_off') })
         .onClick(() => {
           PlayerController.get().setRepeat(RepeatMode.OFF);
         })
-      MenuItem({ content: '列表循环' })
+      MenuItem({ content: $r('app.string.loop_all') })
         .onClick(() => {
           PlayerController.get().setRepeat(RepeatMode.ALL);
         })
-      MenuItem({ content: '单曲循环' })
+      MenuItem({ content: $r('app.string.loop_one') })
         .onClick(() => {
           PlayerController.get().setRepeat(RepeatMode.ONE);
         })
-      MenuItem({ content: QueueService.get().stopAfterCurrent ? '✓ 播完当前停止' : '播完当前停止' })
+      MenuItem({ content: QueueService.get().stopAfterCurrent ? $r('app.string.stop_after_on') : $r('app.string.stop_after') })
         .onClick(() => {
           QueueService.get().setStopAfterCurrent(!QueueService.get().stopAfterCurrent);
         })
-      MenuItem({ content: QueueService.get().boundary === 'album' ? '✓ 按专辑推进' : '按专辑推进(跨专辑停)' })
+      MenuItem({ content: QueueService.get().boundary === 'album' ? $r('app.string.album_boundary_on') : $r('app.string.album_boundary') })
         .onClick(() => {
           QueueService.get().setBoundary(QueueService.get().boundary === 'album' ? 'none' : 'album');
         })
-      MenuItem({ content: QueueService.get().boundary === 'artist' ? '✓ 按艺人推进' : '按艺人推进(跨艺人停)' })
+      MenuItem({ content: QueueService.get().boundary === 'artist' ? $r('app.string.artist_boundary_on') : $r('app.string.artist_boundary') })
         .onClick(() => {
           QueueService.get().setBoundary(QueueService.get().boundary === 'artist' ? 'none' : 'artist');
         })
-      MenuItem({ content: QueueService.get().boundary === 'folder' ? '✓ 按文件夹推进' : '按文件夹推进(跨目录停)' })
+      MenuItem({ content: QueueService.get().boundary === 'folder' ? $r('app.string.folder_boundary_on') : $r('app.string.folder_boundary') })
         .onClick(() => {
           QueueService.get().setBoundary(QueueService.get().boundary === 'folder' ? 'none' : 'folder');
         })

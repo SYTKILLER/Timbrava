@@ -5,6 +5,7 @@ import { LibraryStore } from '../../data/LibraryStore';
 import { Db } from '../../data/Db';
 import { Song } from '../../data/Model';
 import { TagWriter, TagFields } from '../../service/TagWriter';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][TagEditor]';
 const DOMAIN = 0x0001;
@@ -12,7 +13,7 @@ const DOMAIN = 0x0001;
 export class TagEditorParam {
   batch: boolean = false;
   songIds: number[] = [];
-  title: string = '批量修改标签';
+  title: ResourceStr = $r('app.string.batch_tag_title');
 }
 
 @Component
@@ -29,7 +30,7 @@ export struct TagEditorDest {
   @State fTrackNo: string = '';
   @State fDiscNo: string = '';
   @State busy: boolean = false;
-  @State progressText: string = '';
+  @State progressText: ResourceStr = '';
   private pathStack: NavPathStack | null = null;
 
   private song(): Song | null {
@@ -110,7 +111,7 @@ export struct TagEditorDest {
       this.busy = false;
       this.progressText = '';
       hilog.info(DOMAIN, TAG, 'batch done ok=%{public}d fail=%{public}d', done, fail);
-      this.getUIContext().getPromptAction().showToast({ message: `批量完成:成功 ${done},失败 ${fail}` });
+      this.getUIContext().getPromptAction().showToast({ message: L($r('app.string.batch_done'), done, fail) });
       return;
     }
     const s = this.song();
@@ -118,15 +119,15 @@ export struct TagEditorDest {
       return;
     }
     this.busy = true;
-    this.progressText = '写入文件…';
+    this.progressText = $r('app.string.writing_file');
     const ok = await TagWriter.write(s, mkFields());
     this.busy = false;
     this.progressText = '';
     if (ok) {
-      this.getUIContext().getPromptAction().showToast({ message: '已写入文件并更新曲库' });
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.tags_written') });
       hilog.info(DOMAIN, TAG, 'tags saved song=%{public}d', s.id);
     } else {
-      this.getUIContext().getPromptAction().showToast({ message: '写入失败(仅支持 FLAC,或文件被占用)' });
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.tags_write_failed') });
     }
   }
 
@@ -136,57 +137,57 @@ export struct TagEditorDest {
         Scroll() {
           Column({ space: 10 }) {
             if (this.batch) {
-              Text(`批量模式:以下专辑级字段将写回列表内全部 FLAC 文件(空输入保持原值)`)
+              Text($r('app.string.batch_intro'))
                 .fontSize(12)
                 .fontColor($r('app.color.accent'))
                 .width('100%')
             } else {
               Text(this.song() !== null
                 ? `${(this.song() as Song).displayTitle()} · ${(this.song() as Song).codec.toUpperCase()}`
-                : '未找到歌曲')
+                : $r('app.string.song_not_found'))
                 .fontSize(13)
                 .fontColor($r('app.color.text_secondary'))
                 .width('100%')
             }
 
             if (!this.batch) {
-              this.Field('标题', this.fTitle, (v: string): void => {
+              this.Field($r('app.string.field_title'), this.fTitle, (v: string): void => {
                 this.fTitle = v;
               })
             }
-            this.Field('艺人', this.fArtist, (v: string): void => {
+            this.Field($r('app.string.str_artists'), this.fArtist, (v: string): void => {
               this.fArtist = v;
             })
-            this.Field('专辑', this.fAlbum, (v: string): void => {
+            this.Field($r('app.string.str_albums'), this.fAlbum, (v: string): void => {
               this.fAlbum = v;
             })
-            this.Field('专辑艺人', this.fAlbumArtist, (v: string): void => {
+            this.Field($r('app.string.field_album_artist'), this.fAlbumArtist, (v: string): void => {
               this.fAlbumArtist = v;
             })
-            this.Field('流派', this.fGenre, (v: string): void => {
+            this.Field($r('app.string.str_genres'), this.fGenre, (v: string): void => {
               this.fGenre = v;
             })
             Row({ space: 10 }) {
-              this.Field('年份', this.fYear, (v: string): void => {
+              this.Field($r('app.string.field_year'), this.fYear, (v: string): void => {
                 this.fYear = v;
               })
               if (!this.batch) {
-                this.Field('音轨号', this.fTrackNo, (v: string): void => {
+                this.Field($r('app.string.field_track_no'), this.fTrackNo, (v: string): void => {
                   this.fTrackNo = v;
                 })
-                this.Field('碟号', this.fDiscNo, (v: string): void => {
+                this.Field($r('app.string.field_disc_no'), this.fDiscNo, (v: string): void => {
                   this.fDiscNo = v;
                 })
               }
             }
             .width('100%')
 
-            Text('仅支持 FLAC(VorbisComment);写入前自动校验,失败自动放弃')
+            Text($r('app.string.tag_note'))
               .fontSize(11)
               .fontColor($r('app.color.text_secondary'))
               .width('100%')
 
-            if (this.progressText.length > 0) {
+            if (this.busy) {
               Row({ space: 8 }) {
                 LoadingProgress().width(16).height(16).color($r('app.color.accent'))
                 Text(this.progressText)
@@ -196,7 +197,7 @@ export struct TagEditorDest {
               .width('100%')
             }
 
-            Button(this.busy ? '写入中…' : (this.batch ? '批量写入' : '保存并写入文件'))
+            Button(this.busy ? $r('app.string.tag_busy') : (this.batch ? $r('app.string.batch_write') : $r('app.string.save_write_file')))
               .fontSize(14)
               .height(44)
               .width('100%')
@@ -222,7 +223,7 @@ export struct TagEditorDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
-    .title(this.batch ? '批量修改标签' : '编辑标签')
+    .title(this.batch ? $r('app.string.batch_tag_title') : $r('app.string.edit_tags'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
       const p: Object | undefined = ctx.pathInfo.param as Object | undefined;
@@ -237,7 +238,7 @@ export struct TagEditorDest {
   }
 
   @Builder
-  Field(label: string, value: string, onChange: (v: string) => void) {
+  Field(label: ResourceStr, value: string, onChange: (v: string) => void) {
     Column({ space: 4 }) {
       Text(label)
         .fontSize(11)

@@ -113,40 +113,40 @@ export struct SongRow {
   @Builder
   rowMenu() {
     Menu() {
-      MenuItem({ content: '播放' })
+      MenuItem({ content: $r('app.string.menu_play') })
         .onClick(() => {
           this.playNow();
         })
-      MenuItem({ content: '下一首播放' })
+      MenuItem({ content: $r('app.string.menu_play_next') })
         .onClick(() => {
           QueueService.get().playNext(this.song.id);
           hilog.info(DOMAIN, TAG, 'playNext %{public}s', this.song.title);
         })
-      MenuItem({ content: '添加到队列' })
+      MenuItem({ content: $r('app.string.menu_add_to_queue') })
         .onClick(() => {
           QueueService.get().append([this.song.id]);
         })
       MenuItem({
-        content: LibraryStore.get().isFavorite(this.song.id) ? '取消收藏' : '收藏'
+        content: LibraryStore.get().isFavorite(this.song.id) ? $r('app.string.menu_unfavorite') : $r('app.string.str_favorites')
       })
         .onClick(() => {
           PlayerController.get().toggleFavoriteFor(this.song.id);
         })
-      MenuItem({ content: '编辑标签(FLAC)' })
+      MenuItem({ content: $r('app.string.menu_edit_tags_flac') })
         .onClick(() => {
           const stack = this.navStack();
           if (stack !== null) {
             stack.pushPathByName('TagEditor', this.song.id);
           }
         })
-      MenuItem({ content: '查看专辑' })
+      MenuItem({ content: $r('app.string.menu_view_album') })
         .onClick(() => {
           const stack = this.navStack();
           if (stack !== null) {
             stack.pushPathByName('SongList', SongListParam.album(this.song.albumArtist, this.song.displayAlbum()));
           }
         })
-      MenuItem({ content: '查看艺人' })
+      MenuItem({ content: $r('app.string.menu_view_artist') })
         .onClick(() => {
           const stack = this.navStack();
           if (stack !== null) {
@@ -162,7 +162,7 @@ export class SongListParam {
   mode: string = 'songs'; // album | artist | genre | folder | favorites | songs
   key: string = '';
   subKey: string = '';
-  title: string = '';
+  title: ResourceStr = '';
 
   static album(albumArtist: string, album: string): SongListParam {
     const p = new SongListParam();
@@ -200,7 +200,7 @@ export class SongListParam {
   static favorites(): SongListParam {
     const p = new SongListParam();
     p.mode = 'favorites';
-    p.title = '收藏';
+    p.title = $r('app.string.str_favorites');
     return p;
   }
 
@@ -223,7 +223,7 @@ export class SongListParam {
   static allSongs(): SongListParam {
     const p = new SongListParam();
     p.mode = 'songs';
-    p.title = '歌曲';
+    p.title = $r('app.string.str_songs');
     return p;
   }
 }

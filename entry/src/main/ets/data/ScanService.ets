@@ -12,6 +12,7 @@ import { parseCue, looksLikeCue, CueSheet } from './cue/CueParser';
 import { ReadAt } from './tag/MetaParse';
 import timbravaCore from 'libtimbrava_core.so';
 import { fnv1a } from './tag/Bytes';
+import { L } from '../common/Lang';
 
 const TAG = '[Timbrava][Scan]';
 
@@ -143,7 +144,7 @@ export class ScanService {
       }
       this.progress.removed = removed;
       this.progress.state = 'done';
-      this.progress.message = `新增 ${this.progress.added} · 更新 ${this.progress.updated} · 移除 ${removed}`;
+      this.progress.message = L($r('app.string.scan_progress_stats'), this.progress.added, this.progress.updated, removed);
       hilog.info(DOMAIN, TAG, 'scan done in %{public}dms added=%{public}d updated=%{public}d removed=%{public}d',
         Date.now() - started, this.progress.added, this.progress.updated, removed);
     } catch (e) {

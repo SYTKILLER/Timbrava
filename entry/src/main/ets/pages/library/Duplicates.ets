@@ -4,6 +4,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { LibraryStore } from '../../data/LibraryStore';
 import { Db } from '../../data/Db';
 import { Song, formatDuration, formatSize } from '../../data/Model';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][Duplicates]';
 const DOMAIN = 0x0001;
@@ -76,7 +77,7 @@ export struct DuplicatesDest {
   build() {
     NavDestination() {
       Column() {
-        Text('按「同标题+艺人且时长±2s」或「同体积同时长」检测;移除只清曲库记录,不删文件')
+        Text($r('app.string.dup_note'))
           .fontSize(11)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
@@ -86,7 +87,7 @@ export struct DuplicatesDest {
             SymbolGlyph($r('sys.symbol.checkmark'))
               .fontSize(40)
               .fontColor([$r('app.color.accent')])
-            Text('没有发现重复曲目')
+            Text($r('app.string.dup_none'))
               .fontSize(14)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -98,7 +99,7 @@ export struct DuplicatesDest {
             ForEach(this.groups, (g: DupGroup, gi: number) => {
               ListItem() {
                 Column({ space: 4 }) {
-                  Text(`${g.label}(${g.songs.length} 条)`)
+                  Text(L($r('app.string.dup_group'), g.label, g.songs.length))
                     .fontSize(13)
                     .fontWeight(FontWeight.Bold)
                     .fontColor($r('app.color.text_primary'))
@@ -106,7 +107,7 @@ export struct DuplicatesDest {
                   ForEach(g.songs, (s: Song, si: number) => {
                     Row({ space: 8 }) {
                       Column({ space: 2 }) {
-                        Text(si === 0 ? '保留' : formatDuration(s.durationMs) + ' · ' + formatSize(s.fileSize))
+                        Text(si === 0 ? $r('app.string.str_keep') : formatDuration(s.durationMs) + ' · ' + formatSize(s.fileSize))
                           .fontSize(10)
                           .fontColor(si === 0 ? $r('app.color.accent') : $r('app.color.text_secondary'))
                         Text(s.path)
@@ -118,7 +119,7 @@ export struct DuplicatesDest {
                       .alignItems(HorizontalAlign.Start)
                       .layoutWeight(1)
                       if (si > 0) {
-                        Button('移除')
+                        Button($r('app.string.str_remove'))
                           .fontSize(11)
                           .height(26)
                           .fontColor($r('app.color.text_primary'))
@@ -149,7 +150,7 @@ export struct DuplicatesDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
-    .title('重复清理')
+    .title($r('app.string.duplicates_title'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
     })

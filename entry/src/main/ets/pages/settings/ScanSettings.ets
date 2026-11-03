@@ -11,6 +11,7 @@ import { ScanService } from '../../data/ScanService';
 import { RootFolder, ScanProgress } from '../../data/Model';
 import { LibraryStore } from '../../data/LibraryStore';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][ScanSettings]';
 const DOMAIN = 0x0001;
@@ -281,14 +282,14 @@ export struct ScanSettingsDest {
           Column({ space: 12 }) {
             // 根目录列表
             Column({ space: 4 }) {
-              Text('扫描根目录')
+              Text($r('app.string.scan_roots'))
                 .fontSize(12)
                 .fontColor($r('app.color.text_secondary'))
                 .width('100%')
                 .padding({ left: 4, top: 4 })
               Column() {
                 if (this.roots.length === 0) {
-                  Text('还没有添加目录')
+                  Text($r('app.string.no_roots'))
                     .fontSize(13)
                     .fontColor($r('app.color.text_secondary'))
                     .width('100%')
@@ -300,7 +301,7 @@ export struct ScanSettingsDest {
                         .fontSize(16)
                         .fontColor([$r('app.color.accent')])
                       Column({ space: 2 }) {
-                        Text(r.type === 'path' ? '本地目录' : '已授权目录(URI)')
+                        Text(r.type === 'path' ? $r('app.string.local_dir') : $r('app.string.uri_dir'))
                           .fontSize(14)
                           .fontColor($r('app.color.text_primary'))
                         Text(r.value)
@@ -311,7 +312,7 @@ export struct ScanSettingsDest {
                       }
                       .alignItems(HorizontalAlign.Start)
                       .layoutWeight(1)
-                      Button('移除')
+                      Button($r('app.string.str_remove'))
                         .fontSize(12)
                         .height(28)
                         .fontColor($r('app.color.text_secondary'))
@@ -334,7 +335,7 @@ export struct ScanSettingsDest {
 
             // 操作按钮
             Row({ space: 10 }) {
-              Button('添加文件夹')
+              Button($r('app.string.add_folder'))
                 .fontSize(14)
                 .fontColor($r('app.color.on_accent'))
                 .backgroundColor($r('app.color.accent'))
@@ -344,7 +345,7 @@ export struct ScanSettingsDest {
                 .onClick(() => {
                   this.pickFolder();
                 })
-              Button(this.progress.state === 'scanning' ? '扫描中…' : '开始扫描')
+              Button(this.progress.state === 'scanning' ? $r('app.string.scanning') : $r('app.string.start_scan'))
                 .fontSize(14)
                 .fontColor($r('app.color.on_accent'))
                 .backgroundColor(this.progress.state === 'scanning' ? $r('app.color.text_secondary') : $r('app.color.accent'))
@@ -359,7 +360,7 @@ export struct ScanSettingsDest {
             .width('100%')
 
             // 调试通道
-            Button('添加沙箱测试目录(files/music)')
+            Button($r('app.string.add_sandbox_root'))
               .fontSize(12)
               .fontColor($r('app.color.text_secondary'))
               .backgroundColor($r('app.color.badge_bg'))
@@ -368,7 +369,7 @@ export struct ScanSettingsDest {
               .onClick(() => {
                 this.addSandboxDebugRoot();
               })
-            Button('从本机导入语料(HTTP 127.0.0.1:8099)')
+            Button($r('app.string.import_corpus'))
               .fontSize(12)
               .fontColor($r('app.color.text_secondary'))
               .backgroundColor($r('app.color.badge_bg'))
@@ -381,9 +382,9 @@ export struct ScanSettingsDest {
             // 进度
             Column({ space: 6 }) {
               Text(this.progress.state === 'scanning'
-                ? `扫描中 ${this.progress.current}/${this.progress.total}`
-                : this.progress.state === 'done' ? `扫描完成:${this.progress.message}`
-                  : this.progress.state === 'error' ? `扫描失败:${this.progress.message}` : '尚未扫描')
+                ? L($r('app.string.scan_progress'), this.progress.current, this.progress.total)
+                : this.progress.state === 'done' ? L($r('app.string.scan_done_msg'), this.progress.message)
+                  : this.progress.state === 'error' ? L($r('app.string.scan_fail_msg'), this.progress.message) : $r('app.string.not_scanned'))
                 .fontSize(13)
                 .fontColor($r('app.color.text_secondary'))
                 .width('100%')
@@ -400,12 +401,12 @@ export struct ScanSettingsDest {
 
             // 黑名单(忽略路径前缀)
             Column({ space: 6 }) {
-              Text('黑名单(忽略路径前缀,重扫生效)')
+              Text($r('app.string.blacklist_title'))
                 .fontSize(12)
                 .fontColor($r('app.color.text_secondary'))
                 .width('100%')
               Row({ space: 8 }) {
-                TextInput({ text: this.newBlackPath, placeholder: '/music/... 路径前缀' })
+                TextInput({ text: this.newBlackPath, placeholder: $r('app.string.blacklist_hint') })
                   .fontSize(13)
                   .height(36)
                   .borderRadius(10)
@@ -413,7 +414,7 @@ export struct ScanSettingsDest {
                   .onChange((v: string): void => {
                     this.newBlackPath = v;
                   })
-                Button('添加')
+                Button($r('app.string.str_add'))
                   .fontSize(12)
                   .height(36)
                   .fontColor($r('app.color.on_accent'))
@@ -438,7 +439,7 @@ export struct ScanSettingsDest {
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       .layoutWeight(1)
-                    Button('移除')
+                    Button($r('app.string.str_remove'))
                       .fontSize(11)
                       .height(26)
                       .fontColor($r('app.color.text_secondary'))
@@ -472,7 +473,7 @@ export struct ScanSettingsDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
-    .title('扫描文件夹')
+    .title($r('app.string.scan_folders'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
     })

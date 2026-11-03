@@ -5,6 +5,7 @@ import { Song } from '../../data/Model';
 import { SongRow } from '../../components/SongRow';
 import { QueueService } from '../../service/QueueService';
 import { PlayerController } from '../../service/PlayerController';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][Search]';
 const DOMAIN = 0x0001;
@@ -52,14 +53,14 @@ export struct SearchDest {
 
   private playFrom(index: number): void {
     const q = QueueService.get();
-    q.setQueueNow(this.results, index, `搜索:${this.keyword}`);
+    q.setQueueNow(this.results, index, L($r('app.string.search_title'), this.keyword));
     PlayerController.get().playQueueIndex(q.locateCurrent());
   }
 
   build() {
     NavDestination() {
       Column() {
-        TextInput({ text: this.keyword, placeholder: '搜索歌曲 / 艺人 / 专辑' })
+        TextInput({ text: this.keyword, placeholder: $r('app.string.search_hint') })
           .type(InputType.Normal)
           .height(44)
           .borderRadius(12)
@@ -75,7 +76,7 @@ export struct SearchDest {
             SymbolGlyph($r('sys.symbol.magnifyingglass'))
               .fontSize(40)
               .fontColor([$r('app.color.text_secondary')])
-            Text(this.searched ? '没有匹配的歌曲' : '输入关键字开始搜索')
+            Text(this.searched ? $r('app.string.search_no_match') : $r('app.string.search_empty_hint'))
               .fontSize(13)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -101,7 +102,7 @@ export struct SearchDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
-    .title('搜索')
+    .title($r('app.string.str_search'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
     })

@@ -88,7 +88,7 @@ export struct FullPlayerDest {
               this.pathStack.pop();
             }
           })
-          Text('正在播放')
+          Text($r('app.string.now_playing'))
             .fontSize(15)
             .fontColor($r('app.color.text_secondary'))
             .layoutWeight(1)
@@ -127,7 +127,7 @@ export struct FullPlayerDest {
             SymbolGlyph($r('sys.symbol.music_note_list'))
               .fontSize(48)
               .fontColor([$r('app.color.text_secondary')])
-            Text('还没有播放中的歌曲')
+            Text($r('app.string.no_playing_song'))
               .fontSize(14)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -393,7 +393,7 @@ export struct FullPlayerDest {
             SymbolGlyph($r('sys.symbol.speaker_slash'))
               .fontSize(16)
               .fontColor([this.skipSilenceNow() ? $r('app.color.accent') : $r('app.color.text_secondary')])
-            Text('跳过静音')
+            Text($r('app.string.skip_silence'))
               .fontSize(11)
               .fontColor(this.skipSilenceNow() ? $r('app.color.accent') : $r('app.color.text_secondary'))
           }
@@ -413,7 +413,7 @@ export struct FullPlayerDest {
           SymbolGlyph(this.isFav() ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
             .fontSize(16)
             .fontColor([this.isFav() ? $r('app.color.accent') : $r('app.color.text_secondary')])
-          Text(this.isFav() ? '已收藏' : '收藏')
+          Text(this.isFav() ? $r('app.string.str_favorited') : $r('app.string.str_favorites'))
             .fontSize(12)
             .fontColor($r('app.color.text_secondary'))
         }
@@ -434,7 +434,7 @@ export struct FullPlayerDest {
   QueueDrawer() {
     Column() {
       Row() {
-        Text('当前队列')
+        Text($r('app.string.current_queue'))
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -534,18 +534,18 @@ export struct FullPlayerDest {
     return PlayerController.get().currentLyrics;
   }
 
-  private editLabel(): string {
-    return this.lyricsNow().length > 0 ? '编辑歌词' : '添加歌词(打轴)';
+  private editLabel(): ResourceStr {
+    return this.lyricsNow().length > 0 ? $r('app.string.edit_lyrics') : $r('app.string.add_lyrics');
   }
 
   private speedNow(): number {
     return PlayerController.get().speed;
   }
 
-  private speedLabel(): string {
+  private speedLabel(): ResourceStr {
     const v = this.speedNow();
     if (v === 1.0) {
-      return '倍速';
+      return $r('app.string.speed_label');
     }
     return `${v}x`;
   }
@@ -554,13 +554,13 @@ export struct FullPlayerDest {
     return PlayerController.get().abState();
   }
 
-  private abLabel(): string {
+  private abLabel(): ResourceStr {
     const st = this.abStateNow();
     if (st === 'a') {
-      return 'A-B:已设A';
+      return $r('app.string.ab_set_a');
     }
     if (st === 'ab') {
-      return 'A-B:循环中';
+      return $r('app.string.ab_looping');
     }
     return 'A-B';
   }
@@ -582,7 +582,7 @@ export struct FullPlayerDest {
         .onClick(() => {
           PlayerController.get().setSpeed(0.75);
         })
-      MenuItem({ content: '标准 1.0x' })
+      MenuItem({ content: $r('app.string.speed_normal') })
         .onClick(() => {
           PlayerController.get().setSpeed(1.0);
         })

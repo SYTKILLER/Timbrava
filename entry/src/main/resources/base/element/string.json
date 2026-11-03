@@ -15,6 +15,946 @@
     {
       "name": "read_audio_reason",
       "value": "用于扫描并读取本机音乐文件,仅本地使用,不联网上传。"
+    },
+    {
+      "name": "str_favorites",
+      "value": "收藏"
+    },
+    {
+      "name": "str_folder",
+      "value": "文件夹"
+    },
+    {
+      "name": "str_playlists",
+      "value": "歌单"
+    },
+    {
+      "name": "str_remove",
+      "value": "移除"
+    },
+    {
+      "name": "str_songs",
+      "value": "歌曲"
+    },
+    {
+      "name": "str_queue",
+      "value": "队列"
+    },
+    {
+      "name": "str_settings",
+      "value": "设置"
+    },
+    {
+      "name": "batch_tag_title",
+      "value": "批量修改标签"
+    },
+    {
+      "name": "str_artists",
+      "value": "艺人"
+    },
+    {
+      "name": "str_albums",
+      "value": "专辑"
+    },
+    {
+      "name": "str_genres",
+      "value": "流派"
+    },
+    {
+      "name": "duplicates_title",
+      "value": "重复清理"
+    },
+    {
+      "name": "lrc_none_marked",
+      "value": "还没有打轴的行"
+    },
+    {
+      "name": "str_saved",
+      "value": "已保存"
+    },
+    {
+      "name": "str_export_failed",
+      "value": "导出失败"
+    },
+    {
+      "name": "str_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "str_delete",
+      "value": "删除"
+    },
+    {
+      "name": "str_ok",
+      "value": "确定"
+    },
+    {
+      "name": "str_about",
+      "value": "关于"
+    },
+    {
+      "name": "equalizer",
+      "value": "均衡器"
+    },
+    {
+      "name": "lyrics_none",
+      "value": "暂无歌词"
+    },
+    {
+      "name": "menu_play",
+      "value": "播放"
+    },
+    {
+      "name": "menu_play_next",
+      "value": "下一首播放"
+    },
+    {
+      "name": "menu_add_to_queue",
+      "value": "添加到队列"
+    },
+    {
+      "name": "menu_unfavorite",
+      "value": "取消收藏"
+    },
+    {
+      "name": "menu_edit_tags_flac",
+      "value": "编辑标签(FLAC)"
+    },
+    {
+      "name": "menu_view_album",
+      "value": "查看专辑"
+    },
+    {
+      "name": "menu_view_artist",
+      "value": "查看艺人"
+    },
+    {
+      "name": "unknown_genre",
+      "value": "未知流派"
+    },
+    {
+      "name": "app_name_display",
+      "value": "听韵"
+    },
+    {
+      "name": "tab_library",
+      "value": "音乐库"
+    },
+    {
+      "name": "folder_empty_hint",
+      "value": "扫描后这里会显示目录结构"
+    },
+    {
+      "name": "lib_empty_hint",
+      "value": "曲库为空:到「设置 → 扫描文件夹」添加音乐目录并扫描"
+    },
+    {
+      "name": "albums_empty",
+      "value": "还没有专辑"
+    },
+    {
+      "name": "artists_empty",
+      "value": "还没有艺人"
+    },
+    {
+      "name": "genres_empty",
+      "value": "还没有流派"
+    },
+    {
+      "name": "folder_empty",
+      "value": "还没有目录结构"
+    },
+    {
+      "name": "count_songs",
+      "value": "%d 首"
+    },
+    {
+      "name": "artist_stats",
+      "value": "%d 专辑 · %d 首"
+    },
+    {
+      "name": "search_hint",
+      "value": "搜索歌曲 / 艺人 / 专辑"
+    },
+    {
+      "name": "search_no_match",
+      "value": "没有匹配的歌曲"
+    },
+    {
+      "name": "search_empty_hint",
+      "value": "输入关键字开始搜索"
+    },
+    {
+      "name": "str_search",
+      "value": "搜索"
+    },
+    {
+      "name": "search_title",
+      "value": "搜索:%s"
+    },
+    {
+      "name": "pl_dup_fail",
+      "value": "歌单重名,保存失败"
+    },
+    {
+      "name": "menu_rg_scan",
+      "value": "扫描本列表 ReplayGain"
+    },
+    {
+      "name": "menu_batch_tags",
+      "value": "批量修改标签(写回 FLAC)"
+    },
+    {
+      "name": "save_as_pl",
+      "value": "存为歌单"
+    },
+    {
+      "name": "list_empty",
+      "value": "列表为空"
+    },
+    {
+      "name": "pl_saved",
+      "value": "已保存歌单「%s」"
+    },
+    {
+      "name": "play_all_n",
+      "value": "全部播放 %d"
+    },
+    {
+      "name": "writing_file",
+      "value": "写入文件…"
+    },
+    {
+      "name": "tags_written",
+      "value": "已写入文件并更新曲库"
+    },
+    {
+      "name": "tags_write_failed",
+      "value": "写入失败(仅支持 FLAC,或文件被占用)"
+    },
+    {
+      "name": "song_not_found",
+      "value": "未找到歌曲"
+    },
+    {
+      "name": "field_title",
+      "value": "标题"
+    },
+    {
+      "name": "field_album_artist",
+      "value": "专辑艺人"
+    },
+    {
+      "name": "field_year",
+      "value": "年份"
+    },
+    {
+      "name": "field_track_no",
+      "value": "音轨号"
+    },
+    {
+      "name": "field_disc_no",
+      "value": "碟号"
+    },
+    {
+      "name": "tag_note",
+      "value": "仅支持 FLAC(VorbisComment);写入前自动校验,失败自动放弃"
+    },
+    {
+      "name": "tag_busy",
+      "value": "写入中…"
+    },
+    {
+      "name": "batch_write",
+      "value": "批量写入"
+    },
+    {
+      "name": "save_write_file",
+      "value": "保存并写入文件"
+    },
+    {
+      "name": "edit_tags",
+      "value": "编辑标签"
+    },
+    {
+      "name": "batch_intro",
+      "value": "批量模式:以下专辑级字段将写回列表内全部 FLAC 文件(空输入保持原值)"
+    },
+    {
+      "name": "batch_done",
+      "value": "批量完成:成功 %d,失败 %d"
+    },
+    {
+      "name": "dup_note",
+      "value": "按「同标题+艺人且时长±2s」或「同体积同时长」检测;移除只清曲库记录,不删文件"
+    },
+    {
+      "name": "dup_none",
+      "value": "没有发现重复曲目"
+    },
+    {
+      "name": "str_keep",
+      "value": "保留"
+    },
+    {
+      "name": "dup_group",
+      "value": "%s(%d 条)"
+    },
+    {
+      "name": "now_playing",
+      "value": "正在播放"
+    },
+    {
+      "name": "no_playing_song",
+      "value": "还没有播放中的歌曲"
+    },
+    {
+      "name": "skip_silence",
+      "value": "跳过静音"
+    },
+    {
+      "name": "str_favorited",
+      "value": "已收藏"
+    },
+    {
+      "name": "current_queue",
+      "value": "当前队列"
+    },
+    {
+      "name": "edit_lyrics",
+      "value": "编辑歌词"
+    },
+    {
+      "name": "add_lyrics",
+      "value": "添加歌词(打轴)"
+    },
+    {
+      "name": "speed_label",
+      "value": "倍速"
+    },
+    {
+      "name": "ab_set_a",
+      "value": "A-B:已设A"
+    },
+    {
+      "name": "ab_looping",
+      "value": "A-B:循环中"
+    },
+    {
+      "name": "speed_normal",
+      "value": "标准 1.0x"
+    },
+    {
+      "name": "lyrics_saved",
+      "value": "歌词已保存"
+    },
+    {
+      "name": "lrc_exported",
+      "value": "已导出 .lrc"
+    },
+    {
+      "name": "not_playing",
+      "value": "未在播放"
+    },
+    {
+      "name": "reading_lyrics",
+      "value": "读取歌词文本…"
+    },
+    {
+      "name": "lrc_editor_empty",
+      "value": "没有歌词文本。可先在文件里内嵌歌词,或用 LRCLIB 下载"
+    },
+    {
+      "name": "str_mark",
+      "value": "打轴"
+    },
+    {
+      "name": "export_lrc",
+      "value": "导出 .lrc"
+    },
+    {
+      "name": "save_lyrics",
+      "value": "保存歌词"
+    },
+    {
+      "name": "lyrics_sync_title",
+      "value": "歌词打轴"
+    },
+    {
+      "name": "lrc_editor_pos",
+      "value": "当前位置 %s · 点「打轴」标记该时间"
+    },
+    {
+      "name": "pl_name_required",
+      "value": "请输入歌单名称"
+    },
+    {
+      "name": "pl_name_exists",
+      "value": "名称已存在"
+    },
+    {
+      "name": "delete_pl",
+      "value": "删除歌单"
+    },
+    {
+      "name": "pl_empty_no_export",
+      "value": "歌单为空,无需导出"
+    },
+    {
+      "name": "new_pl_name",
+      "value": "新建歌单名称"
+    },
+    {
+      "name": "no_playlists",
+      "value": "还没有歌单"
+    },
+    {
+      "name": "pl_create_hint",
+      "value": "输入名称并点击「确定」创建"
+    },
+    {
+      "name": "export_m3u",
+      "value": "导出 M3U"
+    },
+    {
+      "name": "pl_delete_confirm",
+      "value": "确定删除「%s」?仅移除歌单记录,不影响歌曲文件。"
+    },
+    {
+      "name": "m3u_exported",
+      "value": "已导出:%s"
+    },
+    {
+      "name": "already_active",
+      "value": "已是当前队列"
+    },
+    {
+      "name": "queue_switched",
+      "value": "已切换队列"
+    },
+    {
+      "name": "new_queue_name",
+      "value": "新队列名称"
+    },
+    {
+      "name": "save_current_queue",
+      "value": "保存当前队列"
+    },
+    {
+      "name": "name_required",
+      "value": "请输入名称"
+    },
+    {
+      "name": "queue_empty_toast",
+      "value": "队列为空"
+    },
+    {
+      "name": "no_saved_queues",
+      "value": "还没有保存的队列"
+    },
+    {
+      "name": "str_switch",
+      "value": "切换"
+    },
+    {
+      "name": "queue_board",
+      "value": "队列板"
+    },
+    {
+      "name": "queue_unnamed",
+      "value": "未命名队列"
+    },
+    {
+      "name": "queue_empty_hint",
+      "value": "队列为空:在曲库中长按歌曲加入"
+    },
+    {
+      "name": "sleep_off",
+      "value": "关闭睡眠定时"
+    },
+    {
+      "name": "sleep_15",
+      "value": "15 分钟"
+    },
+    {
+      "name": "sleep_30",
+      "value": "30 分钟"
+    },
+    {
+      "name": "sleep_45",
+      "value": "45 分钟"
+    },
+    {
+      "name": "sleep_60",
+      "value": "60 分钟"
+    },
+    {
+      "name": "sleep_90",
+      "value": "90 分钟"
+    },
+    {
+      "name": "loop_off",
+      "value": "顺序播放(不循环)"
+    },
+    {
+      "name": "loop_all",
+      "value": "列表循环"
+    },
+    {
+      "name": "loop_one",
+      "value": "单曲循环"
+    },
+    {
+      "name": "stop_after_on",
+      "value": "✓ 播完当前停止"
+    },
+    {
+      "name": "stop_after",
+      "value": "播完当前停止"
+    },
+    {
+      "name": "album_boundary_on",
+      "value": "✓ 按专辑推进"
+    },
+    {
+      "name": "album_boundary",
+      "value": "按专辑推进(跨专辑停)"
+    },
+    {
+      "name": "artist_boundary_on",
+      "value": "✓ 按艺人推进"
+    },
+    {
+      "name": "artist_boundary",
+      "value": "按艺人推进(跨艺人停)"
+    },
+    {
+      "name": "folder_boundary_on",
+      "value": "✓ 按文件夹推进"
+    },
+    {
+      "name": "folder_boundary",
+      "value": "按文件夹推进(跨目录停)"
+    },
+    {
+      "name": "about_title",
+      "value": "听韵 Timbrava"
+    },
+    {
+      "name": "version_loading",
+      "value": "版本信息获取中"
+    },
+    {
+      "name": "version_line",
+      "value": "版本 %s"
+    },
+    {
+      "name": "about_positioning",
+      "value": "定位"
+    },
+    {
+      "name": "about_desc",
+      "value": "纯本地、纯离线、无广告的 HiFi 无损音乐播放器。支持 FLAC/WAV 比特完美播放,单曲 1GB+ 超高码率真无损完整流式解码。"
+    },
+    {
+      "name": "privacy_title",
+      "value": "隐私承诺"
+    },
+    {
+      "name": "privacy_desc",
+      "value": "不收集任何数据、不联网(默认)、无广告、无追踪。音乐文件仅在本地扫描与播放。"
+    },
+    {
+      "name": "oss_title",
+      "value": "开源组件"
+    },
+    {
+      "name": "oss_desc",
+      "value": "FLAC 解码:dr_flac(公有领域 / MIT-0 双许可)。其余代码均为本项目自研。"
+    },
+    {
+      "name": "about_note",
+      "value": "说明"
+    },
+    {
+      "name": "engine_note",
+      "value": "无损引擎下 FLAC/WAV 按源采样率与位深建流;MP3/OGG/M4A/APE 等格式由系统 AVPlayer 引擎播放。"
+    },
+    {
+      "name": "autoeq_placeholder",
+      "value": "粘贴 AutoEq GraphicEq 文本\nGraphicEq: 20-3;25-2.5;..."
+    },
+    {
+      "name": "preset_name",
+      "value": "预设名称"
+    },
+    {
+      "name": "preset_custom",
+      "value": "自定义"
+    },
+    {
+      "name": "select_preset",
+      "value": "选择预设"
+    },
+    {
+      "name": "preset_flat",
+      "value": "平坦"
+    },
+    {
+      "name": "preset_bass",
+      "value": "低音增强"
+    },
+    {
+      "name": "preset_vocal",
+      "value": "人声"
+    },
+    {
+      "name": "preset_treble",
+      "value": "高音增强"
+    },
+    {
+      "name": "preset_rock",
+      "value": "摇滚"
+    },
+    {
+      "name": "preset_electronic",
+      "value": "电子"
+    },
+    {
+      "name": "save_curve_title",
+      "value": "保存当前曲线为预设"
+    },
+    {
+      "name": "import_autoeq",
+      "value": "导入 AutoEq(GraphicEq)"
+    },
+    {
+      "name": "autoeq_parse_fail",
+      "value": "解析失败:未找到有效频点"
+    },
+    {
+      "name": "autoeq_imported",
+      "value": "已导入 AutoEq 曲线"
+    },
+    {
+      "name": "str_on",
+      "value": "开启"
+    },
+    {
+      "name": "save_preset",
+      "value": "存为预设"
+    },
+    {
+      "name": "str_import",
+      "value": "导入"
+    },
+    {
+      "name": "eq_hint",
+      "value": "±12 dB · 拖动即时生效(无损引擎)"
+    },
+    {
+      "name": "reset_all",
+      "value": "全部归零"
+    },
+    {
+      "name": "delete_preset",
+      "value": "删除 %s"
+    },
+    {
+      "name": "scan_roots",
+      "value": "扫描根目录"
+    },
+    {
+      "name": "no_roots",
+      "value": "还没有添加目录"
+    },
+    {
+      "name": "local_dir",
+      "value": "本地目录"
+    },
+    {
+      "name": "uri_dir",
+      "value": "已授权目录(URI)"
+    },
+    {
+      "name": "add_folder",
+      "value": "添加文件夹"
+    },
+    {
+      "name": "scanning",
+      "value": "扫描中…"
+    },
+    {
+      "name": "start_scan",
+      "value": "开始扫描"
+    },
+    {
+      "name": "add_sandbox_root",
+      "value": "添加沙箱测试目录(files/music)"
+    },
+    {
+      "name": "import_corpus",
+      "value": "从本机导入语料(HTTP 127.0.0.1:8099)"
+    },
+    {
+      "name": "not_scanned",
+      "value": "尚未扫描"
+    },
+    {
+      "name": "blacklist_title",
+      "value": "黑名单(忽略路径前缀,重扫生效)"
+    },
+    {
+      "name": "blacklist_hint",
+      "value": "/music/... 路径前缀"
+    },
+    {
+      "name": "str_add",
+      "value": "添加"
+    },
+    {
+      "name": "scan_folders",
+      "value": "扫描文件夹"
+    },
+    {
+      "name": "scan_progress",
+      "value": "扫描中 %s/%s"
+    },
+    {
+      "name": "scan_done_msg",
+      "value": "扫描完成:%s"
+    },
+    {
+      "name": "scan_fail_msg",
+      "value": "扫描失败:%s"
+    },
+    {
+      "name": "theme_light",
+      "value": "浅色"
+    },
+    {
+      "name": "theme_dark",
+      "value": "深色"
+    },
+    {
+      "name": "theme_black",
+      "value": "纯黑"
+    },
+    {
+      "name": "follow_system",
+      "value": "跟随系统"
+    },
+    {
+      "name": "theme",
+      "value": "主题"
+    },
+    {
+      "name": "media_library",
+      "value": "媒体库"
+    },
+    {
+      "name": "scan_manager",
+      "value": "扫描文件夹管理"
+    },
+    {
+      "name": "scan_manager_sub",
+      "value": "选择音乐目录、开始扫描"
+    },
+    {
+      "name": "duplicates_sub",
+      "value": "检测同曲多份记录并从库移除"
+    },
+    {
+      "name": "audio_engine",
+      "value": "音频引擎"
+    },
+    {
+      "name": "lossless_pref",
+      "value": "无损引擎(FLAC/WAV 直通)"
+    },
+    {
+      "name": "lossless_sub",
+      "value": "按源采样率/位深建流;关闭后全部走系统引擎"
+    },
+    {
+      "name": "eq_entry",
+      "value": "均衡器(31 段 PEQ)"
+    },
+    {
+      "name": "eq_entry_sub",
+      "value": "预设 / 自定义曲线 / AutoEq 导入"
+    },
+    {
+      "name": "system_fallback",
+      "value": "系统引擎兜底"
+    },
+    {
+      "name": "system_fallback_sub",
+      "value": "MP3/OGG/M4A/APE 等由 AVPlayer 播放;无损引擎出错自动回退"
+    },
+    {
+      "name": "loudness",
+      "value": "响度分析"
+    },
+    {
+      "name": "playback_behavior",
+      "value": "播放行为"
+    },
+    {
+      "name": "pause_hp",
+      "value": "拔出耳机暂停"
+    },
+    {
+      "name": "pause_hp_sub",
+      "value": "有线/USB 耳机断开时自动暂停"
+    },
+    {
+      "name": "pause_bt",
+      "value": "蓝牙断开暂停"
+    },
+    {
+      "name": "pause_bt_sub",
+      "value": "蓝牙音频设备断开时自动暂停"
+    },
+    {
+      "name": "auto_resume",
+      "value": "打断后自动恢复"
+    },
+    {
+      "name": "auto_resume_sub",
+      "value": "通话/导航结束后恢复播放"
+    },
+    {
+      "name": "appearance",
+      "value": "外观"
+    },
+    {
+      "name": "backup_restore",
+      "value": "备份与恢复"
+    },
+    {
+      "name": "export_backup",
+      "value": "导出备份"
+    },
+    {
+      "name": "backup_desc",
+      "value": "设置/歌单/收藏/队列/EQ 预设 → JSON"
+    },
+    {
+      "name": "str_exported",
+      "value": "已导出"
+    },
+    {
+      "name": "export_cancelled",
+      "value": "导出取消或失败"
+    },
+    {
+      "name": "restore_backup",
+      "value": "从备份恢复"
+    },
+    {
+      "name": "restore_desc",
+      "value": "选择 JSON 并恢复(歌单按文件路径重挂)"
+    },
+    {
+      "name": "str_restored",
+      "value": "已恢复"
+    },
+    {
+      "name": "import_cancelled",
+      "value": "导入取消或失败"
+    },
+    {
+      "name": "about_entry",
+      "value": "关于听韵 Timbrava"
+    },
+    {
+      "name": "about_entry_sub",
+      "value": "版本、开源信息与隐私承诺"
+    },
+    {
+      "name": "player_skin",
+      "value": "播放页皮肤"
+    },
+    {
+      "name": "skin_standard",
+      "value": "标准(大封面)"
+    },
+    {
+      "name": "skin_minimal",
+      "value": "极简"
+    },
+    {
+      "name": "lrclib_pref",
+      "value": "LRCLIB 联网歌词"
+    },
+    {
+      "name": "lrclib_sub",
+      "value": "默认关闭。开启后无内嵌歌词时联网查询 lrclib.net"
+    },
+    {
+      "name": "by_track",
+      "value": "按曲目"
+    },
+    {
+      "name": "by_album",
+      "value": "按专辑"
+    },
+    {
+      "name": "str_off",
+      "value": "关闭"
+    },
+    {
+      "name": "rg_hint",
+      "value": "先在「响度分析」里扫描曲库,再选择应用模式"
+    },
+    {
+      "name": "rg_scan",
+      "value": "ReplayGain 扫描"
+    },
+    {
+      "name": "rg_scan_sub",
+      "value": "全曲解码测响度(仅 FLAC/WAV),耗时与曲库大小成正比"
+    },
+    {
+      "name": "cancel_scan",
+      "value": "取消扫描"
+    },
+    {
+      "name": "scan_library",
+      "value": "扫描全库"
+    },
+    {
+      "name": "rg_scanning",
+      "value": "%s/%s 扫描中%s"
+    },
+    {
+      "name": "rg_done_ok",
+      "value": "上次扫描完成"
+    },
+    {
+      "name": "rg_done_fail",
+      "value": "上次扫描完成,失败 %d 首"
+    },
+    {
+      "name": "engine_system",
+      "value": "系统引擎"
+    },
+    {
+      "name": "engine_fallback",
+      "value": "系统引擎(无损引擎错误回退)"
+    },
+    {
+      "name": "engine_lossless",
+      "value": "无损引擎 %s %sbit/%sHz"
+    },
+    {
+      "name": "engine_dsd",
+      "value": "无损引擎 DSD%d(PCM 88.2k 抽取)"
+    },
+    {
+      "name": "scan_progress_stats",
+      "value": "新增 %d · 更新 %d · 移除 %d"
     }
   ]
 }

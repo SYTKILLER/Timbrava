@@ -5,6 +5,7 @@ import { relationalStore } from '@kit.ArkData';
 import { Db } from '../data/Db';
 import { LibraryStore } from '../data/LibraryStore';
 import { Song, RepeatMode } from '../data/Model';
+import { L } from '../common/Lang';
 
 const TAG = '[Timbrava][Queue]';
 const DOMAIN = 0x0001;
@@ -69,7 +70,7 @@ export class QueueService {
         rs2.close();
         const brief = new QueueBrief();
         brief.id = id;
-        brief.title = title.length > 0 ? title : '未命名队列';
+        brief.title = title.length > 0 ? title : L($r('app.string.queue_unnamed'));
         brief.songCount = n;
         brief.isActive = id === QUEUE_ID;
         brief.createdAt = createdAt;

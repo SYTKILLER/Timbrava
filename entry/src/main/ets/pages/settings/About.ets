@@ -2,6 +2,7 @@
 import { bundleManager } from '@kit.AbilityKit';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { common } from '@kit.AbilityKit';
+import { L } from '../../common/Lang';
 
 @Component
 export struct AboutDest {
@@ -22,7 +23,7 @@ export struct AboutDest {
   }
 
   @Builder
-  Section(title: string, body: string) {
+  Section(title: ResourceStr, body: ResourceStr) {
     Column({ space: 6 }) {
       Text(title)
         .fontSize(15)
@@ -47,11 +48,11 @@ export struct AboutDest {
       Scroll() {
         Column({ space: 12 }) {
           Column({ space: 4 }) {
-            Text('听韵 Timbrava')
+            Text($r('app.string.about_title'))
               .fontSize(26)
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
-            Text(this.versionName.length > 0 ? `版本 ${this.versionName}` : '版本信息获取中')
+            Text(this.versionName.length > 0 ? L($r('app.string.version_line'), this.versionName) : $r('app.string.version_loading'))
               .fontSize(13)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -59,14 +60,14 @@ export struct AboutDest {
           .padding({ top: 12, bottom: 4 })
           .alignItems(HorizontalAlign.Center)
 
-          this.Section('定位',
-            '纯本地、纯离线、无广告的 HiFi 无损音乐播放器。支持 FLAC/WAV 比特完美播放,单曲 1GB+ 超高码率真无损完整流式解码。')
-          this.Section('隐私承诺',
-            '不收集任何数据、不联网(默认)、无广告、无追踪。音乐文件仅在本地扫描与播放。')
-          this.Section('开源组件',
-            'FLAC 解码:dr_flac(公有领域 / MIT-0 双许可)。其余代码均为本项目自研。')
-          this.Section('说明',
-            '无损引擎下 FLAC/WAV 按源采样率与位深建流;MP3/OGG/M4A/APE 等格式由系统 AVPlayer 引擎播放。')
+          this.Section($r('app.string.about_positioning'),
+            $r('app.string.about_desc'))
+          this.Section($r('app.string.privacy_title'),
+            $r('app.string.privacy_desc'))
+          this.Section($r('app.string.oss_title'),
+            $r('app.string.oss_desc'))
+          this.Section($r('app.string.about_note'),
+            $r('app.string.engine_note'))
           Blank().height(60)
         }
         .width('100%')
@@ -78,7 +79,7 @@ export struct AboutDest {
       .align(Alignment.Top)
       .backgroundColor($r('app.color.page_bg'))
     }
-    .title('关于')
+    .title($r('app.string.str_about'))
   }
 }
 

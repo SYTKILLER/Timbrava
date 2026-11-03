@@ -57,17 +57,17 @@ struct Index {
           TabContent() {
             LibraryTab()
           }
-          .tabBar(this.tabIcon($r('sys.symbol.music_note_list'), '音乐库', 0))
+          .tabBar(this.tabIcon($r('sys.symbol.music_note_list'), $r('app.string.tab_library'), 0))
 
           TabContent() {
             QueueTab()
           }
-          .tabBar(this.tabIcon($r('sys.symbol.list_bullet'), '队列', 1))
+          .tabBar(this.tabIcon($r('sys.symbol.list_bullet'), $r('app.string.str_queue'), 1))
 
           TabContent() {
             SettingsTab()
           }
-          .tabBar(this.tabIcon($r('sys.symbol.gearshape'), '设置', 2))
+          .tabBar(this.tabIcon($r('sys.symbol.gearshape'), $r('app.string.str_settings'), 2))
         }
         .vertical(false)
         .scrollable(true)
@@ -102,7 +102,7 @@ struct Index {
   }
 
   @Builder
-  tabIcon(res: Resource, label: string, idx: number) {
+  tabIcon(res: Resource, label: ResourceStr, idx: number) {
     Column({ space: 3 }) {
       SymbolGlyph(res)
         .fontSize(22)

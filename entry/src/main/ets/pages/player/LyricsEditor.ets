@@ -10,6 +10,7 @@ import { LibraryStore } from '../../data/LibraryStore';
 import { Db } from '../../data/Db';
 import { Song, formatDuration } from '../../data/Model';
 import { extractLyricsFromHead } from '../../data/lyrics/LyricsExtractor';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][LrcEditor]';
 const DOMAIN = 0x0001;
@@ -39,7 +40,7 @@ export struct LyricsEditorDest {
   @State lines: EditorLine[] = [];
   @State songId: number = -1;
   @State loaded: boolean = false;
-  @State savedTip: string = '';
+  @State savedTip: ResourceStr = '';
   private pathStack: NavPathStack | null = null;
 
   aboutToAppear(): void {
@@ -144,13 +145,13 @@ export struct LyricsEditorDest {
   private async save(): Promise<void> {
     const lrc = this.buildLrc();
     if (lrc.length === 0) {
-      this.getUIContext().getPromptAction().showToast({ message: '还没有打轴的行' });
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.lrc_none_marked') });
       return;
     }
     await Db.get().putLyricsCache(this.songId, lrc);
     PlayerController.get().currentLyrics = lrc;
-    this.savedTip = '已保存';
-    this.getUIContext().getPromptAction().showToast({ message: '歌词已保存' });
+    this.savedTip = $r('app.string.str_saved');
+    this.getUIContext().getPromptAction().showToast({ message: $r('app.string.lyrics_saved') });
     hilog.info(DOMAIN, TAG, 'saved song=%{public}d lines=%{public}d', this.songId, this.lines.length);
   }
 
@@ -158,7 +159,7 @@ export struct LyricsEditorDest {
   private async exportLrc(): Promise<void> {
     const lrc = this.buildLrc();
     if (lrc.length === 0) {
-      this.getUIContext().getPromptAction().showToast({ message: '还没有打轴的行' });
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.lrc_none_marked') });
       return;
     }
     const song = this.song();
@@ -177,11 +178,11 @@ export struct LyricsEditorDest {
       const f = fs.openSync(uris[0], fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
       fs.writeSync(f.fd, bytes.buffer as ArrayBuffer);
       fs.closeSync(f);
-      this.getUIContext().getPromptAction().showToast({ message: '已导出 .lrc' });
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.lrc_exported') });
       hilog.info(DOMAIN, TAG, 'exported %{public}d bytes', bytes.length);
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'export fail %{public}s', (e as Error).message);
-      this.getUIContext().getPromptAction().showToast({ message: '导出失败' });
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.str_export_failed') });
     }
   }
 
@@ -191,13 +192,13 @@ export struct LyricsEditorDest {
         // 顶部:歌曲 + 播放位置
         Row({ space: 10 }) {
           Column({ space: 2 }) {
-            Text(this.song() !== null ? (this.song() as Song).displayTitle() : '未在播放')
+            Text(this.song() !== null ? (this.song() as Song).displayTitle() : $r('app.string.not_playing'))
               .fontSize(16)
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text(`当前位置 ${formatDuration(Math.round(PlayerController.get().positionMs))} · 点「打轴」标记该时间`)
+            Text(L($r('app.string.lrc_editor_pos'), formatDuration(Math.round(PlayerController.get().positionMs))))
               .fontSize(11)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -222,7 +223,7 @@ export struct LyricsEditorDest {
         if (!this.loaded) {
           Column({ space: 8 }) {
             LoadingProgress().width(28).height(28).color($r('app.color.accent'))
-            Text('读取歌词文本…')
+            Text($r('app.string.reading_lyrics'))
               .fontSize(12)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -234,7 +235,7 @@ export struct LyricsEditorDest {
             SymbolGlyph($r('sys.symbol.doc_plaintext'))
               .fontSize(40)
               .fontColor([$r('app.color.text_secondary')])
-            Text('没有歌词文本。可先在文件里内嵌歌词,或用 LRCLIB 下载')
+            Text($r('app.string.lrc_editor_empty'))
               .fontSize(13)
               .fontColor($r('app.color.text_secondary'))
               .textAlign(TextAlign.Center)
@@ -273,7 +274,7 @@ export struct LyricsEditorDest {
                       this.clearLine(i);
                     })
                   }
-                  Button('打轴')
+                  Button($r('app.string.str_mark'))
                     .fontSize(11)
                     .height(28)
                     .fontColor($r('app.color.on_accent'))
@@ -298,7 +299,7 @@ export struct LyricsEditorDest {
             .fontSize(11)
             .fontColor($r('app.color.text_secondary'))
           Blank()
-          Button('导出 .lrc')
+          Button($r('app.string.export_lrc'))
             .fontSize(12)
             .height(36)
             .fontColor($r('app.color.text_primary'))
@@ -306,7 +307,7 @@ export struct LyricsEditorDest {
             .onClick(() => {
               this.exportLrc();
             })
-          Button('保存歌词')
+          Button($r('app.string.save_lyrics'))
             .fontSize(12)
             .height(36)
             .fontColor($r('app.color.on_accent'))
@@ -322,7 +323,7 @@ export struct LyricsEditorDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
-    .title('歌词打轴')
+    .title($r('app.string.lyrics_sync_title'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
       const p: Object | undefined = ctx.pathInfo.param as Object | undefined;

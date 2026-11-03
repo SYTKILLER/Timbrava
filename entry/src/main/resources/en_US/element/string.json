@@ -1,0 +1,960 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Timbrava main module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Timbrava - HiFi lossless music player"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Timbrava"
+    },
+    {
+      "name": "read_audio_reason",
+      "value": "Used to scan and read local music files. Local use only, no upload."
+    },
+    {
+      "name": "str_favorites",
+      "value": "Favorites"
+    },
+    {
+      "name": "str_folder",
+      "value": "Folders"
+    },
+    {
+      "name": "str_playlists",
+      "value": "Playlists"
+    },
+    {
+      "name": "str_remove",
+      "value": "Remove"
+    },
+    {
+      "name": "str_songs",
+      "value": "Songs"
+    },
+    {
+      "name": "str_queue",
+      "value": "Queue"
+    },
+    {
+      "name": "str_settings",
+      "value": "Settings"
+    },
+    {
+      "name": "batch_tag_title",
+      "value": "Batch Edit Tags"
+    },
+    {
+      "name": "str_artists",
+      "value": "Artists"
+    },
+    {
+      "name": "str_albums",
+      "value": "Albums"
+    },
+    {
+      "name": "str_genres",
+      "value": "Genres"
+    },
+    {
+      "name": "duplicates_title",
+      "value": "Duplicate Cleaner"
+    },
+    {
+      "name": "lrc_none_marked",
+      "value": "No marked lines yet"
+    },
+    {
+      "name": "str_saved",
+      "value": "Saved"
+    },
+    {
+      "name": "str_export_failed",
+      "value": "Export failed"
+    },
+    {
+      "name": "str_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "str_delete",
+      "value": "Delete"
+    },
+    {
+      "name": "str_ok",
+      "value": "OK"
+    },
+    {
+      "name": "str_about",
+      "value": "About"
+    },
+    {
+      "name": "equalizer",
+      "value": "Equalizer"
+    },
+    {
+      "name": "lyrics_none",
+      "value": "No lyrics"
+    },
+    {
+      "name": "menu_play",
+      "value": "Play"
+    },
+    {
+      "name": "menu_play_next",
+      "value": "Play Next"
+    },
+    {
+      "name": "menu_add_to_queue",
+      "value": "Add to Queue"
+    },
+    {
+      "name": "menu_unfavorite",
+      "value": "Unfavorite"
+    },
+    {
+      "name": "menu_edit_tags_flac",
+      "value": "Edit Tags (FLAC)"
+    },
+    {
+      "name": "menu_view_album",
+      "value": "View Album"
+    },
+    {
+      "name": "menu_view_artist",
+      "value": "View Artist"
+    },
+    {
+      "name": "unknown_genre",
+      "value": "Unknown Genre"
+    },
+    {
+      "name": "app_name_display",
+      "value": "Timbrava"
+    },
+    {
+      "name": "tab_library",
+      "value": "Library"
+    },
+    {
+      "name": "folder_empty_hint",
+      "value": "Folder structure appears after scanning"
+    },
+    {
+      "name": "lib_empty_hint",
+      "value": "Library is empty. Go to \"Settings → Scan Folders\" to add music directories and scan"
+    },
+    {
+      "name": "albums_empty",
+      "value": "No albums yet"
+    },
+    {
+      "name": "artists_empty",
+      "value": "No artists yet"
+    },
+    {
+      "name": "genres_empty",
+      "value": "No genres yet"
+    },
+    {
+      "name": "folder_empty",
+      "value": "No folder structure yet"
+    },
+    {
+      "name": "count_songs",
+      "value": "%d songs"
+    },
+    {
+      "name": "artist_stats",
+      "value": "%d albums · %d songs"
+    },
+    {
+      "name": "search_hint",
+      "value": "Songs / artists / albums"
+    },
+    {
+      "name": "search_no_match",
+      "value": "No matching songs"
+    },
+    {
+      "name": "search_empty_hint",
+      "value": "Type keywords to start searching"
+    },
+    {
+      "name": "str_search",
+      "value": "Search"
+    },
+    {
+      "name": "search_title",
+      "value": "Search: %s"
+    },
+    {
+      "name": "pl_dup_fail",
+      "value": "Playlist name exists, save failed"
+    },
+    {
+      "name": "menu_rg_scan",
+      "value": "Scan ReplayGain for this list"
+    },
+    {
+      "name": "menu_batch_tags",
+      "value": "Batch edit tags (write to FLAC)"
+    },
+    {
+      "name": "save_as_pl",
+      "value": "Save as Playlist"
+    },
+    {
+      "name": "list_empty",
+      "value": "List is empty"
+    },
+    {
+      "name": "pl_saved",
+      "value": "Playlist saved: \"%s\""
+    },
+    {
+      "name": "play_all_n",
+      "value": "Play All (%d)"
+    },
+    {
+      "name": "writing_file",
+      "value": "Writing file…"
+    },
+    {
+      "name": "tags_written",
+      "value": "Written to file and library updated"
+    },
+    {
+      "name": "tags_write_failed",
+      "value": "Write failed (FLAC only, or file busy)"
+    },
+    {
+      "name": "song_not_found",
+      "value": "Song not found"
+    },
+    {
+      "name": "field_title",
+      "value": "Title"
+    },
+    {
+      "name": "field_album_artist",
+      "value": "Album Artist"
+    },
+    {
+      "name": "field_year",
+      "value": "Year"
+    },
+    {
+      "name": "field_track_no",
+      "value": "Track No."
+    },
+    {
+      "name": "field_disc_no",
+      "value": "Disc No."
+    },
+    {
+      "name": "tag_note",
+      "value": "FLAC (VorbisComment) only; auto-validated before replacing, abandoned on failure"
+    },
+    {
+      "name": "tag_busy",
+      "value": "Writing…"
+    },
+    {
+      "name": "batch_write",
+      "value": "Batch Write"
+    },
+    {
+      "name": "save_write_file",
+      "value": "Save & Write to File"
+    },
+    {
+      "name": "edit_tags",
+      "value": "Edit Tags"
+    },
+    {
+      "name": "batch_intro",
+      "value": "Batch mode: album-level fields below will be written to every FLAC file in the list (empty input keeps current value)"
+    },
+    {
+      "name": "batch_done",
+      "value": "Batch done: %d ok, %d failed"
+    },
+    {
+      "name": "dup_note",
+      "value": "Detects \"same title+artist within ±2s\" or \"same size+duration\"; removing only clears library records, never deletes files"
+    },
+    {
+      "name": "dup_none",
+      "value": "No duplicates found"
+    },
+    {
+      "name": "str_keep",
+      "value": "Keep"
+    },
+    {
+      "name": "dup_group",
+      "value": "%s (%d tracks)"
+    },
+    {
+      "name": "now_playing",
+      "value": "Now Playing"
+    },
+    {
+      "name": "no_playing_song",
+      "value": "Nothing playing yet"
+    },
+    {
+      "name": "skip_silence",
+      "value": "Skip Silence"
+    },
+    {
+      "name": "str_favorited",
+      "value": "Favorited"
+    },
+    {
+      "name": "current_queue",
+      "value": "Current Queue"
+    },
+    {
+      "name": "edit_lyrics",
+      "value": "Edit Lyrics"
+    },
+    {
+      "name": "add_lyrics",
+      "value": "Add Lyrics (Sync)"
+    },
+    {
+      "name": "speed_label",
+      "value": "Speed"
+    },
+    {
+      "name": "ab_set_a",
+      "value": "A-B: A set"
+    },
+    {
+      "name": "ab_looping",
+      "value": "A-B: Looping"
+    },
+    {
+      "name": "speed_normal",
+      "value": "Normal 1.0x"
+    },
+    {
+      "name": "lyrics_saved",
+      "value": "Lyrics saved"
+    },
+    {
+      "name": "lrc_exported",
+      "value": "Exported .lrc"
+    },
+    {
+      "name": "not_playing",
+      "value": "Not playing"
+    },
+    {
+      "name": "reading_lyrics",
+      "value": "Reading lyrics…"
+    },
+    {
+      "name": "lrc_editor_empty",
+      "value": "No lyrics text. Embed lyrics in the file first, or download via LRCLIB"
+    },
+    {
+      "name": "str_mark",
+      "value": "Mark"
+    },
+    {
+      "name": "export_lrc",
+      "value": "Export .lrc"
+    },
+    {
+      "name": "save_lyrics",
+      "value": "Save Lyrics"
+    },
+    {
+      "name": "lyrics_sync_title",
+      "value": "Lyrics Sync Editor"
+    },
+    {
+      "name": "lrc_editor_pos",
+      "value": "Position %s · tap \"Mark\" to stamp this time"
+    },
+    {
+      "name": "pl_name_required",
+      "value": "Enter a playlist name"
+    },
+    {
+      "name": "pl_name_exists",
+      "value": "Name already exists"
+    },
+    {
+      "name": "delete_pl",
+      "value": "Delete Playlist"
+    },
+    {
+      "name": "pl_empty_no_export",
+      "value": "Playlist is empty, nothing to export"
+    },
+    {
+      "name": "new_pl_name",
+      "value": "New playlist name"
+    },
+    {
+      "name": "no_playlists",
+      "value": "No playlists yet"
+    },
+    {
+      "name": "pl_create_hint",
+      "value": "Enter a name and tap OK to create"
+    },
+    {
+      "name": "export_m3u",
+      "value": "Export M3U"
+    },
+    {
+      "name": "pl_delete_confirm",
+      "value": "Delete \"%s\"? Only the playlist record is removed; song files are untouched."
+    },
+    {
+      "name": "m3u_exported",
+      "value": "Exported: %s"
+    },
+    {
+      "name": "already_active",
+      "value": "Already the active queue"
+    },
+    {
+      "name": "queue_switched",
+      "value": "Queue switched"
+    },
+    {
+      "name": "new_queue_name",
+      "value": "New queue name"
+    },
+    {
+      "name": "save_current_queue",
+      "value": "Save Current Queue"
+    },
+    {
+      "name": "name_required",
+      "value": "Enter a name"
+    },
+    {
+      "name": "queue_empty_toast",
+      "value": "Queue is empty"
+    },
+    {
+      "name": "no_saved_queues",
+      "value": "No saved queues yet"
+    },
+    {
+      "name": "str_switch",
+      "value": "Switch"
+    },
+    {
+      "name": "queue_board",
+      "value": "Queue Board"
+    },
+    {
+      "name": "queue_unnamed",
+      "value": "Unnamed Queue"
+    },
+    {
+      "name": "queue_empty_hint",
+      "value": "Queue is empty: long-press a song in the library to add"
+    },
+    {
+      "name": "sleep_off",
+      "value": "Turn off sleep timer"
+    },
+    {
+      "name": "sleep_15",
+      "value": "15 min"
+    },
+    {
+      "name": "sleep_30",
+      "value": "30 min"
+    },
+    {
+      "name": "sleep_45",
+      "value": "45 min"
+    },
+    {
+      "name": "sleep_60",
+      "value": "60 min"
+    },
+    {
+      "name": "sleep_90",
+      "value": "90 min"
+    },
+    {
+      "name": "loop_off",
+      "value": "Sequential (no repeat)"
+    },
+    {
+      "name": "loop_all",
+      "value": "Repeat All"
+    },
+    {
+      "name": "loop_one",
+      "value": "Repeat One"
+    },
+    {
+      "name": "stop_after_on",
+      "value": "✓ Stop after current"
+    },
+    {
+      "name": "stop_after",
+      "value": "Stop after current"
+    },
+    {
+      "name": "album_boundary_on",
+      "value": "✓ Advance by album"
+    },
+    {
+      "name": "album_boundary",
+      "value": "Advance by album (stop across albums)"
+    },
+    {
+      "name": "artist_boundary_on",
+      "value": "✓ Advance by artist"
+    },
+    {
+      "name": "artist_boundary",
+      "value": "Advance by artist (stop across artists)"
+    },
+    {
+      "name": "folder_boundary_on",
+      "value": "✓ Advance by folder"
+    },
+    {
+      "name": "folder_boundary",
+      "value": "Advance by folder (stop across folders)"
+    },
+    {
+      "name": "about_title",
+      "value": "Timbrava"
+    },
+    {
+      "name": "version_loading",
+      "value": "Loading version info"
+    },
+    {
+      "name": "version_line",
+      "value": "Version %s"
+    },
+    {
+      "name": "about_positioning",
+      "value": "Positioning"
+    },
+    {
+      "name": "about_desc",
+      "value": "A pure-local, offline, ad-free HiFi lossless music player. Bit-perfect FLAC/WAV playback with full streaming decode of single files above 1GB at ultra-high bitrates."
+    },
+    {
+      "name": "privacy_title",
+      "value": "Privacy Promise"
+    },
+    {
+      "name": "privacy_desc",
+      "value": "No data collection, no network (by default), no ads, no tracking. Music files are only scanned and played locally."
+    },
+    {
+      "name": "oss_title",
+      "value": "Open-Source Components"
+    },
+    {
+      "name": "oss_desc",
+      "value": "FLAC decoding: dr_flac (public domain / MIT-0 dual license). All other code is original to this project."
+    },
+    {
+      "name": "about_note",
+      "value": "Note"
+    },
+    {
+      "name": "engine_note",
+      "value": "With the lossless engine, FLAC/WAV stream at source sample rate and bit depth; MP3/OGG/M4A/APE etc. play via the system AVPlayer engine."
+    },
+    {
+      "name": "autoeq_placeholder",
+      "value": "Paste AutoEq GraphicEq text\nGraphicEq: 20-3;25-2.5;..."
+    },
+    {
+      "name": "preset_name",
+      "value": "Preset name"
+    },
+    {
+      "name": "preset_custom",
+      "value": "Custom"
+    },
+    {
+      "name": "select_preset",
+      "value": "Select preset"
+    },
+    {
+      "name": "preset_flat",
+      "value": "Flat"
+    },
+    {
+      "name": "preset_bass",
+      "value": "Bass Boost"
+    },
+    {
+      "name": "preset_vocal",
+      "value": "Vocal"
+    },
+    {
+      "name": "preset_treble",
+      "value": "Treble Boost"
+    },
+    {
+      "name": "preset_rock",
+      "value": "Rock"
+    },
+    {
+      "name": "preset_electronic",
+      "value": "Electronic"
+    },
+    {
+      "name": "save_curve_title",
+      "value": "Save current curve as preset"
+    },
+    {
+      "name": "import_autoeq",
+      "value": "Import AutoEq (GraphicEq)"
+    },
+    {
+      "name": "autoeq_parse_fail",
+      "value": "Parse failed: no valid frequency points"
+    },
+    {
+      "name": "autoeq_imported",
+      "value": "AutoEq curve imported"
+    },
+    {
+      "name": "str_on",
+      "value": "On"
+    },
+    {
+      "name": "save_preset",
+      "value": "Save Preset"
+    },
+    {
+      "name": "str_import",
+      "value": "Import"
+    },
+    {
+      "name": "eq_hint",
+      "value": "±12 dB · takes effect while dragging (lossless engine)"
+    },
+    {
+      "name": "reset_all",
+      "value": "Reset All"
+    },
+    {
+      "name": "delete_preset",
+      "value": "Delete %s"
+    },
+    {
+      "name": "scan_roots",
+      "value": "Scan Root Folders"
+    },
+    {
+      "name": "no_roots",
+      "value": "No folders added yet"
+    },
+    {
+      "name": "local_dir",
+      "value": "Local directory"
+    },
+    {
+      "name": "uri_dir",
+      "value": "Authorized directory (URI)"
+    },
+    {
+      "name": "add_folder",
+      "value": "Add Folder"
+    },
+    {
+      "name": "scanning",
+      "value": "Scanning…"
+    },
+    {
+      "name": "start_scan",
+      "value": "Start Scan"
+    },
+    {
+      "name": "add_sandbox_root",
+      "value": "Add sandbox test dir (files/music)"
+    },
+    {
+      "name": "import_corpus",
+      "value": "Import corpus from host (HTTP 127.0.0.1:8099)"
+    },
+    {
+      "name": "not_scanned",
+      "value": "Not scanned yet"
+    },
+    {
+      "name": "blacklist_title",
+      "value": "Blacklist (ignored path prefixes, effective after rescan)"
+    },
+    {
+      "name": "blacklist_hint",
+      "value": "/music/... path prefix"
+    },
+    {
+      "name": "str_add",
+      "value": "Add"
+    },
+    {
+      "name": "scan_folders",
+      "value": "Scan Folders"
+    },
+    {
+      "name": "scan_progress",
+      "value": "Scanning %s/%s"
+    },
+    {
+      "name": "scan_done_msg",
+      "value": "Scan done: %s"
+    },
+    {
+      "name": "scan_fail_msg",
+      "value": "Scan failed: %s"
+    },
+    {
+      "name": "theme_light",
+      "value": "Light"
+    },
+    {
+      "name": "theme_dark",
+      "value": "Dark"
+    },
+    {
+      "name": "theme_black",
+      "value": "Pure Black"
+    },
+    {
+      "name": "follow_system",
+      "value": "Follow System"
+    },
+    {
+      "name": "theme",
+      "value": "Theme"
+    },
+    {
+      "name": "media_library",
+      "value": "Media Library"
+    },
+    {
+      "name": "scan_manager",
+      "value": "Scan Folder Manager"
+    },
+    {
+      "name": "scan_manager_sub",
+      "value": "Choose music directories and start scanning"
+    },
+    {
+      "name": "duplicates_sub",
+      "value": "Detect duplicated records and remove from library"
+    },
+    {
+      "name": "audio_engine",
+      "value": "Audio Engine"
+    },
+    {
+      "name": "lossless_pref",
+      "value": "Lossless engine (FLAC/WAV bit-perfect)"
+    },
+    {
+      "name": "lossless_sub",
+      "value": "Streams at source sample rate/bit depth; off = everything via system engine"
+    },
+    {
+      "name": "eq_entry",
+      "value": "Equalizer (31-band PEQ)"
+    },
+    {
+      "name": "eq_entry_sub",
+      "value": "Presets / custom curves / AutoEq import"
+    },
+    {
+      "name": "system_fallback",
+      "value": "System engine fallback"
+    },
+    {
+      "name": "system_fallback_sub",
+      "value": "MP3/OGG/M4A/APE etc. via AVPlayer; auto-fallback on lossless engine errors"
+    },
+    {
+      "name": "loudness",
+      "value": "Loudness Analysis"
+    },
+    {
+      "name": "playback_behavior",
+      "value": "Playback Behavior"
+    },
+    {
+      "name": "pause_hp",
+      "value": "Pause on headphone unplug"
+    },
+    {
+      "name": "pause_hp_sub",
+      "value": "Auto-pause when wired/USB headphones disconnect"
+    },
+    {
+      "name": "pause_bt",
+      "value": "Pause on Bluetooth disconnect"
+    },
+    {
+      "name": "pause_bt_sub",
+      "value": "Auto-pause when a Bluetooth audio device disconnects"
+    },
+    {
+      "name": "auto_resume",
+      "value": "Resume after interruption"
+    },
+    {
+      "name": "auto_resume_sub",
+      "value": "Resume playback after calls/navigation"
+    },
+    {
+      "name": "appearance",
+      "value": "Appearance"
+    },
+    {
+      "name": "backup_restore",
+      "value": "Backup & Restore"
+    },
+    {
+      "name": "export_backup",
+      "value": "Export Backup"
+    },
+    {
+      "name": "backup_desc",
+      "value": "Settings/playlists/favorites/queues/EQ presets → JSON"
+    },
+    {
+      "name": "str_exported",
+      "value": "Exported"
+    },
+    {
+      "name": "export_cancelled",
+      "value": "Export cancelled or failed"
+    },
+    {
+      "name": "restore_backup",
+      "value": "Restore from Backup"
+    },
+    {
+      "name": "restore_desc",
+      "value": "Pick a JSON and restore (playlists remapped by file path)"
+    },
+    {
+      "name": "str_restored",
+      "value": "Restored"
+    },
+    {
+      "name": "import_cancelled",
+      "value": "Import cancelled or failed"
+    },
+    {
+      "name": "about_entry",
+      "value": "About Timbrava"
+    },
+    {
+      "name": "about_entry_sub",
+      "value": "Version, open-source info and privacy promise"
+    },
+    {
+      "name": "player_skin",
+      "value": "Player Skin"
+    },
+    {
+      "name": "skin_standard",
+      "value": "Standard (large cover)"
+    },
+    {
+      "name": "skin_minimal",
+      "value": "Minimal"
+    },
+    {
+      "name": "lrclib_pref",
+      "value": "LRCLIB online lyrics"
+    },
+    {
+      "name": "lrclib_sub",
+      "value": "Off by default. When on, queries lrclib.net for songs without embedded lyrics"
+    },
+    {
+      "name": "by_track",
+      "value": "By Track"
+    },
+    {
+      "name": "by_album",
+      "value": "By Album"
+    },
+    {
+      "name": "str_off",
+      "value": "Off"
+    },
+    {
+      "name": "rg_hint",
+      "value": "Scan the library in \"Loudness Analysis\" first, then choose a mode"
+    },
+    {
+      "name": "rg_scan",
+      "value": "ReplayGain Scan"
+    },
+    {
+      "name": "rg_scan_sub",
+      "value": "Full-decode loudness measurement (FLAC/WAV only); time scales with library size"
+    },
+    {
+      "name": "cancel_scan",
+      "value": "Cancel Scan"
+    },
+    {
+      "name": "scan_library",
+      "value": "Scan Library"
+    },
+    {
+      "name": "rg_scanning",
+      "value": "Scanning %s/%s%s"
+    },
+    {
+      "name": "rg_done_ok",
+      "value": "Last scan completed"
+    },
+    {
+      "name": "rg_done_fail",
+      "value": "Last scan completed, %d failed"
+    },
+    {
+      "name": "engine_system",
+      "value": "System Engine"
+    },
+    {
+      "name": "engine_fallback",
+      "value": "System Engine (lossless error fallback)"
+    },
+    {
+      "name": "engine_lossless",
+      "value": "Lossless engine %s %sbit/%sHz"
+    },
+    {
+      "name": "engine_dsd",
+      "value": "Lossless engine DSD%d (PCM 88.2k extraction)"
+    },
+    {
+      "name": "scan_progress_stats",
+      "value": "Added %d · Updated %d · Removed %d"
+    }
+  ]
+}

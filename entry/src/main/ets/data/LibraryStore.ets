@@ -3,6 +3,7 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Db } from './Db';
 import { Song, Album, Artist, Genre, FolderNode } from './Model';
+import { L } from '../common/Lang';
 
 const TAG = '[Timbrava][Library]';
 const DOMAIN = 0x0001;
@@ -122,7 +123,7 @@ export class LibraryStore {
       }
       artist.songIds.push(s.id);
       // 流派
-      const gName = s.genre.length > 0 ? s.genre : '未知流派';
+      const gName = s.genre.length > 0 ? s.genre : L($r('app.string.unknown_genre'));
       let genre = genreMap.get(gName);
       if (genre === undefined) {
         genre = new Genre();

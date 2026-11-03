@@ -7,13 +7,14 @@ import { RgScanner, RgScanState } from '../../service/RgScanner';
 import { BackupService } from '../../service/BackupService';
 import { LibraryStore } from '../../data/LibraryStore';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][SettingsTab]';
 const DOMAIN = 0x0001;
 
 @Component
 struct CardSection {
-  title: string = '';
+  title: ResourceStr = '';
   @BuilderParam content: () => void = this.emptyContent;
 
   @Builder
@@ -43,8 +44,8 @@ struct PrefToggleRow {
   @StorageProp('prefPauseBt') prefPauseBt: boolean = true;
   @StorageProp('prefResumeInterrupt') prefResumeInterrupt: boolean = true;
   prefKey: string = 'lossless';
-  title: string = '';
-  sub: string = '';
+  title: ResourceStr = '';
+  sub: ResourceStr = '';
 
   private current(on: boolean): boolean {
     return on;
@@ -104,17 +105,17 @@ struct PrefToggleRow {
 struct ThemeRow {
   @StorageProp('prefThemeMode') prefThemeMode: string = 'system';
 
-  private themeLabel(mode: string): string {
+  private themeLabel(mode: string): ResourceStr {
     if (mode === ThemeMode.LIGHT) {
-      return '浅色';
+      return $r('app.string.theme_light');
     }
     if (mode === ThemeMode.DARK) {
-      return '深色';
+      return $r('app.string.theme_dark');
     }
     if (mode === ThemeMode.BLACK) {
-      return '纯黑';
+      return $r('app.string.theme_black');
     }
-    return '跟随系统';
+    return $r('app.string.follow_system');
   }
 
   build() {
@@ -123,7 +124,7 @@ struct ThemeRow {
         SymbolGlyph($r('sys.symbol.moon'))
           .fontSize(18)
           .fontColor([$r('app.color.accent')])
-        Text('主题')
+        Text($r('app.string.theme'))
           .fontSize(15)
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
@@ -177,7 +178,7 @@ export struct SettingsTab {
 
   build() {
     Column() {
-      Text('设置')
+      Text($r('app.string.str_settings'))
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
@@ -187,59 +188,59 @@ export struct SettingsTab {
       Scroll() {
         Column({ space: 12 }) {
           // 媒体库
-          CardSection({ title: '媒体库' }) {
+          CardSection({ title: $r('app.string.media_library') }) {
             Column() {
-              this.NavItem('扫描文件夹管理', '选择音乐目录、开始扫描', (): void => {
+              this.NavItem($r('app.string.scan_manager'), $r('app.string.scan_manager_sub'), (): void => {
                 this.nav().pushPathByName('ScanSettings', null);
               })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
-              this.NavItem('重复清理', '检测同曲多份记录并从库移除', (): void => {
+              this.NavItem($r('app.string.duplicates_title'), $r('app.string.duplicates_sub'), (): void => {
                 this.nav().pushPathByName('Duplicates', null);
               })
             }
           }
 
           // 引擎
-          CardSection({ title: '音频引擎' }) {
+          CardSection({ title: $r('app.string.audio_engine') }) {
             Column() {
               PrefToggleRow({
                 prefKey: 'lossless',
-                title: '无损引擎(FLAC/WAV 直通)',
-                sub: '按源采样率/位深建流;关闭后全部走系统引擎'
+                title: $r('app.string.lossless_pref'),
+                sub: $r('app.string.lossless_sub')
               })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
-              this.NavItem('均衡器(31 段 PEQ)', '预设 / 自定义曲线 / AutoEq 导入', (): void => {
+              this.NavItem($r('app.string.eq_entry'), $r('app.string.eq_entry_sub'), (): void => {
                 this.nav().pushPathByName('Equalizer', null);
               })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               RgModeRow()
               Divider().color($r('app.color.divider')).margin({ left: 0 })
-              this.InfoItem('系统引擎兜底', 'MP3/OGG/M4A/APE 等由 AVPlayer 播放;无损引擎出错自动回退')
+              this.InfoItem($r('app.string.system_fallback'), $r('app.string.system_fallback_sub'))
             }
           }
 
           // 响度分析(ReplayGain 扫描)
-          CardSection({ title: '响度分析' }) {
+          CardSection({ title: $r('app.string.loudness') }) {
             Column() {
               RgScanSection()
             }
           }
 
           // 播放行为
-          CardSection({ title: '播放行为' }) {
+          CardSection({ title: $r('app.string.playback_behavior') }) {
             Column() {
-              PrefToggleRow({ prefKey: 'headphone', title: '拔出耳机暂停', sub: '有线/USB 耳机断开时自动暂停' })
+              PrefToggleRow({ prefKey: 'headphone', title: $r('app.string.pause_hp'), sub: $r('app.string.pause_hp_sub') })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
-              PrefToggleRow({ prefKey: 'bt', title: '蓝牙断开暂停', sub: '蓝牙音频设备断开时自动暂停' })
+              PrefToggleRow({ prefKey: 'bt', title: $r('app.string.pause_bt'), sub: $r('app.string.pause_bt_sub') })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
-              PrefToggleRow({ prefKey: 'resume', title: '打断后自动恢复', sub: '通话/导航结束后恢复播放' })
+              PrefToggleRow({ prefKey: 'resume', title: $r('app.string.auto_resume'), sub: $r('app.string.auto_resume_sub') })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               OnlineLyricsRow()
             }
           }
 
           // 外观
-          CardSection({ title: '外观' }) {
+          CardSection({ title: $r('app.string.appearance') }) {
             Column() {
               ThemeRow()
               Divider().color($r('app.color.divider')).margin({ left: 0 })
@@ -248,26 +249,26 @@ export struct SettingsTab {
           }
 
           // 备份与恢复
-          CardSection({ title: '备份与恢复' }) {
+          CardSection({ title: $r('app.string.backup_restore') }) {
             Column() {
-              this.NavItem('导出备份', '设置/歌单/收藏/队列/EQ 预设 → JSON', (): void => {
+              this.NavItem($r('app.string.export_backup'), $r('app.string.backup_desc'), (): void => {
                 BackupService.exportAll().then((ok: boolean): void => {
-                  this.getUIContext().getPromptAction().showToast({ message: ok ? '已导出' : '导出取消或失败' });
+                  this.getUIContext().getPromptAction().showToast({ message: ok ? $r('app.string.str_exported') : $r('app.string.export_cancelled') });
                 });
               })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
-              this.NavItem('从备份恢复', '选择 JSON 并恢复(歌单按文件路径重挂)', (): void => {
+              this.NavItem($r('app.string.restore_backup'), $r('app.string.restore_desc'), (): void => {
                 BackupService.importAll().then((ok: boolean): void => {
-                  this.getUIContext().getPromptAction().showToast({ message: ok ? '已恢复' : '导入取消或失败' });
+                  this.getUIContext().getPromptAction().showToast({ message: ok ? $r('app.string.str_restored') : $r('app.string.import_cancelled') });
                 });
               })
             }
           }
 
           // 关于
-          CardSection({ title: '关于' }) {
+          CardSection({ title: $r('app.string.str_about') }) {
             Column() {
-              this.NavItem('关于听韵 Timbrava', '版本、开源信息与隐私承诺', (): void => {
+              this.NavItem($r('app.string.about_entry'), $r('app.string.about_entry_sub'), (): void => {
                 this.nav().pushPathByName('About', null);
               })
             }
@@ -289,7 +290,7 @@ export struct SettingsTab {
   }
 
   @Builder
-  NavItem(title: string, sub: string, onTap: () => void) {
+  NavItem(title: ResourceStr, sub: ResourceStr, onTap: () => void) {
     Row({ space: 12 }) {
       Column({ space: 2 }) {
         Text(title)
@@ -313,7 +314,7 @@ export struct SettingsTab {
   }
 
   @Builder
-  InfoItem(title: string, sub: string) {
+  InfoItem(title: ResourceStr, sub: ResourceStr) {
     Row({ space: 12 }) {
       Column({ space: 2 }) {
         Text(title)
@@ -357,14 +358,14 @@ struct PlayerSkinRow {
         SymbolGlyph($r('sys.symbol.paintpalette'))
           .fontSize(18)
           .fontColor([$r('app.color.accent')])
-        Text('播放页皮肤')
+        Text($r('app.string.player_skin'))
           .fontSize(15)
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
       }
       .width('100%')
       Row({ space: 8 }) {
-        Button('标准(大封面)')
+        Button($r('app.string.skin_standard'))
           .fontSize(13)
           .fontColor(this.prefPlayerSkin === 'standard' ? $r('app.color.on_accent') : $r('app.color.text_primary'))
           .backgroundColor(this.prefPlayerSkin === 'standard' ? $r('app.color.accent') : $r('app.color.badge_bg'))
@@ -374,7 +375,7 @@ struct PlayerSkinRow {
           .onClick(() => {
             SettingsService.get().setPlayerSkin('standard');
           })
-        Button('极简')
+        Button($r('app.string.skin_minimal'))
           .fontSize(13)
           .fontColor(this.prefPlayerSkin === 'minimal' ? $r('app.color.on_accent') : $r('app.color.text_primary'))
           .backgroundColor(this.prefPlayerSkin === 'minimal' ? $r('app.color.accent') : $r('app.color.badge_bg'))
@@ -401,10 +402,10 @@ struct OnlineLyricsRow {
   build() {
     Row({ space: 12 }) {
       Column({ space: 2 }) {
-        Text('LRCLIB 联网歌词')
+        Text($r('app.string.lrclib_pref'))
           .fontSize(15)
           .fontColor($r('app.color.text_primary'))
-        Text('默认关闭。开启后无内嵌歌词时联网查询 lrclib.net')
+        Text($r('app.string.lrclib_sub'))
           .fontSize(11)
           .fontColor($r('app.color.text_secondary'))
       }
@@ -426,14 +427,14 @@ struct OnlineLyricsRow {
 struct RgModeRow {
   @StorageProp('prefRgMode') prefRgMode: number = 0;
 
-  private label(m: number): string {
+  private label(m: number): ResourceStr {
     if (m === 1) {
-      return '按曲目';
+      return $r('app.string.by_track');
     }
     if (m === 2) {
-      return '按专辑';
+      return $r('app.string.by_album');
     }
-    return '关闭';
+    return $r('app.string.str_off');
   }
 
   build() {
@@ -448,7 +449,7 @@ struct RgModeRow {
           .layoutWeight(1)
       }
       .width('100%')
-      Text('先在「响度分析」里扫描曲库,再选择应用模式')
+      Text($r('app.string.rg_hint'))
         .fontSize(11)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
@@ -490,10 +491,10 @@ struct RgScanSection {
           .fontSize(18)
           .fontColor([$r('app.color.accent')])
         Column({ space: 2 }) {
-          Text('ReplayGain 扫描')
+          Text($r('app.string.rg_scan'))
             .fontSize(15)
             .fontColor($r('app.color.text_primary'))
-          Text('全曲解码测响度(仅 FLAC/WAV),耗时与曲库大小成正比')
+          Text($r('app.string.rg_scan_sub'))
             .fontSize(11)
             .fontColor($r('app.color.text_secondary'))
         }
@@ -505,11 +506,11 @@ struct RgScanSection {
       if (this.rgScanVer < 0) {
         Text('')
       } else if (this.st().running) {
-        Text(`扫描中 ${this.st().current}/${this.st().total}${this.st().albumLabel.length > 0 ? ' · ' + this.st().albumLabel : ''}`)
+        Text(L($r('app.string.rg_scanning'), this.st().current, this.st().total, this.st().albumLabel.length > 0 ? ' · ' + this.st().albumLabel : ''))
           .fontSize(12)
           .fontColor($r('app.color.accent'))
           .width('100%')
-        Button('取消扫描')
+        Button($r('app.string.cancel_scan'))
           .fontSize(12)
           .height(32)
           .fontColor($r('app.color.text_primary'))
@@ -519,12 +520,12 @@ struct RgScanSection {
           })
       } else {
         if (this.st().done) {
-          Text(`上次扫描完成${this.st().failCount > 0 ? ',失败 ' + this.st().failCount + ' 首' : ''}`)
+          Text(this.st().failCount > 0 ? L($r('app.string.rg_done_fail'), this.st().failCount) : L($r('app.string.rg_done_ok')))
             .fontSize(11)
             .fontColor($r('app.color.text_secondary'))
             .width('100%')
         }
-        Button('扫描全库')
+        Button($r('app.string.scan_library'))
           .fontSize(13)
           .height(36)
           .fontColor($r('app.color.on_accent'))

@@ -55,7 +55,7 @@ export struct LyricsPanel {
         SymbolGlyph($r('sys.symbol.music_note_list'))
           .fontSize(36)
           .fontColor([$r('app.color.text_secondary')])
-        Text('暂无歌词')
+        Text($r('app.string.lyrics_none'))
           .fontSize(14)
           .fontColor($r('app.color.text_secondary'))
       }

@@ -8,6 +8,7 @@ import { TagEditorParam } from './TagEditor';
 import { QueueService } from '../../service/QueueService';
 import { PlaylistRepo } from '../../data/PlaylistRepo';
 import { PlayerController } from '../../service/PlayerController';
+import { L, Ls } from '../../common/Lang';
 
 const TAG = '[Timbrava][SongList]';
 const DOMAIN = 0x0001;
@@ -16,7 +17,7 @@ const DOMAIN = 0x0001;
 export struct SongListDest {
   @StorageProp('libVer') @Watch('onLibChanged') libVer: number = 0;
   @State songs: Song[] = [];
-  @State title: string = '';
+  @State title: ResourceStr = '';
   @State param: SongListParam = new SongListParam();
   private pathStack: NavPathStack | null = null;
 
@@ -79,16 +80,17 @@ export struct SongListDest {
     if (this.songs.length === 0) {
       return;
     }
-    const base = this.title.length > 0 ? this.title : '歌单';
+    const t = Ls(this.title);
+    const base = t.length > 0 ? t : L($r('app.string.str_playlists'));
     const name = `${base} · ${new Date().getMonth() + 1}/${new Date().getDate()}`;
     const ids: number[] = this.songs.map((s: Song): number => s.id);
     PlaylistRepo.get().createPlaylist(name).then((id: number): void => {
       if (id > 0) {
         PlaylistRepo.get().addSongs(id, ids).then((): void => {
-          this.getUIContext().getPromptAction().showToast({ message: `已保存歌单「${name}」` });
+          this.getUIContext().getPromptAction().showToast({ message: L($r('app.string.pl_saved'), name) });
         });
       } else {
-        this.getUIContext().getPromptAction().showToast({ message: '歌单重名,保存失败' });
+        this.getUIContext().getPromptAction().showToast({ message: $r('app.string.pl_dup_fail') });
       }
     });
   }
@@ -98,18 +100,18 @@ export struct SongListDest {
       return;
     }
     const q = QueueService.get();
-    const first = q.setQueueNow(this.songs, 0, this.title);
+    const first = q.setQueueNow(this.songs, 0, Ls(this.title));
     PlayerController.get().playQueueIndex(q.locateCurrent());
   }
 
   @Builder
   listMenu() {
     Menu() {
-      MenuItem({ content: '扫描本列表 ReplayGain' })
+      MenuItem({ content: $r('app.string.menu_rg_scan') })
         .onClick(() => {
           RgScanner.get().scan(this.songs);
         })
-      MenuItem({ content: '批量修改标签(写回 FLAC)' })
+      MenuItem({ content: $r('app.string.menu_batch_tags') })
         .onClick(() => {
           const stack = AppStorage.get<NavPathStack>('navStack');
           if (stack !== undefined && stack !== null) {
@@ -143,7 +145,7 @@ export struct SongListDest {
           .backgroundColor(Color.Transparent)
           .bindMenu(this.listMenu())
 
-          Button('存为歌单')
+          Button($r('app.string.save_as_pl'))
             .fontSize(13)
             .fontColor($r('app.color.text_primary'))
             .backgroundColor($r('app.color.badge_bg'))
@@ -152,7 +154,7 @@ export struct SongListDest {
             .onClick(() => {
               this.saveAsPlaylist();
             })
-          Button(`全部播放 ${this.songs.length}`)
+          Button(L($r('app.string.play_all_n'), this.songs.length))
             .fontSize(13)
             .fontColor($r('app.color.on_accent'))
             .backgroundColor($r('app.color.accent'))
@@ -170,7 +172,7 @@ export struct SongListDest {
             SymbolGlyph($r('sys.symbol.music_note_list'))
               .fontSize(42)
               .fontColor([$r('app.color.text_secondary')])
-            Text('列表为空')
+            Text($r('app.string.list_empty'))
               .fontSize(14)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -182,7 +184,7 @@ export struct SongListDest {
               ListItem() {
                 SongRow({ song: s, showAlbum: this.param.mode !== 'album' })
               }
-            }, (s: Song): string => `${s.id}_${this.param.mode}_${this.title}`)
+            }, (s: Song): string => `${s.id}_${this.param.mode}`)
           }
           .width('100%')
           .layoutWeight(1)

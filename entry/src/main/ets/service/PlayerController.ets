@@ -19,6 +19,7 @@ import { LosslessEngine, NativeAnalyzeResult } from './engine/LosslessEngine';
 import { PEQ_FREQS, presetBands } from './EqPresets';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { extractLyricsFromHead } from '../data/lyrics/LyricsExtractor';
+import { L } from '../common/Lang';
 
 const TAG = '[Timbrava][Player]';
 const DOMAIN = 0x0001;
@@ -199,10 +200,10 @@ export class PlayerController {
     this.engineKind = target.getKind();
     if (target.getKind() === EngineKind.LOSSLESS) {
       this.engineInfo = info.codec === 'dsd' && info.dsdRate > 0
-        ? `无损引擎 DSD${Math.round(info.dsdRate / 44100)}(PCM 88.2k 抽取)`
-        : `无损引擎 ${info.codec.toUpperCase()} ${info.bitDepth}bit/${info.sampleRate}Hz`;
+        ? L($r('app.string.engine_dsd'), Math.round(info.dsdRate / 44100))
+        : L($r('app.string.engine_lossless'), info.codec.toUpperCase(), info.bitDepth, info.sampleRate);
     } else {
-      this.engineInfo = '系统引擎';
+      this.engineInfo = L($r('app.string.engine_system'));
     }
     this.currentSong = song;
     this.abStartMs = -1;
@@ -319,7 +320,7 @@ export class PlayerController {
           await this.systemEngine.open(this.currentSong.path);
           this.engine = this.systemEngine;
           this.engineKind = EngineKind.SYSTEM;
-          this.engineInfo = '系统引擎(无损引擎错误回退)';
+          this.engineInfo = L($r('app.string.engine_fallback'));
           if (resumeAt > 0) {
             this.systemEngine.seek(resumeAt);
           }

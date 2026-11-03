@@ -9,6 +9,7 @@ import { SongRow, SongListParam } from '../../components/SongRow';
 import { BasicDataSource } from '../../common/DataSource';
 import { ScanService } from '../../data/ScanService';
 import { PlaylistsTab } from '../playlist/PlaylistsTab';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][Library]';
 const DOMAIN = 0x0001;
@@ -88,7 +89,7 @@ export struct LibraryTab {
   build() {
     Column() {
       Row({ space: 8 }) {
-        Text('听韵')
+        Text($r('app.string.app_name_display'))
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -153,7 +154,7 @@ export struct LibraryTab {
   }
 
   @Builder
-  EmptyHint(text: string) {
+  EmptyHint(text: ResourceStr) {
     Column({ space: 8 }) {
       SymbolGlyph($r('sys.symbol.music_note_list'))
         .fontSize(42)
@@ -170,7 +171,7 @@ export struct LibraryTab {
   @Builder
   SongsPage() {
     if (this.songSrc.totalCount() === 0) {
-      this.EmptyHint('曲库为空:到「设置 → 扫描文件夹」添加音乐目录并扫描')
+      this.EmptyHint($r('app.string.lib_empty_hint'))
     } else {
       List({ space: 0 }) {
         LazyForEach(this.songSrc, (s: Song) => {
@@ -190,7 +191,7 @@ export struct LibraryTab {
   @Builder
   AlbumsPage() {
     if (this.albumSrc.totalCount() === 0) {
-      this.EmptyHint('还没有专辑')
+      this.EmptyHint($r('app.string.albums_empty'))
     } else {
       Grid() {
         LazyForEach(this.albumSrc, (a: Album) => {
@@ -231,7 +232,7 @@ export struct LibraryTab {
   @Builder
   ArtistsPage() {
     if (this.artistSrc.totalCount() === 0) {
-      this.EmptyHint('还没有艺人')
+      this.EmptyHint($r('app.string.artists_empty'))
     } else {
       List({ space: 2 }) {
         LazyForEach(this.artistSrc, (a: Artist) => {
@@ -252,7 +253,7 @@ export struct LibraryTab {
                 .fontColor($r('app.color.text_primary'))
                 .maxLines(1)
                 .layoutWeight(1)
-              Text(`${a.albumCount} 专辑 · ${a.songCount} 首`)
+              Text(L($r('app.string.artist_stats'), a.albumCount, a.songCount))
                 .fontSize(11)
                 .fontColor($r('app.color.text_secondary'))
             }
@@ -277,7 +278,7 @@ export struct LibraryTab {
   @Builder
   GenresPage() {
     if (this.genreSrc.totalCount() === 0) {
-      this.EmptyHint('还没有流派')
+      this.EmptyHint($r('app.string.genres_empty'))
     } else {
       List({ space: 2 }) {
         LazyForEach(this.genreSrc, (g: Genre) => {
@@ -287,7 +288,7 @@ export struct LibraryTab {
                 .fontSize(15)
                 .fontColor($r('app.color.text_primary'))
                 .layoutWeight(1)
-              Text(`${g.songCount} 首`)
+              Text(L($r('app.string.count_songs'), g.songCount))
                 .fontSize(11)
                 .fontColor($r('app.color.text_secondary'))
               SymbolGlyph($r('sys.symbol.chevron_right'))
@@ -320,7 +321,7 @@ export struct LibraryTab {
   @Builder
   FoldersPage() {
     if (LibraryStore.get().folderRoot.children.length === 0) {
-      this.EmptyHint('还没有目录结构')
+      this.EmptyHint($r('app.string.folder_empty'))
     } else {
       List({ space: 2 }) {
         ForEach(LibraryStore.get().folderRoot.children, (n: FolderNode) => {
@@ -334,7 +335,7 @@ export struct LibraryTab {
                 .fontColor($r('app.color.text_primary'))
                 .maxLines(1)
                 .layoutWeight(1)
-              Text(`${n.countSongsRecursive()} 首`)
+              Text(L($r('app.string.count_songs'), n.countSongsRecursive()))
                 .fontSize(11)
                 .fontColor($r('app.color.text_secondary'))
             }
@@ -358,10 +359,10 @@ export struct LibraryTab {
 }
 
 const SEG_ITEMS: SegmentButtonV2Items = new SegmentButtonV2Items([
-  new SegmentButtonV2Item({ text: '歌曲' }),
-  new SegmentButtonV2Item({ text: '专辑' }),
-  new SegmentButtonV2Item({ text: '艺人' }),
-  new SegmentButtonV2Item({ text: '流派' }),
-  new SegmentButtonV2Item({ text: '文件夹' }),
-  new SegmentButtonV2Item({ text: '歌单' })
+  new SegmentButtonV2Item({ text: $r('app.string.str_songs') }),
+  new SegmentButtonV2Item({ text: $r('app.string.str_albums') }),
+  new SegmentButtonV2Item({ text: $r('app.string.str_artists') }),
+  new SegmentButtonV2Item({ text: $r('app.string.str_genres') }),
+  new SegmentButtonV2Item({ text: $r('app.string.str_folder') }),
+  new SegmentButtonV2Item({ text: $r('app.string.str_playlists') })
 ]);

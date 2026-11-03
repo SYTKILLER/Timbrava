@@ -4,6 +4,7 @@ import { Song, FolderNode } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';
 import { PlayerController } from '../../service/PlayerController';
 import { QueueService } from '../../service/QueueService';
+import { L } from '../../common/Lang';
 
 class FlatRow {
   node: FolderNode | null = null;
@@ -20,7 +21,7 @@ export struct FolderTreeDest {
   @StorageProp('libVer') libVer: number = 0;
   @State rows: FlatRow[] = [];
   @State expanded: Set<string> = new Set<string>();
-  @State title: string = '文件夹';
+  @State title: ResourceStr = $r('app.string.str_folder');
   private pathStack: NavPathStack | null = null;
 
   private rebuild(): void {
@@ -70,7 +71,7 @@ export struct FolderTreeDest {
             SymbolGlyph($r('sys.symbol.folder'))
               .fontSize(42)
               .fontColor([$r('app.color.text_secondary')])
-            Text('扫描后这里会显示目录结构')
+            Text($r('app.string.folder_empty_hint'))
               .fontSize(14)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -103,7 +104,7 @@ export struct FolderTreeDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
-    .title('文件夹')
+    .title($r('app.string.str_folder'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
       this.rebuild();
@@ -123,7 +124,7 @@ export struct FolderTreeDest {
         .maxLines(1)
         .layoutWeight(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-      Text(`${node.countSongsRecursive()} 首`)
+      Text(L($r('app.string.count_songs'), node.countSongsRecursive()))
         .fontSize(11)
         .fontColor($r('app.color.text_secondary'))
       SymbolGlyph(this.expanded.has(node.dirPath) ? $r('sys.symbol.arrow_down') : $r('sys.symbol.chevron_right'))

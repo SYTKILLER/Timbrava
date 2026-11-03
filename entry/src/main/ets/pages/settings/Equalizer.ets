@@ -4,6 +4,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SettingsService } from '../../service/SettingsService';
 import { Db, EqPresetRow } from '../../data/Db';
 import { PEQ_FREQS, flatBands, presetBands, isBuiltinPreset, parseAutoEq } from '../../service/EqPresets';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][Equalizer]';
 const DOMAIN = 0x0001;
@@ -11,7 +12,7 @@ const DOMAIN = 0x0001;
 @CustomDialog
 struct EqTextDialog {
   controller?: CustomDialogController;
-  title: string = '';
+  title: ResourceStr = '';
   multiLine: boolean = false;
   onConfirm: (text: string) => void = (_t: string): void => {
   };
@@ -25,7 +26,7 @@ struct EqTextDialog {
         .fontColor($r('app.color.text_primary'))
         .width('100%')
       if (this.multiLine) {
-        TextArea({ text: this.text, placeholder: '粘贴 AutoEq GraphicEq 文本\nGraphicEq: 20-3;25-2.5;...' })
+        TextArea({ text: this.text, placeholder: $r('app.string.autoeq_placeholder') })
           .height(120)
           .fontSize(12)
           .width('100%')
@@ -33,7 +34,7 @@ struct EqTextDialog {
             this.text = v;
           })
       } else {
-        TextInput({ text: this.text, placeholder: '预设名称' })
+        TextInput({ text: this.text, placeholder: $r('app.string.preset_name') })
           .height(44)
           .fontSize(14)
           .width('100%')
@@ -42,7 +43,7 @@ struct EqTextDialog {
           })
       }
       Row({ space: 12 }) {
-        Button('取消')
+        Button($r('app.string.str_cancel'))
           .fontSize(14)
           .height(40)
           .layoutWeight(1)
@@ -51,7 +52,7 @@ struct EqTextDialog {
           .onClick(() => {
             this.controller?.close();
           })
-        Button('确定')
+        Button($r('app.string.str_ok'))
           .fontSize(14)
           .height(40)
           .layoutWeight(1)
@@ -119,10 +120,10 @@ export struct EqualizerDest {
     return names;
   }
 
-  private curPresetLabel(): string {
+  private curPresetLabel(): ResourceStr {
     const p = this.prefEqPreset;
     if (p === 'custom') {
-      return '自定义';
+      return $r('app.string.preset_custom');
     }
     const saved = this.savedPresets.find((r: EqPresetRow): boolean => r.name === p);
     if (saved !== undefined) {
@@ -131,27 +132,27 @@ export struct EqualizerDest {
     if (isBuiltinPreset(p)) {
       return this.builtinLabel(p);
     }
-    return '选择预设';
+    return $r('app.string.select_preset');
   }
 
-  private builtinLabel(name: string): string {
+  private builtinLabel(name: string): ResourceStr {
     if (name === 'flat') {
-      return '平坦';
+      return $r('app.string.preset_flat');
     }
     if (name === 'bass') {
-      return '低音增强';
+      return $r('app.string.preset_bass');
     }
     if (name === 'vocal') {
-      return '人声';
+      return $r('app.string.preset_vocal');
     }
     if (name === 'treble') {
-      return '高音增强';
+      return $r('app.string.preset_treble');
     }
     if (name === 'rock') {
-      return '摇滚';
+      return $r('app.string.preset_rock');
     }
     if (name === 'electronic') {
-      return '电子';
+      return $r('app.string.preset_electronic');
     }
     return name;
   }
@@ -168,7 +169,7 @@ export struct EqualizerDest {
   private openSaveDialog(): void {
     this.saveCtrl = new CustomDialogController({
       builder: EqTextDialog({
-        title: '保存当前曲线为预设',
+        title: $r('app.string.save_curve_title'),
         multiLine: false,
         onConfirm: (name: string): void => {
           Db.get().saveEqPreset(name, this.bands).then((): void => {
@@ -186,17 +187,17 @@ export struct EqualizerDest {
   private openImportDialog(): void {
     this.importCtrl = new CustomDialogController({
       builder: EqTextDialog({
-        title: '导入 AutoEq(GraphicEq)',
+        title: $r('app.string.import_autoeq'),
         multiLine: true,
         onConfirm: (text: string): void => {
           const bands = parseAutoEq(text);
           if (bands === null) {
-            this.getUIContext().getPromptAction().showToast({ message: '解析失败:未找到有效频点' });
+            this.getUIContext().getPromptAction().showToast({ message: $r('app.string.autoeq_parse_fail') });
             return;
           }
           this.bands = bands;
           this.persistBands();
-          this.getUIContext().getPromptAction().showToast({ message: '已导入 AutoEq 曲线' });
+          this.getUIContext().getPromptAction().showToast({ message: $r('app.string.autoeq_imported') });
         }
       }),
       autoCancel: true,
@@ -217,12 +218,12 @@ export struct EqualizerDest {
       Column() {
         // 开关 + 预设行
         Row({ space: 12 }) {
-          Text('均衡器')
+          Text($r('app.string.equalizer'))
             .fontSize(16)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
-          Text('开启')
+          Text($r('app.string.str_on'))
             .fontSize(13)
             .fontColor($r('app.color.text_secondary'))
           Toggle({ type: ToggleType.Switch, isOn: this.prefEqOn })
@@ -255,7 +256,7 @@ export struct EqualizerDest {
             .layoutWeight(1)
 
           Button({ stateEffect: true }) {
-            Text('存为预设')
+            Text($r('app.string.save_preset'))
               .fontSize(12)
               .fontColor($r('app.color.text_primary'))
           }
@@ -267,7 +268,7 @@ export struct EqualizerDest {
           })
 
           Button({ stateEffect: true }) {
-            Text('导入')
+            Text($r('app.string.str_import'))
               .fontSize(12)
               .fontColor($r('app.color.text_primary'))
           }
@@ -345,11 +346,11 @@ export struct EqualizerDest {
         .align(Alignment.Center)
 
         Row({ space: 12 }) {
-          Text('±12 dB · 拖动即时生效(无损引擎)')
+          Text($r('app.string.eq_hint'))
             .fontSize(11)
             .fontColor($r('app.color.text_secondary'))
           Blank()
-          Button('全部归零')
+          Button($r('app.string.reset_all'))
             .fontSize(12)
             .height(30)
             .fontColor($r('app.color.text_primary'))
@@ -366,7 +367,7 @@ export struct EqualizerDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
-    .title('均衡器')
+    .title($r('app.string.equalizer'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
     })
@@ -376,7 +377,7 @@ export struct EqualizerDest {
   deleteMenu() {
     Menu() {
       ForEach(this.savedPresets, (p: EqPresetRow) => {
-        MenuItem({ content: `删除 ${p.name}` })
+        MenuItem({ content: L($r('app.string.delete_preset'), p.name) })
           .onClick(() => {
             Db.get().deleteEqPreset(p.id).then((): void => {
               this.reloadSaved();

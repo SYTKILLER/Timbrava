@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-02
+
+### Added(P2 收尾,M-H 多语言)
+
+- 多语言资源化(#49):全部 UI 文案抽至 string 资源(base 中文 + en_US 英文,239 项);新增 common/Lang.ets(L/Ls 助手:服务层与模板串经 resourceManager 取值,支持 %s/%d 格式化);页签/设置/播放器/均衡器/扫描/歌单/队列/标签编辑/重复清理/歌词打轴等全页面覆盖;日志与调试通道文案按规范保留中文。
+- 组件参数与状态类型同步加宽 ResourceStr(SongListParam.title、CardSection/PrefToggleRow/NavItem/Field/Section/toast 等);SongList 列表 key 去除标题依赖(改 mode+id)。
+
+### 遗留
+
+- 系统语言切英文的端到端回归(模拟器深浅色/语言切换无 CLI,留真机);日志文案不翻译(调试规范)。
+
+
 ## [0.4.0] - 2026-11-02
 
 ### Added(P2,开发完成,统一模拟器验证中)
