@@ -116,6 +116,30 @@ export struct MineTab {
           .width('100%')
           .padding({ left: 16, right: 16 })
 
+          // 浏览(自曲库分区迁移):文件夹树
+          Column({ space: 4 }) {
+            Text($r('app.string.mine_browse'))
+              .fontSize(12)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+              .padding({ left: 4, top: 4 })
+            Column() {
+              this.NavItem($r('app.string.browse_folder'), '', (): void => {
+                if (LibraryStore.get().folderRoot.children.length === 0) {
+                  this.getUIContext().getPromptAction().showToast({ message: $r('app.string.folder_empty') });
+                  return;
+                }
+                this.nav().pushPathByName('FolderTree', null);
+              })
+            }
+            .width('100%')
+            .padding(12)
+            .borderRadius(16)
+            .backgroundColor($r('app.color.card_bg'))
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16 })
+
           // 歌单(嵌入模式:无页头,自适应高度)
           PlaylistsTab({ embed: true })
 

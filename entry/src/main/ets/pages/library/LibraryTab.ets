@@ -4,11 +4,10 @@ import { common } from '@kit.AbilityKit';
 import { TabSegmentButtonV2, SegmentButtonV2Items, SegmentButtonV2Item } from '@kit.ArkUI';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { LibraryStore, DEFAULT_ORDER } from '../../data/LibraryStore';
-import { Song, Album, Artist, Genre, FolderNode } from '../../data/Model';
+import { Song, Album, Artist, Genre } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';
 import { BasicDataSource } from '../../common/DataSource';
 import { ScanService } from '../../data/ScanService';
-import { PlaylistsTab } from '../playlist/PlaylistsTab';
 import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][Library]';
@@ -256,8 +255,6 @@ export struct LibraryTab {
         this.AlbumsPage()
         this.ArtistsPage()
         this.GenresPage()
-        this.FoldersPage()
-        this.PlaylistsPage()
       }
       .index(this.segmentIndex)
       .onChange((i: number): void => {
@@ -439,57 +436,11 @@ export struct LibraryTab {
       .scrollBar(BarState.Auto)
     }
   }
-
-  @Builder
-  PlaylistsPage() {
-    PlaylistsTab()
-  }
-
-  @Builder
-  FoldersPage() {
-    if (LibraryStore.get().folderRoot.children.length === 0) {
-      this.EmptyHint($r('app.string.folder_empty'))
-    } else {
-      List({ space: 2 }) {
-        ForEach(LibraryStore.get().folderRoot.children, (n: FolderNode) => {
-          ListItem() {
-            Row({ space: 10 }) {
-              SymbolGlyph($r('sys.symbol.folder'))
-                .fontSize(20)
-                .fontColor([$r('app.color.accent')])
-              Text(n.name)
-                .fontSize(15)
-                .fontColor($r('app.color.text_primary'))
-                .maxLines(1)
-                .layoutWeight(1)
-              Text(L($r('app.string.count_songs'), n.countSongsRecursive()))
-                .fontSize(11)
-                .fontColor($r('app.color.text_secondary'))
-            }
-            .width('100%')
-            .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-            .onClick(() => {
-              const stack = this.navStack();
-              if (stack !== null) {
-                stack.pushPathByName('FolderTree', n.dirPath);
-              }
-            })
-          }
-        }, (n: FolderNode): string => n.dirPath)
-      }
-      .width('100%')
-      .height('100%')
-      .padding({ bottom: this.bottomSafeVp + 140 })
-      .scrollBar(BarState.Auto)
-    }
-  }
 }
 
 const SEG_ITEMS: SegmentButtonV2Items = new SegmentButtonV2Items([
   new SegmentButtonV2Item({ text: $r('app.string.str_songs') }),
   new SegmentButtonV2Item({ text: $r('app.string.str_albums') }),
   new SegmentButtonV2Item({ text: $r('app.string.str_artists') }),
-  new SegmentButtonV2Item({ text: $r('app.string.str_genres') }),
-  new SegmentButtonV2Item({ text: $r('app.string.str_folder') }),
-  new SegmentButtonV2Item({ text: $r('app.string.str_playlists') })
+  new SegmentButtonV2Item({ text: $r('app.string.str_genres') })
 ]);
