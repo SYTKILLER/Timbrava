@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### Added(0.9.1 迷你条迁移 HdsTabs 官方迷你栏)
+
+- **迷你播放条迁移至 HdsTabs 官方「迷你栏」能力**(用户推断实证正确):`barFloatingStyle.miniBar`(HdsTabsMiniBar,6.1.0(23) 新增)+ `barLayoutMode: VERTICAL`(6.1.1(24),迷你条独占一行悬浮于页签栏上方);背景材质/底部避让/与页签栏对齐全部由 HdsTabs 管理,移除自绘 Stack 叠加与手工 bottomSafeVp+56 抬升;模拟器验证:迷你条播控/切曲/点条开全屏均正常。小艺咨询对照:其"推断不成立"结论基于旧版文档,以 SDK d.ts 与《设置页签栏的悬浮样式》官方指南原文为准。
+- 版本号 0.9.1/versionCode 9001。
+
 ### Added(0.9.0 播放器交互对齐华为音乐/业界共识)
 
 - **歌曲添加入口重构(去文件夹扫描形态)**:删除「扫描文件夹管理」页与文件夹浏览(FolderTree);「添加歌曲」(AudioViewPicker 批量选)迁至 我的页·音乐库 + 曲库空态引导;选完即解析入库(addPickedAudioUris,含 persistPermission 持久化),无扫描按钮;应用启动自动激活库内 URI 歌曲授权(activateImportedUriPermissions)。

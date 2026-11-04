@@ -1,6 +1,6 @@
 // 应用根:Navigation + 底部 HdsTabs(音乐库/队列/设置)+ 迷你播放条(悬浮)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { HdsTabs, HdsTabsFloatingStyle, hdsMaterial } from '@kit.UIDesignKit';
+import { HdsTabs, HdsTabsFloatingStyle, hdsMaterial, HdsBarLayoutMode } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../service/PlayerController';
@@ -77,8 +77,6 @@ struct Index {
         })
         .width('100%')
         .height('100%')
-
-        MiniPlayer()
       }
       .width('100%')
       .height('100%')
@@ -101,9 +99,21 @@ struct Index {
       systemMaterialEffect: { // 沉浸光感材质
         materialType: hdsMaterial.MaterialType.IMMERSIVE,
         materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+      },
+      // 迷你栏(HdsTabs 6.1.0(23) 能力):音乐迷你条悬浮于页签栏上方,VERTICAL 两行排布
+      miniBar: {
+        miniBarBuilder: (): void => {
+          this.miniBarBuilder();
+        },
+        barLayoutMode: HdsBarLayoutMode.VERTICAL
       }
     };
     return st;
+  }
+
+  @Builder
+  miniBarBuilder() {
+    MiniPlayer()
   }
 
   @Builder
