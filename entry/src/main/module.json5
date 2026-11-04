@@ -15,14 +15,7 @@
     "routerMap": "$profile:router_map",
     "requestPermissions": [
       {
-        "name": "ohos.permission.READ_AUDIO",
-        "reason": "$string:read_audio_reason",
-        "usedScene": {
-          "abilities": [
-            "EntryAbility"
-          ],
-          "when": "inuse"
-        }
+        "name": "ohos.permission.FILE_ACCESS_PERSIST"
       },
       {
         "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"

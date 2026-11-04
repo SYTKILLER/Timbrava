@@ -8,6 +8,7 @@ import { NativeAnalyzeResult } from './engine/LosslessEngine';
 import { LibraryStore } from '../data/LibraryStore';
 import { Db } from '../data/Db';
 import { Song } from '../data/Model';
+import { openTargetOf } from '../common/PathUtil';
 
 const TAG = '[Timbrava][RgScan]';
 const DOMAIN = 0x0001;
@@ -102,7 +103,7 @@ export class RgScanner {
         this.bump();
         let f: fs.File | null = null;
         try {
-          f = await fs.open(s.path, fs.OpenMode.READ_ONLY);
+          f = await fs.open(openTargetOf(s.path), fs.OpenMode.READ_ONLY);
           const r: NativeAnalyzeResult = await PlayerController.get().analyzeFdForScan(f.fd);
           if (r.ok) {
             const gain = Math.max(-RG_GAIN_LIMIT, Math.min(RG_GAIN_LIMIT, RG_REF_DB - r.rmsDb));

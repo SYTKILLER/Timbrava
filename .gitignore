@@ -61,3 +61,7 @@
 .DS_Store
 Thumbs.db
 .verify/
+
+# 调试语料(rawfile 验证通道,大体积二进制不入库)
+entry/src/main/resources/rawfile/test1.mp3
+entry/src/main/resources/rawfile/test2.flac

@@ -6,6 +6,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { IAudioEngine, EngineKind, EngineTrackInfo, EngineEventData, EngineEventKind, EngineEventCb } from './EngineTypes';
+import { openTargetOf } from '../../common/PathUtil';
 
 const TAG = '[Timbrava][SysEngine]';
 const DOMAIN = 0x0001;
@@ -87,6 +88,7 @@ export class SystemEngine implements IAudioEngine {
   }
 
   async open(uri: string): Promise<EngineTrackInfo> {
+    uri = openTargetOf(uri); // 库键可能带 'uri:' 前缀(picker 授权根)
     const p = await this.ensurePlayer();
     // 复用实例:先 reset 回 idle
     if (this.state !== 'idle') {

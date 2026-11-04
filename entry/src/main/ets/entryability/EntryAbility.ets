@@ -39,6 +39,16 @@ async function runDebugCommands(ctx: common.UIAbilityContext, params: Record<str
       await ScanService.get().ensureSandboxRoot();
       await ScanService.get().importFromHost();
     }
+    if (get('debugSeedRaw') === '1') {
+      // 验证通道:rawfile 内置 mp3/flac 语料落沙箱
+      await ScanService.get().ensureSandboxRoot();
+      await ScanService.get().seedRawfileCorpus();
+    }
+    if (get('debugUriRoot') === '1') {
+      // 验证通道:沙箱音频登记为 file:// URI 根(picker 'file' 根同链路)
+      await ScanService.get().ensureSandboxRoot();
+      await ScanService.get().registerSandboxFileUriRoots();
+    }
     if (get('debugGenCorpus') === '1') {
       // SELinux 拦 shell 写沙箱时的语料通道:应用内生成正弦波 WAV+CUE
       await ScanService.get().ensureSandboxRoot();

@@ -11,10 +11,6 @@
     {
       "name": "EntryAbility_label",
       "value": "听韵"
-    },
-    {
-      "name": "read_audio_reason",
-      "value": "用于扫描并读取本机音乐文件,仅本地使用,不联网上传。"
     }
   ]
 }

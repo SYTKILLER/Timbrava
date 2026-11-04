@@ -9,6 +9,7 @@ import { LibraryStore } from '../data/LibraryStore';
 import { Db } from '../data/Db';
 import { Song } from '../data/Model';
 import timbravaCore from 'libtimbrava_core.so';
+import { openTargetOf } from '../common/PathUtil';
 
 const TAG = '[Timbrava][TagWriter]';
 const DOMAIN = 0x0001;
@@ -41,6 +42,10 @@ export class TagWriter {
       hilog.warn(DOMAIN, TAG, 'unsupported codec %{public}s for tag write', song.codec);
       return false;
     }
+    if (song.path.startsWith('uri:')) {
+      hilog.warn(DOMAIN, TAG, 'tag write not supported for picker-authorized URI files');
+      return false;
+    }
     const ctx = AppStorage.get<common.UIAbilityContext>('uiAbilityContext') ?? null;
     if (ctx === null) {
       hilog.error(DOMAIN, TAG, 'no uiAbilityContext');
@@ -68,12 +73,12 @@ export class TagWriter {
     let file: fs.File | null = null;
     let size = 0;
     try {
-      size = fs.statSync(path).size;
+      size = fs.statSync(openTargetOf(path)).size;
     } catch (e) {
       return;
     }
     try {
-      file = await fs.open(path, fs.OpenMode.READ_ONLY);
+      file = await fs.open(openTargetOf(path), fs.OpenMode.READ_ONLY);
       const fd = file.fd;
       const readAt: ReadAt = (off: number, len: number): Uint8Array => {
         const buf = new ArrayBuffer(len);

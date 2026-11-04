@@ -21,6 +21,7 @@ import { PEQ_FREQS, presetBands } from './EqPresets';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { extractLyricsFromHead } from '../data/lyrics/LyricsExtractor';
 import { L } from '../common/Lang';
+import { openTargetOf } from '../common/PathUtil';
 
 const TAG = '[Timbrava][Player]';
 const DOMAIN = 0x0001;
@@ -193,13 +194,13 @@ export class PlayerController {
     let target = this.chooseEngine(song);
     let info: EngineTrackInfo | null = null;
     try {
-      info = await target.open(song.path);
+      info = await target.open(openTargetOf(song.path));
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'engine %{public}d open fail: %{public}s', target.getKind(), (e as Error).message);
       if (target.getKind() === EngineKind.LOSSLESS) {
         target = this.systemEngine;
         try {
-          info = await target.open(song.path);
+          info = await target.open(openTargetOf(song.path));
         } catch (e2) {
           hilog.error(DOMAIN, TAG, 'system engine fallback also fail %{public}s', (e2 as Error).message);
         }
@@ -283,7 +284,7 @@ export class PlayerController {
       }
       let file: fs.File | null = null;
       try {
-        file = fs.openSync(song.path, fs.OpenMode.READ_ONLY);
+        file = fs.openSync(openTargetOf(song.path), fs.OpenMode.READ_ONLY);
         const buf = new ArrayBuffer(4 * 1024 * 1024);
         const n = fs.readSync(file.fd, buf);
         const text = extractLyricsFromHead(new Uint8Array(buf, 0, n));
@@ -341,7 +342,7 @@ export class PlayerController {
         const resumeAt = this.positionMs;
         hilog.warn(DOMAIN, TAG, 'lossless error → fallback to system at %{public}dms', resumeAt);
         try {
-          await this.systemEngine.open(this.currentSong.path);
+          await this.systemEngine.open(openTargetOf(this.currentSong.path));
           this.engine = this.systemEngine;
           this.engineKind = EngineKind.SYSTEM;
           this.engineInfo = L($r('app.string.engine_fallback'));
@@ -417,7 +418,7 @@ export class PlayerController {
     if (song.cueEndMs > song.cueStartMs || song.cueStartMs > 0) {
       return; // 下一曲是 CUE 区间(需要区间播放,交接后要走 cueAdvance 语义)
     }
-    if (this.losslessEngine.openNext(song.path)) {
+    if (this.losslessEngine.openNext(openTargetOf(song.path))) {
       this.gaplessTargetIdx = next;
       hilog.info(DOMAIN, TAG, 'gapless prefetch idx=%{public}d', next);
     }

@@ -1,7 +1,7 @@
-// 扫描文件夹管理:权限申请 + 文件夹选择(picker)/沙箱调试目录 + 重扫 + 进度。
+// 扫描文件夹管理:picker 文件夹/音频文件授权(fileShare 持久化)+ 沙箱调试目录 + 重扫 + 进度。
+// 不申请 READ_AUDIO(受限 ACL,审核风险):picker URI 授权链路无需任何权限。
 import { common } from '@kit.AbilityKit';
-import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
-import { picker } from '@kit.CoreFileKit';
+import { picker, fileShare } from '@kit.CoreFileKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { http } from '@kit.NetworkKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -9,8 +9,6 @@ import { Db } from '../../data/Db';
 import timbravaCore from 'libtimbrava_core.so';
 import { ScanService } from '../../data/ScanService';
 import { RootFolder, ScanProgress } from '../../data/Model';
-import { LibraryStore } from '../../data/LibraryStore';
-import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][ScanSettings]';
@@ -19,18 +17,15 @@ const DOMAIN = 0x0001;
 @Component
 export struct ScanSettingsDest {
   @StorageProp('scanVer') @Watch('onScanChanged') scanVer: number = 0;
+  @StorageProp('topSafeVp') topSafe: number = 36; // 全屏沉浸后手动避让状态栏(与 SettingsDest 同模式)
+  @StorageProp('bottomSafeVp') bottomSafe: number = 28; // 底部导航条/手势条避让
   @State roots: RootFolder[] = [];
   @State blacklist: string[] = [];
   @State newBlackPath: string = '';
   @State progress: ScanProgress = new ScanProgress();
-  @State topSafe: number = 36;
   private pathStack: NavPathStack | null = null;
 
   aboutToAppear(): void {
-    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    AppTheme.safeAreas(ctx).then((r: SafeAreaResult): void => {
-      this.topSafe = r.topVp;
-    });
     this.reloadRoots();
     this.reloadBlacklist();
   }
@@ -51,29 +46,19 @@ export struct ScanSettingsDest {
     });
   }
 
-  private async ensureAudioPermission(): Promise<boolean> {
-    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+  // picker 返回的临时授权 → 持久化(重启后由 ScanService.activateRootPermissions 激活)
+  private async persistUriRead(uri: string): Promise<void> {
     try {
-      const atManager = abilityAccessCtrl.createAtManager();
-      const perms: Array<Permissions> = ['ohos.permission.READ_AUDIO'];
-      const result = await atManager.requestPermissionsFromUser(ctx, perms);
-      let granted = false;
-      const results: number[] = result.authResults;
-      for (const r of results) {
-        if (r === 0) {
-          granted = true;
-        }
-      }
-      hilog.info(DOMAIN, TAG, 'READ_AUDIO granted=%{public}s', granted ? 'yes' : 'no');
-      return granted;
+      const policy: fileShare.PolicyInfo = { 'uri': uri, 'operationMode': fileShare.OperationMode.READ_MODE };
+      await fileShare.persistPermission([policy]);
+      hilog.info(DOMAIN, TAG, 'persistPermission ok %{public}s', uri);
     } catch (e) {
-      hilog.error(DOMAIN, TAG, 'requestPermissions fail %{public}s', (e as Error).message);
-      return false;
+      // 设备不支持 FolderAuthorization 等场景:当次会话临时授权仍可用
+      hilog.warn(DOMAIN, TAG, 'persistPermission fail %{public}s', (e as Error).message);
     }
   }
 
   private async pickFolder(): Promise<void> {
-    const granted = await this.ensureAudioPermission();
     try {
       const docPicker = new picker.DocumentViewPicker();
       const opts = new picker.DocumentSelectOptions();
@@ -81,6 +66,7 @@ export struct ScanSettingsDest {
       opts.selectMode = picker.DocumentSelectMode.FOLDER;
       const uris: Array<string> = await docPicker.select(opts);
       if (uris.length > 0) {
+        await this.persistUriRead(uris[0]);
         const roots = this.roots.slice();
         roots.push(new RootFolder('uri', uris[0]));
         await Db.get().setRootFolders(roots);
@@ -89,6 +75,37 @@ export struct ScanSettingsDest {
       }
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'pickFolder fail %{public}s', (e as Error).message);
+    }
+  }
+
+  // 官方推荐入口(AudioViewPicker):系统文件管理器选择音频,免权限,音频库可见 mp3/flac 等
+  private async pickAudioFiles(): Promise<void> {
+    try {
+      const audioPicker = new picker.AudioViewPicker();
+      const opts = new picker.AudioSelectOptions();
+      opts.maxSelectNumber = 500;
+      const uris: Array<string> = await audioPicker.select(opts);
+      if (uris.length === 0) {
+        return;
+      }
+      const roots = this.roots.slice();
+      let added = 0;
+      for (const u of uris) {
+        const exists = roots.find((r: RootFolder): boolean => r.value === u);
+        if (exists !== undefined) {
+          continue;
+        }
+        await this.persistUriRead(u);
+        roots.push(new RootFolder('file', u));
+        added++;
+      }
+      if (added > 0) {
+        await Db.get().setRootFolders(roots);
+        this.roots = roots;
+      }
+      hilog.info(DOMAIN, TAG, 'audio files added=%{public}d/%{public}d', added, uris.length);
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'pickAudioFiles fail %{public}s', (e as Error).message);
     }
   }
 
@@ -108,9 +125,11 @@ export struct ScanSettingsDest {
         return;
       }
     }
-    // 授权宿主 shell 穿越写入语料(files 需 o+x,music 需 o+rwx)
+    // 授权宿主 shell 穿越写入语料(祖先链 files←entry←haps 需 o+x,music 需 o+rwx)
     try {
       timbravaCore.chmodPath(ctx.filesDir, 0o775);
+      timbravaCore.chmodPath(`${ctx.filesDir}/..`, 0o775);
+      timbravaCore.chmodPath(`${ctx.filesDir}/../..`, 0o775);
       timbravaCore.chmodPath(dir, 0o777);
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'chmod fail %{public}s', (e as Error).message);
@@ -266,9 +285,18 @@ export struct ScanSettingsDest {
 
   private async removeRoot(index: number): Promise<void> {
     const roots = this.roots.slice();
-    roots.splice(index, 1);
+    const removed = roots.splice(index, 1)[0];
     await Db.get().setRootFolders(roots);
     this.roots = roots;
+    // 撤销已持久化的授权(best-effort;未持久化/已失效时忽略)
+    if (removed.type === 'uri' || removed.type === 'file') {
+      try {
+        const policy: fileShare.PolicyInfo = { 'uri': removed.value, 'operationMode': fileShare.OperationMode.READ_MODE };
+        await fileShare.revokePermission([policy]);
+      } catch (e) {
+        hilog.info(DOMAIN, TAG, 'revokePermission skip %{public}s', (e as Error).message);
+      }
+    }
   }
 
   private async rescan(): Promise<void> {
@@ -297,11 +325,12 @@ export struct ScanSettingsDest {
                 } else {
                   ForEach(this.roots, (r: RootFolder, i: number) => {
                     Row({ space: 8 }) {
-                      SymbolGlyph($r('sys.symbol.folder'))
+                      SymbolGlyph(r.type === 'file' ? $r('sys.symbol.music_note_list') : $r('sys.symbol.folder'))
                         .fontSize(16)
                         .fontColor([$r('app.color.accent')])
                       Column({ space: 2 }) {
-                        Text(r.type === 'path' ? $r('app.string.local_dir') : $r('app.string.uri_dir'))
+                        Text(r.type === 'path' ? $r('app.string.local_dir')
+                          : r.type === 'file' ? $r('app.string.audio_file') : $r('app.string.uri_dir'))
                           .fontSize(14)
                           .fontColor($r('app.color.text_primary'))
                         Text(r.value)
@@ -358,6 +387,16 @@ export struct ScanSettingsDest {
                 })
             }
             .width('100%')
+            Button($r('app.string.add_audio_files'))
+              .fontSize(13)
+              .fontColor($r('app.color.on_accent'))
+              .backgroundColor($r('app.color.accent'))
+              .height(40)
+              .borderRadius(12)
+              .width('100%')
+              .onClick(() => {
+                this.pickAudioFiles();
+              })
 
             // 调试通道
             Button($r('app.string.add_sandbox_root'))
@@ -459,10 +498,10 @@ export struct ScanSettingsDest {
             .borderRadius(16)
             .backgroundColor($r('app.color.card_bg'))
 
-            Blank().height(60)
+            Blank().height(this.bottomSafe + 24)
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: this.topSafe + 8 })
+          .padding({ left: 16, right: 16, top: 8 })
         }
         .width('100%')
         .height('100%')
@@ -473,6 +512,7 @@ export struct ScanSettingsDest {
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
     }
+    .padding({ top: this.topSafe }) // 标题栏避让状态栏(与 SettingsDest 同模式;沉浸式下 NavDestination 不自动避让)
     .title($r('app.string.scan_folders'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;

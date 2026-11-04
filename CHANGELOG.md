@@ -7,6 +7,22 @@
 
 ## [Unreleased]
 
+### Added(0.8.0 扫描授权链路重构)
+
+- **新增"选择音频文件"入口(AudioViewPicker)**:系统文件管理器选择音频(官方推荐,免敏感权限,可批量选媒体库音频);picker 授权(文件夹/音频文件)经 fileShare.persistPermission 持久化、重扫前 activatePermission 激活(新增普通权限 FILE_ACCESS_PERSIST);新增 `file` 类型扫描根(授权单文件),根目录列表以音符图标+"音频文件(已授权)"呈现,移除时同步 revokePermission。
+
+### Fixed(0.8.0)
+
+- **扫描文件夹页标题栏顶入状态栏**:NavDestination 沉浸式下不自动避让,补 `.padding({top: topSafeVp})`(与设置二级页同模式),底部内容补 bottomSafeVp 避让。
+- **URI 授权根扫描不到文件**:fs.listFile 官方仅支持沙箱路径,文档类 URI 目录遍历失败静默返回空(实测媒体库音频在 DocumentViewPicker 中亦不可见)→ 授权文件走 AudioViewPicker 入口,URI 目录遍历失败显式告警;RootFolder.fromJson 未放行 `file` 类型(登记后读取即丢)。
+- **URI 授权歌曲无法播放**:库内稳定键带 `uri:` 前缀,播放/RG/歌词/CUE 音频探测直接 fs.open 失败 → 统一 openTargetOf 剥前缀(LosslessEngine/SystemEngine open+openNext/歌词读/RgScanner/TagWriter reindex;TagWriter 对 URI 文件明确拒绝写标签)。
+- 移除受限 ACL 权限 READ_AUDIO(发布审核风险;picker 授权链路无需任何敏感权限)。
+
+### Changed(0.8.0)
+
+- 版本号 0.8.0/versionCode 8000。
+- 沙箱 chmod 授权链补齐祖先目录(files←entry←haps o+x,宿主 shell 推送语料用)。
+
 ### Added
 
 - **M3 无缝衔接(gapless)**:无损引擎预排下一曲(native openNextTrack,采样率/通道/位深/DSD 率一致才接受);解码线程当前曲 EOF 后交换解码器续填环形缓冲,renderer 无感——自然播完切曲零间隙(引擎不重开);倍速≠1 自动禁用(重采样游标跨曲不可拼接,退回普通切曲);CUE 分轨区间切换升级:同文件连续轨保引擎 seek 衔接(不再"播完→重开引擎"),跨文件走普通路径;队列编辑/随机后预排自动失效重排(~2s 校验)。

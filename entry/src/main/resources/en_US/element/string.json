@@ -13,10 +13,6 @@
       "value": "Timbrava"
     },
     {
-      "name": "read_audio_reason",
-      "value": "Used to scan and read local music files. Local use only, no upload."
-    },
-    {
       "name": "str_favorites",
       "value": "Favorites"
     },
@@ -679,6 +675,14 @@
     {
       "name": "add_folder",
       "value": "Add Folder"
+    },
+    {
+      "name": "add_audio_files",
+      "value": "Select Audio Files"
+    },
+    {
+      "name": "audio_file",
+      "value": "Audio file (authorized)"
     },
     {
       "name": "scanning",

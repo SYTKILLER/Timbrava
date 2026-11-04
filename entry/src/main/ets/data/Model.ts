@@ -161,7 +161,7 @@ export class ScanProgress {
 }
 
 export class RootFolder {
-  type: string = 'path'; // path | uri
+  type: string = 'path'; // path | uri | file(AudioViewPicker 授权的单文件)
   value: string = '';
 
   constructor(type: string, value: string) {
@@ -172,7 +172,7 @@ export class RootFolder {
   static fromJson(o: Record<string, Object | null>): RootFolder | null {
     const t = String(o['type'] ?? '');
     const v = String(o['value'] ?? '');
-    if ((t === 'path' || t === 'uri') && v.length > 0) {
+    if ((t === 'path' || t === 'uri' || t === 'file') && v.length > 0) {
       return new RootFolder(t, v);
     }
     return null;

@@ -4,6 +4,7 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { IAudioEngine, EngineKind, EngineTrackInfo, EngineEventData, EngineEventKind, EngineEventCb } from './EngineTypes';
 import timbravaCore from 'libtimbrava_core.so';
+import { openTargetOf } from '../../common/PathUtil';
 
 const TAG = '[Timbrava][Lossless]';
 const DOMAIN = 0x0001;
@@ -66,6 +67,7 @@ export class LosslessEngine implements IAudioEngine {
   }
 
   async open(uri: string): Promise<EngineTrackInfo> {
+    uri = openTargetOf(uri); // 库键可能带 'uri:' 前缀(picker 授权根)
     const m: NativeModule = timbravaCore as NativeModule;
     let f: fs.File | null = null;
     try {
@@ -104,6 +106,7 @@ export class LosslessEngine implements IAudioEngine {
   // gapless(M3):预排下一曲(fd 打开→native 探测+格式校验→立即关;native 已 dup)。
   // 返回 false = 格式不一致/探测失败,上层走普通切曲路径。
   openNext(uri: string): boolean {
+    uri = openTargetOf(uri);
     const m: NativeModule = timbravaCore as NativeModule;
     let f: fs.File | null = null;
     try {

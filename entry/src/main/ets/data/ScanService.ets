@@ -4,6 +4,7 @@ import { common } from '@kit.AbilityKit';
 import { http } from '@kit.NetworkKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { relationalStore } from '@kit.ArkData';
+import { fileShare } from '@kit.CoreFileKit';
 import { Db } from './Db';
 import { LibraryStore } from './LibraryStore';
 import { Song, ScanProgress, RootFolder } from './Model';
@@ -13,6 +14,7 @@ import { ReadAt } from './tag/MetaParse';
 import timbravaCore from 'libtimbrava_core.so';
 import { fnv1a } from './tag/Bytes';
 import { L } from '../common/Lang';
+import { openTargetOf } from '../common/PathUtil';
 
 const TAG = '[Timbrava][Scan]';
 
@@ -51,6 +53,25 @@ export class ScanService {
     AppStorage.setOrCreate('scanVer', (AppStorage.get<number>('scanVer') ?? 0) + 1);
   }
 
+  // 重扫前激活 URI 根的持久化授权(应用重启后临时授权失效,须先激活)
+  private async activateRootPermissions(roots: RootFolder[]): Promise<void> {
+    const uriRoots = roots.filter((r: RootFolder): boolean => r.type === 'uri' || r.type === 'file');
+    if (uriRoots.length === 0) {
+      return;
+    }
+    try {
+      const policies: fileShare.PolicyInfo[] = uriRoots.map((r: RootFolder): fileShare.PolicyInfo => {
+        const p: fileShare.PolicyInfo = { 'uri': r.value, 'operationMode': fileShare.OperationMode.READ_MODE };
+        return p;
+      });
+      await fileShare.activatePermission(policies);
+      hilog.info(DOMAIN, TAG, 'activatePermission ok n=%{public}d', policies.length);
+    } catch (e) {
+      // 未持久化(当次会话临时授权仍有效)或设备不支持: best-effort,交给 listFile 实测
+      hilog.info(DOMAIN, TAG, 'activatePermission skip %{public}s', (e as Error).message);
+    }
+  }
+
   // 全量重扫:遍历全部根目录;增量(按 mtime/size 差分)
   async rescan(): Promise<void> {
     if (this.scanning) {
@@ -80,6 +101,7 @@ export class ScanService {
       };
       let removed = 0;
       const candidates: FileCandidate[] = [];
+      await this.activateRootPermissions(roots);
       for (const root of roots) {
         const files: FileCandidate[] = await this.walkRoot(root);
         for (const f of files) {
@@ -178,9 +200,11 @@ export class ScanService {
         return;
       }
     }
-    // 宿主 shell 写入授权(P0 验证通道同款)
+    // 宿主 shell 写入授权(P0 验证通道同款):祖先链(files←entry←haps)需 o+x 才能穿越
     try {
       timbravaCore.chmodPath(this.context.filesDir, 0o775);
+      timbravaCore.chmodPath(`${this.context.filesDir}/..`, 0o775);
+      timbravaCore.chmodPath(`${this.context.filesDir}/../..`, 0o775);
       timbravaCore.chmodPath(dir, 0o777);
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'chmod fail %{public}s', (e as Error).message);
@@ -192,6 +216,80 @@ export class ScanService {
       await Db.get().setRootFolders(roots);
       hilog.info(DOMAIN, TAG, 'sandbox root registered: %{public}s', dir);
     }
+  }
+
+  // 调试通道:rawfile 内置语料 → 沙箱 music(模拟器宿主推送通道全被 SELinux/NAT 拦死时的兜底)
+  async seedRawfileCorpus(): Promise<void> {
+    if (this.context === null) {
+      return;
+    }
+    const dir = `${this.context.filesDir}/music`;
+    try {
+      if (!fs.accessSync(dir)) {
+        fs.mkdirSync(dir, true);
+      }
+    } catch (e) {
+      return;
+    }
+    const pairs: string[][] = [['test1.mp3', 'Test_Sine.mp3'], ['test2.flac', 'Test_Tone.flac']];
+    for (let pi = 0; pi < pairs.length; pi++) {
+      const raw = pairs[pi][0];
+      const name = pairs[pi][1];
+      const dest = `${dir}/${name}`;
+      try {
+        if (fs.accessSync(dest)) {
+          continue;
+        }
+      } catch (e) {
+        // not exists → proceed
+      }
+      try {
+        const buf = await this.context.resourceManager.getRawFileContent(raw);
+        const f = fs.openSync(dest, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+        fs.writeSync(f.fd, buf.buffer as ArrayBuffer, { length: buf.byteLength });
+        fs.closeSync(f);
+        hilog.info(DOMAIN, TAG, 'seed rawfile %{public}s bytes=%{public}d', name, buf.byteLength);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'seed rawfile %{public}s fail %{public}s', name, (e as Error).message);
+      }
+    }
+  }
+
+  // 调试通道:把沙箱 music 下的每个音频登记为 file:// URI 根(走与 picker 授权文件相同的
+  // 'file' 根/uri: 前缀/openTargetOf 剥离链路,模拟器上替代 AudioViewPicker 验证)。
+  // 同时移除沙箱 path 根,避免同内容双根产生重复行。
+  async registerSandboxFileUriRoots(): Promise<void> {
+    if (this.context === null) {
+      return;
+    }
+    const dir = `${this.context.filesDir}/music`;
+    let names: string[] = [];
+    try {
+      names = await fs.listFile(dir);
+    } catch (e) {
+      return;
+    }
+    let roots = await Db.get().getRootFolders();
+    const before = roots.length;
+    roots = roots.filter((r: RootFolder): boolean => r.type !== 'path' || r.value !== dir);
+    if (roots.length !== before) {
+      hilog.info(DOMAIN, TAG, 'sandbox path root dropped for file-uri mode');
+    }
+    let added = 0;
+    for (const n of names) {
+      if (!isAudioExt(n)) {
+        continue;
+      }
+      const uri = `file://${dir}/${n}`;
+      const exists = roots.find((r: RootFolder): boolean => r.value === uri);
+      if (exists !== undefined) {
+        continue;
+      }
+      roots.push(new RootFolder('file', uri));
+      added++;
+    }
+    await Db.get().setRootFolders(roots);
+    hilog.info(DOMAIN, TAG, 'sandbox file-uri roots added=%{public}d', added);
   }
 
   // ============ 调试导入通道(宿主机 HTTP,经 hdc rport 反向隧道) ============
@@ -454,7 +552,8 @@ export class ScanService {
           return false;
         }
         const dir = cand.path.substring(0, cand.path.lastIndexOf('/') + 1);
-        const audioPath = `${dir}${sheet.audioFile.split('\\').join('/')}`;
+        const audioKey = `${dir}${sheet.audioFile.split('\\').join('/')}`;
+        const audioPath = openTargetOf(audioKey); // CUE 同目录音频:库键保前缀,fs 打开剥前缀
         // 音频头解析(时长/编码/位深/封面)
         let audioDurMs = 0;
         let audioArt = '';
@@ -463,7 +562,7 @@ export class ScanService {
         let bd = 0;
         // 整轨行 = cue_start=0 且 cue_end=-1(排除 CueA 这类 start=0 的分轨行,否则末轨时长算错)
         const known = await Db.get().querySongs('path = ? AND cue_start_ms = 0 AND cue_end_ms = -1',
-          [audioPath], '', 1, 0);;
+          [audioKey], '', 1, 0);;
         if (known.length > 0) {
           audioDurMs = known[0].durationMs;
           audioArt = known[0].artPath;
@@ -498,15 +597,15 @@ export class ScanService {
           }
         }
         // 清掉同 path 整轨行(先扫到音频后扫到 cue 的顺序),分轨为准
-        const fullRow = await Db.get().querySongs('path = ? AND cue_start_ms = 0', [audioPath], '', 1, 0);
+        const fullRow = await Db.get().querySongs('path = ? AND cue_start_ms = 0', [audioKey], '', 1, 0);
         if (fullRow.length > 0) {
           await Db.get().removeSongCompletely(fullRow[0].id);
-          hilog.info(DOMAIN, TAG, 'cue replaces fulltrack row %{public}s', audioPath);
+          hilog.info(DOMAIN, TAG, 'cue replaces fulltrack row %{public}s', audioKey);
         }
         let added = 0;
         for (const t of sheet.tracks) {
           const song = new Song();
-          song.path = audioPath;
+          song.path = audioKey;
           song.fileSize = fsize;
           song.mtime = mtime;
           song.title = t.title.length > 0 ? t.title : `${sheet.albumTitle} Track ${t.index}`;
@@ -521,7 +620,7 @@ export class ScanService {
           song.cueStartMs = t.startMs;
           song.cueEndMs = t.endMs;
           song.artPath = audioArt;
-          const dup = await Db.get().querySongs('path = ? AND cue_start_ms = ?', [audioPath, t.startMs], '', 50, 0);
+          const dup = await Db.get().querySongs('path = ? AND cue_start_ms = ?', [audioKey, t.startMs], '', 50, 0);
           if (dup.length > 1) {
             // 同键重复行(历史脏数据):仅留首行
             for (let d = 1; d < dup.length; d++) {
@@ -548,7 +647,7 @@ export class ScanService {
         }
         // 清理本 cue 的过期分轨行(同 path 但起点不在本 sheet 轨道集合——cue 时间轴变更残留)
         const startList: number[] = sheet.tracks.map((t: CueTrack): number => t.startMs);
-        const staleRows = await Db.get().querySongs('path = ? AND cue_start_ms > 0', [audioPath], '', 50, 0);
+        const staleRows = await Db.get().querySongs('path = ? AND cue_start_ms > 0', [audioKey], '', 50, 0);
         for (const r of staleRows) {
           if (startList.indexOf(r.cueStartMs) < 0) {
             await Db.get().removeSongCompletely(r.id);
@@ -614,7 +713,7 @@ export class ScanService {
     }
   }
 
-  // 遍历一个根目录(path 类型)
+  // 遍历一个根目录(path 类型 / uri 目录 / file 单文件)
   private async walkRoot(root: RootFolder): Promise<FileCandidate[]> {
     const out: FileCandidate[] = [];
     if (root.type === 'path') {
@@ -634,10 +733,17 @@ export class ScanService {
       } catch (e) {
         hilog.warn(DOMAIN, TAG, 'listFile fail %{public}s %{public}s', root.value, (e as Error).message);
       }
+    } else if (root.type === 'file') {
+      // AudioViewPicker 选中的单个音频文件 URI
+      const name = this.uriDisplayName(root.value);
+      if (isAudioExt(name)) {
+        out.push(new FileCandidate(name, `uri:${root.value}`, root.value));
+      }
     } else {
-      // URI 根:尝试直接 listFile(URI);失败则提示走路径模式
+      // URI 目录根:fs.listFile 对 docs URI 的支持随版本/设备而异,失败仅告警
       try {
         const names = await fs.listFile(root.value, { recursion: true });
+        hilog.info(DOMAIN, TAG, 'listFile(URI) ok n=%{public}d', names.length);
         for (const rel of names) {
           const name = rel.substring(rel.lastIndexOf('/') + 1);
           const isCue = name.toLowerCase().endsWith('.cue');
@@ -648,10 +754,21 @@ export class ScanService {
           out.push(new FileCandidate(name, `uri:${childUri}`, childUri));
         }
       } catch (e) {
-        hilog.warn(DOMAIN, TAG, 'listFile(URI) fail %{public}s %{public}s', root.value, (e as Error).message);
+        hilog.warn(DOMAIN, TAG, 'listFile(URI) fail %{public}s %{public}s (建议改用「选择音频文件」入口)',
+          root.value, (e as Error).message);
       }
     }
     return out;
+  }
+
+  // URI 末段文件名(容错解码)
+  private uriDisplayName(uri: string): string {
+    const tail = uri.substring(uri.lastIndexOf('/') + 1);
+    try {
+      return decodeURIComponent(tail);
+    } catch (e) {
+      return tail;
+    }
   }
   // ===== 调试语料生成(SELinux 拦 shell 写沙箱时的验证通道) =====
   // 正弦波 PCM16/44.1 mono WAV + CUE 表;gapless/CUE 区间/统计验证用。
