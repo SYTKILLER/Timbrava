@@ -13,8 +13,6 @@ import { SettingsDest } from './settings/SettingsTab';
 import { FullPlayerDest } from './player/FullPlayer';
 import { LyricsEditorDest } from './player/LyricsEditor';
 import { SongListDest } from './detail/SongList';
-import { FolderTreeDest } from './detail/FolderTree';
-import { ScanSettingsDest } from './settings/ScanSettings';
 import { EqualizerDest } from './settings/Equalizer';
 import { AboutDest } from './settings/About';
 import { SearchDest } from './detail/Search';
@@ -163,10 +161,6 @@ struct Index {
       LyricsEditorDest()
     } else if (name === 'SongList') {
       SongListDest()
-    } else if (name === 'FolderTree') {
-      FolderTreeDest()
-    } else if (name === 'ScanSettings') {
-      ScanSettingsDest()
     } else if (name === 'Equalizer') {
       EqualizerDest()
     } else if (name === 'About') {

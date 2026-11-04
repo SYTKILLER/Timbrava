@@ -173,10 +173,6 @@ export struct SettingsTab {
           // 媒体库
           CardSection({ title: $r('app.string.media_library') }) {
             Column() {
-              this.NavItem($r('app.string.scan_manager'), $r('app.string.scan_manager_sub'), (): void => {
-                this.nav().pushPathByName('ScanSettings', null);
-              })
-              Divider().color($r('app.color.divider')).margin({ left: 0 })
               this.NavItem($r('app.string.duplicates_title'), $r('app.string.duplicates_sub'), (): void => {
                 this.nav().pushPathByName('Duplicates', null);
               })

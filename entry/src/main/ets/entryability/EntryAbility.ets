@@ -44,6 +44,11 @@ async function runDebugCommands(ctx: common.UIAbilityContext, params: Record<str
       await ScanService.get().ensureSandboxRoot();
       await ScanService.get().seedRawfileCorpus();
     }
+    if (get('debugImportUris') === '1') {
+      // 验证通道:沙箱音频以 file:// URI 走「导入即入库」代码路径(模拟器无 AudioViewPicker UI)
+      const added = await ScanService.get().debugImportSandboxUris();
+      hilog.info(DBG_DOMAIN, DBG_TAG, 'debugImportUris added=%{public}d', added);
+    }
     if (get('debugUriRoot') === '1') {
       // 验证通道:沙箱音频登记为 file:// URI 根(picker 'file' 根同链路)
       await ScanService.get().ensureSandboxRoot();
@@ -73,6 +78,9 @@ async function runDebugCommands(ctx: common.UIAbilityContext, params: Record<str
       await player.playPause();
     }
     if (get('debugNext') === '1') {
+      const q = QueueService.get();
+      hilog.info(DBG_DOMAIN, DBG_TAG, 'queue state n=%{public}d idx=%{public}d repeat=%{public}d shuffled=%{public}s mode=%{public}s',
+        q.list.length, q.currentOrderIndex, q.repeat as number, String(q.shuffled), q.playMode());
       await player.playNext();
     }
     if (get('debugPrev') === '1') {
@@ -186,6 +194,8 @@ export default class EntryAbility extends UIAbility {
     PlayerController.get().init(this.context).then(async (): Promise<void> => {
       hilog.info(DOMAIN, TAG, 'controller ready');
       AppTheme.apply(this.context);
+      // 重启后激活已导入 URI 歌曲的持久化授权(否则 file://docs 音频不可读)
+      await ScanService.get().activateImportedUriPermissions();
       const params = wantParamsOf(want);
       await runCardCommands(params);
       await runDebugCommands(this.context, params);

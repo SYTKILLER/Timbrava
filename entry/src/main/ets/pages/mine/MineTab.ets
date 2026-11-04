@@ -1,8 +1,10 @@
-// 我的页:曲库统计 + 智能列表入口 + 歌单 + 通用入口(设置/关于)。设置降级为二级路由页。
+// 我的页:曲库统计 + 智能列表入口 + 歌单 + 添加歌曲 + 通用入口(设置/关于)。设置降级为二级路由页。
 import { common } from '@kit.AbilityKit';
+import { picker } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Db } from '../../data/Db';
 import { LibraryStore } from '../../data/LibraryStore';
+import { ScanService } from '../../data/ScanService';
 import { SongListParam } from '../../components/SongRow';
 import { PlayHistoryParam } from '../detail/PlayHistory';
 import { PlaylistsTab } from '../playlist/PlaylistsTab';
@@ -46,6 +48,25 @@ export struct MineTab {
   private nav(): NavPathStack {
     const stack = AppStorage.get<NavPathStack>('navStack');
     return stack !== undefined && stack !== null ? stack : new NavPathStack();
+  }
+
+  // 添加歌曲(华为音乐共识:我的页导入入口,选完即入库,无需扫描)
+  private async addSongs(): Promise<void> {
+    try {
+      const audioPicker = new picker.AudioViewPicker();
+      const opts = new picker.AudioSelectOptions();
+      opts.maxSelectNumber = 500;
+      const uris: Array<string> = await audioPicker.select(opts);
+      if (uris.length === 0) {
+        return;
+      }
+      const added = await ScanService.get().addPickedAudioUris(uris);
+      this.getUIContext().getPromptAction().showToast({
+        message: added > 0 ? L($r('app.string.import_added'), String(added)) : $r('app.string.import_none')
+      });
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'addSongs fail %{public}s', (e as Error).message);
+    }
   }
 
   private openFavorites(): void {
@@ -113,20 +134,16 @@ export struct MineTab {
           .width('100%')
           .padding({ left: 16, right: 16 })
 
-          // 浏览(自曲库分区迁移):文件夹树
+          // 音乐库(添加歌曲:即选即入库)
           Column({ space: 4 }) {
-            Text($r('app.string.mine_browse'))
+            Text($r('app.string.mine_library'))
               .fontSize(12)
               .fontColor($r('app.color.text_secondary'))
               .width('100%')
               .padding({ left: 4, top: 4 })
             Column() {
-              this.NavItem($r('app.string.browse_folder'), '', (): void => {
-                if (LibraryStore.get().folderRoot.children.length === 0) {
-                  this.getUIContext().getPromptAction().showToast({ message: $r('app.string.folder_empty') });
-                  return;
-                }
-                this.nav().pushPathByName('FolderTree', null);
+              this.NavItem($r('app.string.add_songs'), '', (): void => {
+                this.addSongs();
               })
             }
             .width('100%')

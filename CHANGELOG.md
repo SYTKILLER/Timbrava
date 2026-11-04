@@ -7,6 +7,26 @@
 
 ## [Unreleased]
 
+### Added(0.9.0 播放器交互对齐华为音乐/业界共识)
+
+- **歌曲添加入口重构(去文件夹扫描形态)**:删除「扫描文件夹管理」页与文件夹浏览(FolderTree);「添加歌曲」(AudioViewPicker 批量选)迁至 我的页·音乐库 + 曲库空态引导;选完即解析入库(addPickedAudioUris,含 persistPermission 持久化),无扫描按钮;应用启动自动激活库内 URI 歌曲授权(activateImportedUriPermissions)。
+- **全屏播放页交互重做(参考华为官方《多设备音乐界面》最佳实践与 QQ音乐/网易云/华为音乐共识)**:封面⇄歌词 Swiper 左右滑动切换(封面向左滑→歌词,歌词向右滑→封面);左下角播放模式键四态循环(顺序→列表循环→单曲→随机,symbol 显示当前模式,随机模式 next 随机循环);右上角「更多」bindSheet 菜单(收藏/编辑歌词/倍速/A-B/跳过静音/睡眠定时/查看队列);播放/暂停键缩放弹跳动画;控制区底部 ≥28vp 避让。
+- **点歌=以所在列表为队列起播**(曲库/专辑/艺人/流派/收藏/歌单/搜索结果,主流共识);重启后恢复上次播放曲(迷你条立即可用)。
+
+### Fixed(0.9.0)
+
+- **曲库导入/扫描后不即时刷新的根因**:空态分支 `if (songSrc.totalCount()===0)` 读数据源方法(非可观察),libVer 变更只触发 @Watch 而分支不重估 → 四分区空态改读 @State 计数。
+- **全屏播放页控制区底部溢出**:PlayerBody 根 Column height('100%') 把顶栏挤出视口 → 改 layoutWeight(1)。
+- **随机模式队尾 next 无响应**:nextIndex 无 shuffle 分支 → 随机模式下 next 随机跳且循环。
+- **模式键/队列抽屉图标不随 queueVer 刷新**:改 @State 镜像(@Watch 驱动)。
+- 空态文案"到设置→扫描文件夹"指向已删除入口 → 改"点「添加歌曲」导入本地音乐"。
+- 恢复的队列 mode/repeat 经由 setPlayMode 统一管理(顺序/列表循环/单曲/随机)。
+
+### Changed(0.9.0)
+
+- 版本号 0.9.0/versionCode 9000。
+- 全量测试计划 docs/TESTPLAN.md(本地):T1 曲库/T2 我的/T3 播放链路/T4 专业/T5 系统;改动相关用例全部模拟器实操验证通过(真机 AudioViewPicker 导入 24bit/192kHz FLAC 成功)。
+
 ### Added(0.8.0 扫描授权链路重构)
 
 - **新增"选择音频文件"入口(AudioViewPicker)**:系统文件管理器选择音频(官方推荐,免敏感权限,可批量选媒体库音频);picker 授权(文件夹/音频文件)经 fileShare.persistPermission 持久化、重扫前 activatePermission 激活(新增普通权限 FILE_ACCESS_PERSIST);新增 `file` 类型扫描根(授权单文件),根目录列表以音符图标+"音频文件(已授权)"呈现,移除时同步 revokePermission。

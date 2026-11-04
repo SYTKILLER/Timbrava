@@ -88,7 +88,8 @@ export struct SearchDest {
             ForEach(this.results, (s: Song, i: number) => {
               ListItem() {
                 Column() {
-                  SongRow({ song: s, showAlbum: true })
+                  SongRow({ song: s, showAlbum: true,
+                    listIds: this.results.map((x: Song): number => x.id), listTitle: L($r('app.string.search_title'), this.keyword) })
                 }
               }
             }, (s: Song): string => `${s.id}_${s.title}`)

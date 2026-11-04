@@ -1,6 +1,7 @@
-// 音乐库页:顶部页签(TabSegmentButtonV2 + Swiper):歌曲/专辑/艺人/流派/文件夹。
+// 音乐库页:顶部页签(TabSegmentButtonV2 + Swiper):歌曲/专辑/艺人/流派。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
+import { picker } from '@kit.CoreFileKit';
 import { TabSegmentButtonV2, SegmentButtonV2Items, SegmentButtonV2Item } from '@kit.ArkUI';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { LibraryStore, DEFAULT_ORDER } from '../../data/LibraryStore';
@@ -8,7 +9,7 @@ import { Song, Album, Artist, Genre } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';
 import { BasicDataSource } from '../../common/DataSource';
 import { ScanService } from '../../data/ScanService';
-import { L } from '../../common/Lang';
+import { L, Ls } from '../../common/Lang';
 
 const TAG = '[Timbrava][Library]';
 const DOMAIN = 0x0001;
@@ -66,6 +67,11 @@ export struct LibraryTab {
   @StorageProp('themePageBg') themePageBg: string = '';
   @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State segmentIndex: number = 0;
+  // 空态分支必须读 @State 计数:数据源方法非可观察,libVer 变更时分支不重估(导入/扫描后不即时刷新的根因)
+  @State songCount: number = 0;
+  @State albumCount: number = 0;
+  @State artistCount: number = 0;
+  @State genreCount: number = 0;
   @State topSafe: number = 36;
   @State recentAlbums: RecentAlbum[] = [];
   private songSrc: SongSource = new SongSource();
@@ -94,6 +100,10 @@ export struct LibraryTab {
     this.albumSrc.setData(lib.albums);
     this.artistSrc.setData(lib.artists);
     this.genreSrc.setData(lib.genres);
+    this.songCount = songs.length;
+    this.albumCount = lib.albums.length;
+    this.artistCount = lib.artists.length;
+    this.genreCount = lib.genres.length;
     hilog.debug(DOMAIN, TAG, 'refresh songs=%{public}d albums=%{public}d', songs.length, lib.albums.length);
     this.rebuildRecent();
   }
@@ -292,15 +302,46 @@ export struct LibraryTab {
     .justifyContent(FlexAlign.Center)
   }
 
+  // 空态引导:直接给"添加歌曲"入口(免找设置)
+  private async addSongs(): Promise<void> {
+    try {
+      const audioPicker = new picker.AudioViewPicker();
+      const opts = new picker.AudioSelectOptions();
+      opts.maxSelectNumber = 500;
+      const uris: Array<string> = await audioPicker.select(opts);
+      if (uris.length === 0) {
+        return;
+      }
+      const added = await ScanService.get().addPickedAudioUris(uris);
+      this.getUIContext().getPromptAction().showToast({
+        message: added > 0 ? L($r('app.string.import_added'), String(added)) : $r('app.string.import_none')
+      });
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'addSongs fail %{public}s', (e as Error).message);
+    }
+  }
+
   @Builder
   SongsPage() {
-    if (this.songSrc.totalCount() === 0) {
-      this.EmptyHint($r('app.string.lib_empty_hint'))
+    if (this.songCount === 0) {
+      Column({ space: 16 }) {
+        this.EmptyHint($r('app.string.lib_empty_hint'))
+        Button($r('app.string.add_songs'))
+          .fontSize(14)
+          .fontColor($r('app.color.on_accent'))
+          .backgroundColor($r('app.color.accent'))
+          .height(40)
+          .borderRadius(20)
+          .onClick(() => {
+            this.addSongs();
+          })
+      }
+      .width('100%')
     } else {
       List({ space: 0 }) {
         LazyForEach(this.songSrc, (s: Song) => {
           ListItem() {
-            SongRow({ song: s, showAlbum: true })
+            SongRow({ song: s, showAlbum: true, listIds: this.songSrc.snapshot().map((x: Song): number => x.id), listTitle: Ls($r('app.string.tab_library')) })
           }
         }, (s: Song): string => `${s.id}_${s.title}`)
       }
@@ -314,7 +355,7 @@ export struct LibraryTab {
 
   @Builder
   AlbumsPage() {
-    if (this.albumSrc.totalCount() === 0) {
+    if (this.albumCount === 0) {
       this.EmptyHint($r('app.string.albums_empty'))
     } else {
       Grid() {
@@ -355,7 +396,7 @@ export struct LibraryTab {
 
   @Builder
   ArtistsPage() {
-    if (this.artistSrc.totalCount() === 0) {
+    if (this.artistCount === 0) {
       this.EmptyHint($r('app.string.artists_empty'))
     } else {
       List({ space: 2 }) {
@@ -401,7 +442,7 @@ export struct LibraryTab {
 
   @Builder
   GenresPage() {
-    if (this.genreSrc.totalCount() === 0) {
+    if (this.genreCount === 0) {
       this.EmptyHint($r('app.string.genres_empty'))
     } else {
       List({ space: 2 }) {

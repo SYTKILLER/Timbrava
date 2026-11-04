@@ -97,6 +97,15 @@ export class PlayerController {
     await LibraryStore.get().reload();
     await this.queue.restore();
     await this.queue.restoreLoopExt();
+    // 重启恢复上次播放曲(不自动播):迷你条/AVSession 立即可用(主流共识)
+    const restoredId = this.queue.currentSongId();
+    if (restoredId >= 0) {
+      const rs = LibraryStore.get().song(restoredId);
+      if (rs !== null) {
+        this.currentSong = rs;
+        this.bumpPlayer();
+      }
+    }
     this.speed = SettingsService.get().playSpeed;
     this.initDone = true;
     PlayerBridge.onDspChanged = (): void => {

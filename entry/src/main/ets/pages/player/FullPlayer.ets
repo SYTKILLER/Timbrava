@@ -1,13 +1,18 @@
-// 全屏播放页:大封面 + 进度条(Slider 拖动中忽略 timeUpdate)+ 全套控制 + 队列抽屉。
+// 全屏播放页(对齐华为音乐/QQ音乐共识交互):
+// - 封面⇄歌词左右 Swiper 切换(官方《多设备音乐界面》最佳实践:窄屏 Swiper 分页);
+// - 控制区:左播放模式键(顺序→列表循环→单曲→随机,symbol 显示当前模式)+ 上一曲/播放暂停(缩放动画)/下一曲 + 右队列键;
+// - 右上角"更多"入口 → bindSheet 菜单(收藏/编辑歌词/倍速/A-B/跳过静音/睡眠定时/查看队列);
+// - 底部 ≥28vp 导航条避让。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { PlayerController } from '../../service/PlayerController';
-import { QueueService } from '../../service/QueueService';
+import { QueueService, PlayMode } from '../../service/QueueService';
 import { EngineKind } from '../../service/engine/EngineTypes';
 import { LibraryStore } from '../../data/LibraryStore';
 import { Song, RepeatMode, formatDuration } from '../../data/Model';
 import { LyricsPanel } from '../../components/LyricsPanel';
+import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][FullPlayer]';
 const DOMAIN = 0x0001;
@@ -17,31 +22,43 @@ export struct FullPlayerDest {
   @StorageProp('playerVer') @Watch('onPlayerChanged') playerVer: number = 0;
   @StorageProp('posVer') @Watch('onPosChanged') posVer: number = 0;
   @State posMs: number = 0;
-  @StorageProp('queueVer') queueVer: number = 0;
+  @StorageProp('queueVer') @Watch('onQueueChanged') queueVer: number = 0;
+  @State modeMirror: PlayMode = 'order'; // 模式键图标镜像(经 @State 切换驱动刷新)
   @StorageProp('libVer') libVer: number = 0;
   @StorageProp('themePageBg') themePageBg: string = '';
   @StorageProp('prefPlayerSkin') playerSkin: string = 'standard';
   @State seeking: boolean = false;
   @State seekPreviewMs: number = 0;
   @State showQueue: boolean = false;
-  @State showLyrics: boolean = false;
+  @State showMoreSheet: boolean = false;
+  @State pageIdx: number = 0; // Swiper 当前页:0 封面 / 1 歌词
+  @State playingMirror: boolean = false; // 播放键动画镜像(经 @State 切换才触发过渡)
+  @State playBounce: boolean = false; // 点击缩放弹跳
   @State topSafe: number = 36;
   @State bottomSafe: number = 28;
   private pathStack: NavPathStack | null = null;
+  private swiperCtrl: SwiperController = new SwiperController();
 
   aboutToAppear(): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     AppTheme.safeAreas(ctx).then((r: SafeAreaResult): void => {
       this.topSafe = r.topVp;
-      this.bottomSafe = r.bottomVp;
+      this.bottomSafe = Math.max(r.bottomVp, 28);
     });
     this.posMs = Math.round(PlayerController.get().positionMs);
+    this.playingMirror = PlayerController.get().isPlaying;
+    this.modeMirror = QueueService.get().playMode();
     // 页面可能晚于播放打开:@Watch 不会补发,主动拉一次(歌词由控制器中心化加载)
     this.onPlayerChanged();
   }
 
   onPlayerChanged(): void {
-    // playerVer bump 已驱动重渲染;歌词文本取 PlayerController.currentLyrics
+    this.playingMirror = PlayerController.get().isPlaying;
+    this.modeMirror = QueueService.get().playMode();
+  }
+
+  onQueueChanged(): void {
+    this.modeMirror = QueueService.get().playMode();
   }
 
   onPosChanged(): void {
@@ -73,7 +90,7 @@ export struct FullPlayerDest {
     NavDestination() {
       Stack({ alignContent: Alignment.Bottom }) {
       Column() {
-        // 顶栏
+        // 顶栏:返回 | 正在播放 | 更多(右上角,bindSheet)
         Row() {
           Button({ stateEffect: true }) {
             SymbolGlyph($r('sys.symbol.chevron_left'))
@@ -94,7 +111,7 @@ export struct FullPlayerDest {
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
           Button({ stateEffect: true }) {
-            SymbolGlyph($r('sys.symbol.list_bullet'))
+            SymbolGlyph($r('sys.symbol.more'))
               .fontSize(20)
               .fontColor([$r('app.color.text_primary')])
           }
@@ -102,19 +119,7 @@ export struct FullPlayerDest {
           .height(40)
           .backgroundColor(Color.Transparent)
           .onClick(() => {
-            this.showQueue = !this.showQueue;
-          })
-          Button({ stateEffect: true }) {
-            SymbolGlyph($r('sys.symbol.book'))
-              .fontSize(20)
-              .fontColor([this.showLyrics ? $r('app.color.accent') : $r('app.color.text_primary')])
-          }
-          .width(40)
-          .height(40)
-          .backgroundColor(Color.Transparent)
-          .margin({ left: 4 })
-          .onClick(() => {
-            this.showLyrics = !this.showLyrics;
+            this.showMoreSheet = true;
           })
         }
         .width('100%')
@@ -146,6 +151,14 @@ export struct FullPlayerDest {
       }
       .width('100%')
       .height('100%')
+      .bindSheet(this.showMoreSheet, this.MoreSheet(), {
+        height: 440,
+        showClose: true,
+        dragBar: true,
+        onDisappear: (): void => {
+          this.showMoreSheet = false;
+        }
+      })
     }
     .hideTitleBar(true)
     .onReady((ctx: NavDestinationContext): void => {
@@ -163,54 +176,70 @@ export struct FullPlayerDest {
   @Builder
   PlayerBody() {
     Column() {
-      Blank().height(12)
+      Blank().height(8)
 
-      // 大封面 / 歌词
-      Stack({ alignContent: Alignment.Center }) {
-        if (this.playerVer < 0) {
-          Text('')
-        } else if (this.showLyrics) {
-          Column({ space: 6 }) {
-            LyricsPanel({ lyricText: this.lyricsNow() })
-              .width('100%')
-              .layoutWeight(1)
-            Button(this.editLabel())
-              .fontSize(11)
-              .height(26)
-              .fontColor($r('app.color.text_secondary'))
-              .backgroundColor($r('app.color.badge_bg'))
-              .onClick(() => {
-                const song = PlayerController.get().currentSong;
-                const stack = this.pathStack;
-                if (song !== null && stack !== null) {
-                  stack.pushPathByName('LyricsEditor', song.id);
-                }
-              })
-          }
-          .width('88%')
-          .height(this.playerSkin === 'minimal' ? '44%' : '56%')
-        } else if ((this.song() as Song).artPath.length > 0) {
-          Image((this.song() as Song).artPath)
-            .width(this.playerSkin === 'minimal' ? '46%' : '78%')
+      // 封面⇄歌词:Swiper 左右滑动(封面向左滑→歌词;歌词向右滑→封面)
+      Swiper(this.swiperCtrl) {
+        // 第 1 页:大封面
+        Column() {
+          if (this.playerVer < 0) {
+            Text('')
+          } else if ((this.song() as Song).artPath.length > 0) {
+            Image((this.song() as Song).artPath)
+              .width(this.playerSkin === 'minimal' ? '56%' : '78%')
+              .aspectRatio(1)
+              .borderRadius(24)
+              .objectFit(ImageFit.Cover)
+              .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
+          } else {
+            Column({ space: 12 }) {
+              SymbolGlyph($r('sys.symbol.music_note_list'))
+                .fontSize(72)
+                .fontColor([$r('app.color.accent')])
+            }
+            .width(this.playerSkin === 'minimal' ? '56%' : '78%')
             .aspectRatio(1)
             .borderRadius(24)
-            .objectFit(ImageFit.Cover)
-            .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
-        } else {
-          Column({ space: 12 }) {
-            SymbolGlyph($r('sys.symbol.music_note_list'))
-              .fontSize(72)
-              .fontColor([$r('app.color.accent')])
+            .backgroundColor($r('app.color.badge_bg'))
+            .justifyContent(FlexAlign.Center)
           }
-          .width(this.playerSkin === 'minimal' ? '46%' : '78%')
-          .aspectRatio(1)
-          .borderRadius(24)
-          .backgroundColor($r('app.color.badge_bg'))
-          .justifyContent(FlexAlign.Center)
         }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+
+        // 第 2 页:歌词
+        Column({ space: 6 }) {
+          LyricsPanel({ lyricText: this.lyricsNow() })
+            .width('100%')
+            .layoutWeight(1)
+          Button(this.editLabel())
+            .fontSize(11)
+            .height(26)
+            .fontColor($r('app.color.text_secondary'))
+            .backgroundColor($r('app.color.badge_bg'))
+            .onClick(() => {
+              const song = PlayerController.get().currentSong;
+              const stack = this.pathStack;
+              if (song !== null && stack !== null) {
+                stack.pushPathByName('LyricsEditor', song.id);
+              }
+            })
+        }
+        .width('88%')
+        .height('100%')
+        .padding({ top: 8, bottom: 8 })
+        .justifyContent(FlexAlign.Center)
       }
+      .index(this.pageIdx)
+      .loop(false)
+      .indicator(false)
+      .cachedCount(1)
       .width('100%')
       .layoutWeight(1)
+      .onChange((i: number) => {
+        this.pageIdx = i;
+      })
 
       // 信息 + 引擎徽章(playerVer 条件读取驱动切曲刷新)
       Column({ space: 6 }) {
@@ -288,18 +317,22 @@ export struct FullPlayerDest {
       .width('100%')
       .padding({ top: 4 })
 
-      // 控制区
+      // 控制区:播放模式(左) | 上一曲/播放暂停(动画)/下一曲 | 队列(右)
+      if (this.queueVer < 0) {
+        Text('') // 注册 queueVer 依赖:模式切换/随机重排驱动控制区刷新
+      }
       Row({ space: 8 }) {
         Button({ stateEffect: true }) {
-          SymbolGlyph($r('sys.symbol.shuffle'))
+          SymbolGlyph(this.modeIcon())
             .fontSize(20)
-            .fontColor([QueueService.get().shuffled ? $r('app.color.accent') : $r('app.color.text_primary')])
+            .fontColor([this.modeAccent() ? $r('app.color.accent') : $r('app.color.text_primary')])
         }
         .width(46)
         .height(46)
         .backgroundColor(Color.Transparent)
         .onClick(() => {
-          QueueService.get().toggleShuffle();
+          const m = QueueService.get().cyclePlayMode();
+          hilog.info(DOMAIN, TAG, 'play mode -> %{public}s', m);
         })
 
         Button({ stateEffect: true }) {
@@ -314,8 +347,9 @@ export struct FullPlayerDest {
           PlayerController.get().playPrev();
         })
 
-        Button({ stateEffect: true }) {
-          SymbolGlyph(this.isPlayingNow() ? $r('sys.symbol.pause_fill') : $r('sys.symbol.play_fill'))
+        // 播放/暂停:点击缩放弹跳动画 + symbol 切换(@State 镜像驱动过渡)
+        Button({ stateEffect: false }) {
+          SymbolGlyph(this.playingMirror ? $r('sys.symbol.pause_fill') : $r('sys.symbol.play_fill'))
             .fontSize(38)
             .fontColor([$r('app.color.on_accent')])
         }
@@ -323,8 +357,15 @@ export struct FullPlayerDest {
         .height(76)
         .borderRadius(38)
         .backgroundColor($r('app.color.accent'))
+        .scale(this.playBounce ? { x: 0.82, y: 0.82 } : { x: 1, y: 1 })
+        .animation({ duration: 160, curve: Curve.Friction })
         .onClick(() => {
+          this.playBounce = true;
           PlayerController.get().playPause();
+          // 下一帧回弹(等价按下-松开的弹性反馈)
+          setTimeout((): void => {
+            this.playBounce = false;
+          }, 90);
         })
 
         Button({ stateEffect: true }) {
@@ -340,99 +381,129 @@ export struct FullPlayerDest {
         })
 
         Button({ stateEffect: true }) {
-          SymbolGlyph(this.repeatIcon())
+          SymbolGlyph($r('sys.symbol.list_bullet'))
             .fontSize(20)
-            .fontColor([QueueService.get().repeat === RepeatMode.OFF ? $r('app.color.text_primary') : $r('app.color.accent')])
+            .fontColor([$r('app.color.text_primary')])
         }
         .width(46)
         .height(46)
         .backgroundColor(Color.Transparent)
         .onClick(() => {
-          const mode = QueueService.get().cycleRepeat();
-          PlayerController.get().setRepeat(mode);
+          this.showQueue = !this.showQueue;
         })
       }
       .width('100%')
       .justifyContent(FlexAlign.Center)
       .padding({ top: 8, bottom: 8 })
 
-      // 功能行:倍速 / A-B 重复 / 跳过静音
-      Row({ space: 6 }) {
-        Button({ stateEffect: true }) {
-          Row({ space: 4 }) {
-            SymbolGlyph($r('sys.symbol.speed_multiple'))
-              .fontSize(16)
-              .fontColor([this.speedNow() === 1.0 ? $r('app.color.text_secondary') : $r('app.color.accent')])
-            Text(this.speedLabel())
-              .fontSize(11)
-              .fontColor(this.speedNow() === 1.0 ? $r('app.color.text_secondary') : $r('app.color.accent'))
-          }
-        }
-        .height(34)
-        .backgroundColor(Color.Transparent)
-        .bindMenu(this.speedMenu())
-
-        Button({ stateEffect: true }) {
-          Row({ space: 4 }) {
-            SymbolGlyph($r('sys.symbol.scope'))
-              .fontSize(16)
-              .fontColor([this.abStateNow() === 'off' ? $r('app.color.text_secondary') : $r('app.color.accent')])
-            Text(this.abLabel())
-              .fontSize(11)
-              .fontColor(this.abStateNow() === 'off' ? $r('app.color.text_secondary') : $r('app.color.accent'))
-          }
-        }
-        .height(34)
-        .backgroundColor(Color.Transparent)
-        .onClick(() => {
-          PlayerController.get().setAbPoint();
-        })
-
-        Button({ stateEffect: true }) {
-          Row({ space: 4 }) {
-            SymbolGlyph($r('sys.symbol.speaker_slash'))
-              .fontSize(16)
-              .fontColor([this.skipSilenceNow() ? $r('app.color.accent') : $r('app.color.text_secondary')])
-            Text($r('app.string.skip_silence'))
-              .fontSize(11)
-              .fontColor(this.skipSilenceNow() ? $r('app.color.accent') : $r('app.color.text_secondary'))
-          }
-        }
-        .height(34)
-        .backgroundColor(Color.Transparent)
-        .onClick(() => {
-          PlayerController.get().toggleSkipSilence();
-        })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-
-      // 收藏行
-      Button({ stateEffect: true }) {
-        Row({ space: 6 }) {
-          SymbolGlyph(this.isFav() ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
-            .fontSize(16)
-            .fontColor([this.isFav() ? $r('app.color.accent') : $r('app.color.text_secondary')])
-          Text(this.isFav() ? $r('app.string.str_favorited') : $r('app.string.str_favorites'))
-            .fontSize(12)
-            .fontColor($r('app.color.text_secondary'))
-        }
-      }
-      .height(34)
-      .backgroundColor(Color.Transparent)
-      .onClick(() => {
-        PlayerController.get().toggleFavorite();
-      })
-
-      Blank().height(this.bottomSafe + 8)
+      // 底部导航条避让(≥28vp)
+      Blank().height(Math.max(this.bottomSafe, 28) + 8)
     }
     .width('100%')
-    .height('100%')
+    .layoutWeight(1) // 占顶栏以下剩余空间(height 100% 会把顶栏挤出视口致底部溢出)
+  }
+
+  // ===== 右上角"更多"bindSheet 菜单 =====
+
+  @Builder
+  MoreSheet() {
+    Column() {
+      Text($r('app.string.more_menu'))
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .padding({ left: 20, top: 12, bottom: 8 })
+      List({ space: 0 }) {
+        // 收藏
+        ListItem() {
+          this.SheetRow(this.isFav() ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'),
+            this.isFav() ? $r('app.string.str_favorited') : $r('app.string.str_favorites'),
+            this.isFav(), (): void => {
+              PlayerController.get().toggleFavorite();
+            })
+        }
+        // 编辑歌词
+        ListItem() {
+          this.SheetRow($r('sys.symbol.pencil_line'), this.editLabel(), false, (): void => {
+            this.showMoreSheet = false;
+            const song = PlayerController.get().currentSong;
+            const stack = this.pathStack;
+            if (song !== null && stack !== null) {
+              stack.pushPathByName('LyricsEditor', song.id);
+            }
+          })
+        }
+        // 倍速
+        ListItem() {
+          this.SheetRow($r('sys.symbol.speed_multiple'), this.speedLabel(),
+            this.speedNow() !== 1.0, (): void => {
+              // 循环切常用档:1.0 → 1.25 → 1.5 → 2.0 → 0.5 → 1.0
+              const cur = this.speedNow();
+              const next = cur === 1.0 ? 1.25 : cur === 1.25 ? 1.5 : cur === 1.5 ? 2.0 : cur === 2.0 ? 0.5 : 1.0;
+              PlayerController.get().setSpeed(next);
+            })
+        }
+        // A-B 重复
+        ListItem() {
+          this.SheetRow($r('sys.symbol.scope'), this.abLabel(),
+            this.abStateNow() !== 'off', (): void => {
+              PlayerController.get().setAbPoint();
+            })
+        }
+        // 跳过静音
+        ListItem() {
+          this.SheetRow($r('sys.symbol.speaker_slash'), $r('app.string.skip_silence'),
+            this.skipSilenceNow(), (): void => {
+              PlayerController.get().toggleSkipSilence();
+            })
+        }
+        // 睡眠定时器
+        ListItem() {
+          this.SheetRow($r('sys.symbol.timer'), this.sleepLabel(),
+            PlayerController.get().sleepRemainMin() > 0, (): void => {
+              this.cycleSleepTimer();
+            })
+        }
+        // 查看队列
+        ListItem() {
+          this.SheetRow($r('sys.symbol.list_bullet'), $r('app.string.view_queue'), false, (): void => {
+            this.showMoreSheet = false;
+            this.showQueue = true;
+          })
+        }
+      }
+      .width('100%')
+      .padding({ bottom: 16 })
+    }
+    .width('100%')
+    .backgroundColor($r('app.color.card_bg'))
+  }
+
+  @Builder
+  SheetRow(icon: Resource, label: ResourceStr, accent: boolean, onTap: () => void) {
+    Row({ space: 12 }) {
+      SymbolGlyph(icon)
+        .fontSize(18)
+        .fontColor([accent ? $r('app.color.accent') : $r('app.color.text_primary')])
+      Text(label)
+        .fontSize(14)
+        .fontColor(accent ? $r('app.color.accent') : $r('app.color.text_primary'))
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .padding({ left: 20, right: 16, top: 12, bottom: 12 })
+    .onClick(() => {
+      onTap();
+    })
   }
 
   @Builder
   QueueDrawer() {
     Column() {
+      if (this.queueVer < 0) {
+        Text('') // 注册 queueVer 依赖,队列变更驱动抽屉刷新
+      }
       Row() {
         Text($r('app.string.current_queue'))
           .fontSize(16)
@@ -454,14 +525,16 @@ export struct FullPlayerDest {
         })
         // 循环模式 + 播完停止 + 推进边界(原队列页签菜单迁移)
         Button({ stateEffect: true }) {
-          SymbolGlyph(this.repeatIcon())
+          SymbolGlyph(this.modeIcon())
             .fontSize(16)
-            .fontColor([this.repeatAccent() ? $r('app.color.accent') : $r('app.color.text_primary')])
+            .fontColor([this.modeAccent() ? $r('app.color.accent') : $r('app.color.text_primary')])
         }
         .width(32)
         .height(32)
         .backgroundColor(Color.Transparent)
-        .bindMenu(this.repeatMenu())
+        .onClick(() => {
+          QueueService.get().cyclePlayMode();
+        })
         // 睡眠定时器(原队列页签入口迁移)
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.timer'))
@@ -471,7 +544,9 @@ export struct FullPlayerDest {
         .width(32)
         .height(32)
         .backgroundColor(Color.Transparent)
-        .bindMenu(this.sleepMenu())
+        .onClick(() => {
+          this.cycleSleepTimer();
+        })
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.trash'))
             .fontSize(16)
@@ -535,7 +610,7 @@ export struct FullPlayerDest {
       .width('100%')
       .layoutWeight(1)
       .scrollBar(BarState.Auto)
-      .padding({ bottom: this.bottomSafe + 8 })
+      .padding({ bottom: Math.max(this.bottomSafe, 28) + 8 })
     }
     .width('100%')
     .height('55%')
@@ -544,81 +619,13 @@ export struct FullPlayerDest {
     .shadow({ radius: 32, color: '#33000000', offsetX: 0, offsetY: -6 })
   }
 
-  // ---- 队列抽屉迁移自原队列页签的循环/睡眠菜单 ----
-
-  @Builder
-  repeatMenu() {
-    Menu() {
-      MenuItem({ content: $r('app.string.loop_off') })
-        .onClick(() => {
-          PlayerController.get().setRepeat(RepeatMode.OFF);
-        })
-      MenuItem({ content: $r('app.string.loop_all') })
-        .onClick(() => {
-          PlayerController.get().setRepeat(RepeatMode.ALL);
-        })
-      MenuItem({ content: $r('app.string.loop_one') })
-        .onClick(() => {
-          PlayerController.get().setRepeat(RepeatMode.ONE);
-        })
-      MenuItem({ content: QueueService.get().stopAfterCurrent ? $r('app.string.stop_after_on') : $r('app.string.stop_after') })
-        .onClick(() => {
-          QueueService.get().setStopAfterCurrent(!QueueService.get().stopAfterCurrent);
-        })
-      MenuItem({ content: QueueService.get().boundary === 'album' ? $r('app.string.album_boundary_on') : $r('app.string.album_boundary') })
-        .onClick(() => {
-          QueueService.get().setBoundary(QueueService.get().boundary === 'album' ? 'none' : 'album');
-        })
-      MenuItem({ content: QueueService.get().boundary === 'artist' ? $r('app.string.artist_boundary_on') : $r('app.string.artist_boundary') })
-        .onClick(() => {
-          QueueService.get().setBoundary(QueueService.get().boundary === 'artist' ? 'none' : 'artist');
-        })
-      MenuItem({ content: QueueService.get().boundary === 'folder' ? $r('app.string.folder_boundary_on') : $r('app.string.folder_boundary') })
-        .onClick(() => {
-          QueueService.get().setBoundary(QueueService.get().boundary === 'folder' ? 'none' : 'folder');
-        })
-    }
-  }
-
-  @Builder
-  sleepMenu() {
-    Menu() {
-      MenuItem({ content: $r('app.string.sleep_off') })
-        .onClick(() => {
-          PlayerController.get().setSleepTimer(0);
-        })
-      MenuItem({ content: $r('app.string.sleep_15') })
-        .onClick(() => {
-          PlayerController.get().setSleepTimer(15);
-        })
-      MenuItem({ content: $r('app.string.sleep_30') })
-        .onClick(() => {
-          PlayerController.get().setSleepTimer(30);
-        })
-      MenuItem({ content: $r('app.string.sleep_45') })
-        .onClick(() => {
-          PlayerController.get().setSleepTimer(45);
-        })
-      MenuItem({ content: $r('app.string.sleep_60') })
-        .onClick(() => {
-          PlayerController.get().setSleepTimer(60);
-        })
-      MenuItem({ content: $r('app.string.sleep_90') })
-        .onClick(() => {
-          PlayerController.get().setSleepTimer(90);
-        })
-    }
-  }
+  // ===== 辅助 =====
 
   private sliderValue(): number {
     if (this.seeking) {
       return Math.round(this.seekPreviewMs);
     }
     return this.posMs;
-  }
-
-  private isPlayingNow(): boolean {
-    return PlayerController.get().isPlaying;
   }
 
   private durMs(): number {
@@ -629,22 +636,6 @@ export struct FullPlayerDest {
     const s = this.song();
     return s !== null && LibraryStore.get().isFavorite(s.id);
   }
-
-  private repeatIcon(): Resource {
-    const r = QueueService.get().repeat;
-    if (r === RepeatMode.ONE) {
-      return $r('sys.symbol.repeat_1');
-    }
-    return $r('sys.symbol.repeat');
-  }
-
-  // 循环扩展高亮:非默认循环 / 有边界推进 / 播完停止 任一开启(队列抽屉复用)
-  private repeatAccent(): boolean {
-    const q = QueueService.get();
-    return q.repeat !== RepeatMode.OFF || q.boundary !== 'none' || q.stopAfterCurrent;
-  }
-
-  // ===== 功能行辅助(playerVer 驱动重渲染) =====
 
   private lyricsNow(): string {
     return PlayerController.get().currentLyrics;
@@ -687,38 +678,37 @@ export struct FullPlayerDest {
       PlayerController.get().isSkipSilenceOn();
   }
 
-  @Builder
-  speedMenu() {
-    Menu() {
-      MenuItem({ content: '0.5x' })
-        .onClick(() => {
-          PlayerController.get().setSpeed(0.5);
-        })
-      MenuItem({ content: '0.75x' })
-        .onClick(() => {
-          PlayerController.get().setSpeed(0.75);
-        })
-      MenuItem({ content: $r('app.string.speed_normal') })
-        .onClick(() => {
-          PlayerController.get().setSpeed(1.0);
-        })
-      MenuItem({ content: '1.25x' })
-        .onClick(() => {
-          PlayerController.get().setSpeed(1.25);
-        })
-      MenuItem({ content: '1.5x' })
-        .onClick(() => {
-          PlayerController.get().setSpeed(1.5);
-        })
-      MenuItem({ content: '2.0x' })
-        .onClick(() => {
-          PlayerController.get().setSpeed(2.0);
-        })
-      MenuItem({ content: '3.0x' })
-        .onClick(() => {
-          PlayerController.get().setSpeed(3.0);
-        })
+  // 睡眠定时:菜单内点按循环 关→15→30→45→60→90→关
+  private cycleSleepTimer(): void {
+    const cur = PlayerController.get().sleepRemainMin();
+    const next = cur <= 0 ? 15 : cur < 30 ? 30 : cur < 45 ? 45 : cur < 60 ? 60 : cur < 90 ? 90 : 0;
+    PlayerController.get().setSleepTimer(next);
+  }
+
+  private sleepLabel(): ResourceStr {
+    const cur = PlayerController.get().sleepRemainMin();
+    if (cur <= 0) {
+      return $r('app.string.sleep_timer');
     }
+    return L($r('app.string.sleep_remain'), String(cur));
+  }
+
+  private modeIcon(): Resource {
+    const m = this.modeMirror;
+    if (m === 'shuffle') {
+      return $r('sys.symbol.shuffle');
+    }
+    if (m === 'one') {
+      return $r('sys.symbol.repeat_1');
+    }
+    if (m === 'loop') {
+      return $r('sys.symbol.repeat');
+    }
+    return $r('sys.symbol.arrow_right');
+  }
+
+  private modeAccent(): boolean {
+    return this.modeMirror !== 'order';
   }
 }
 

@@ -15,6 +15,11 @@ export class BasicDataSource<T> implements IDataSource {
     return this.items.indexOf(item);
   }
 
+  // 当前顺序快照(SongRow 列表上下文用;T 为 Song 时返回 id 列表由调用方映射)
+  snapshot(): T[] {
+    return this.items.slice();
+  }
+
   registerDataChangeListener(listener: DataChangeListener): void {
     if (this.listeners.indexOf(listener) < 0) {
       this.listeners.push(listener);

@@ -11,6 +11,9 @@ const TAG = '[Timbrava][Queue]';
 const DOMAIN = 0x0001;
 const QUEUE_ID = 'main';
 
+// 统一播放模式(华为音乐/QQ音乐共识四态)
+export type PlayMode = 'order' | 'loop' | 'one' | 'shuffle';
+
 export class QueueBrief {
   id: string = '';
   title: string = '';
@@ -282,6 +285,14 @@ export class QueueService {
     if (auto && this.stopAfterCurrent) {
       return -1; // 播完当前停止
     }
+    // 随机模式(华为音乐/QQ音乐共识):next 随机跳且可循环;自然播完也随机续播
+    if (this.shuffled && this.list.length > 1) {
+      let r = this.currentOrderIndex;
+      while (r === this.currentOrderIndex) {
+        r = Math.floor(Math.random() * this.list.length);
+      }
+      return r;
+    }
     let next = -1;
     if (this.currentOrderIndex + 1 < this.list.length) {
       next = this.currentOrderIndex + 1;
@@ -344,6 +355,42 @@ export class QueueService {
     this.repeat = mode;
     this.scheduleSave();
     this.bump();
+  }
+
+  // 统一播放模式读取(由 repeat + shuffled 推导)
+  playMode(): PlayMode {
+    if (this.shuffled) {
+      return 'shuffle';
+    }
+    if (this.repeat === RepeatMode.ONE) {
+      return 'one';
+    }
+    if (this.repeat === RepeatMode.ALL) {
+      return 'loop';
+    }
+    return 'order';
+  }
+
+  setPlayMode(m: PlayMode): void {
+    this.shuffled = m === 'shuffle';
+    if (m === 'loop') {
+      this.repeat = RepeatMode.ALL;
+    } else if (m === 'one') {
+      this.repeat = RepeatMode.ONE;
+    } else {
+      this.repeat = RepeatMode.OFF;
+    }
+    this.scheduleSave();
+    this.bump();
+  }
+
+  // 循环切换下一模式:顺序 → 列表循环 → 单曲 → 随机 → 顺序
+  cyclePlayMode(): PlayMode {
+    const cur = this.playMode();
+    const next: PlayMode = cur === 'order' ? 'loop'
+      : cur === 'loop' ? 'one' : cur === 'one' ? 'shuffle' : 'order';
+    this.setPlayMode(next);
+    return next;
   }
 
   cycleRepeat(): RepeatMode {

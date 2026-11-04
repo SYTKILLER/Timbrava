@@ -13,23 +13,7 @@
       "pageSourceFile": "src/main/ets/pages/detail/SongList.ets",
       "buildFunction": "SongListBuilder",
       "data": {
-        "description": "歌曲列表(专辑/艺人/流派/文件夹/收藏)"
-      }
-    },
-    {
-      "name": "FolderTree",
-      "pageSourceFile": "src/main/ets/pages/detail/FolderTree.ets",
-      "buildFunction": "FolderTreeBuilder",
-      "data": {
-        "description": "文件夹目录树"
-      }
-    },
-    {
-      "name": "ScanSettings",
-      "pageSourceFile": "src/main/ets/pages/settings/ScanSettings.ets",
-      "buildFunction": "ScanSettingsBuilder",
-      "data": {
-        "description": "扫描文件夹管理"
+        "description": "歌曲列表(专辑/艺人/流派/收藏)"
       }
     },
     {

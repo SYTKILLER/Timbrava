@@ -13,6 +13,54 @@
       "value": "Timbrava"
     },
     {
+      "name": "add_songs",
+      "value": "Add Songs"
+    },
+    {
+      "name": "import_added",
+      "value": "Imported %s songs"
+    },
+    {
+      "name": "import_none",
+      "value": "Selected songs are already in the library"
+    },
+    {
+      "name": "mine_library",
+      "value": "Library"
+    },
+    {
+      "name": "more_menu",
+      "value": "More"
+    },
+    {
+      "name": "play_mode_order",
+      "value": "Play in order"
+    },
+    {
+      "name": "play_mode_loop",
+      "value": "Loop all"
+    },
+    {
+      "name": "play_mode_one",
+      "value": "Loop one"
+    },
+    {
+      "name": "play_mode_shuffle",
+      "value": "Shuffle"
+    },
+    {
+      "name": "view_queue",
+      "value": "View queue"
+    },
+    {
+      "name": "sleep_timer",
+      "value": "Sleep timer"
+    },
+    {
+      "name": "sleep_remain",
+      "value": "%s min left"
+    },
+    {
       "name": "str_favorites",
       "value": "Favorites"
     },
@@ -142,7 +190,7 @@
     },
     {
       "name": "lib_empty_hint",
-      "value": "Library is empty. Go to \"Settings → Scan Folders\" to add music directories and scan"
+      "value": "Library is empty. Tap \"Add Songs\" to import local music"
     },
     {
       "name": "albums_empty",

@@ -196,7 +196,8 @@ export struct SongListDest {
           List({ space: 0 }) {
             ForEach(this.songs, (s: Song) => {
               ListItem() {
-                SongRow({ song: s, showAlbum: this.param.mode !== 'album' })
+                SongRow({ song: s, showAlbum: this.param.mode !== 'album',
+                  listIds: this.songs.map((x: Song): number => x.id), listTitle: Ls(this.title) })
               }
             }, (s: Song): string => `${s.id}_${this.param.mode}`)
           }

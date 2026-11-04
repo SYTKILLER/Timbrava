@@ -5,7 +5,7 @@ import { PlayerController } from '../service/PlayerController';
 import { QueueService } from '../service/QueueService';
 import { EqScopeParam } from '../pages/settings/Equalizer';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { L } from '../common/Lang';
+import { L, Ls } from '../common/Lang';
 
 const TAG = '[Timbrava][SongRow]';
 const DOMAIN = 0x0001;
@@ -13,6 +13,8 @@ const DOMAIN = 0x0001;
 @Component
 export struct SongRow {
   @Prop song: Song = new Song();
+  @Prop listIds: number[] = [];      // 所在列表的曲目顺序(空=未知,回退单曲插播)
+  @Prop listTitle: string = '';      // 所在列表标题(队列名)
   @Prop showAlbum: boolean = false;
   @StorageProp('libVer') libVer: number = 0;
   @StorageProp('playerVer') playerVer: number = 0;
@@ -99,17 +101,34 @@ export struct SongRow {
     .bindContextMenu(this.rowMenu(), ResponseType.LongPress)
   }
 
+  // 点歌起播(主流共识):所在列表整体作为队列,从本曲起播;列表未知时回退单曲插播
   private playNow(): void {
     const q = QueueService.get();
     const existing = q.list.indexOf(this.song.id);
-    if (existing >= 0) {
+    if (existing >= 0 && this.listIds.length === 0) {
       q.jumpTo(existing);
       PlayerController.get().playQueueIndex(existing);
-    } else {
-      q.playNext(this.song.id);
-      q.jumpTo(q.locateCurrent() + 1);
-      PlayerController.get().playQueueIndex(q.locateCurrent());
+      return;
     }
+    if (this.listIds.indexOf(this.song.id) >= 0) {
+      const lib = LibraryStore.get();
+      const songs: Song[] = [];
+      for (const id of this.listIds) {
+        const s = lib.song(id);
+        if (s !== null) {
+          songs.push(s);
+        }
+      }
+      const idx = songs.findIndex((s: Song): boolean => s.id === this.song.id);
+      if (idx >= 0) {
+        q.setQueueNow(songs, idx, this.listTitle.length > 0 ? this.listTitle : Ls($r('app.string.tab_library')));
+        PlayerController.get().playQueueIndex(q.locateCurrent());
+        return;
+      }
+    }
+    q.playNext(this.song.id);
+    q.jumpTo(q.locateCurrent() + 1);
+    PlayerController.get().playQueueIndex(q.locateCurrent());
   }
 
   @Builder

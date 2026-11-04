@@ -13,6 +13,54 @@
       "value": "听韵"
     },
     {
+      "name": "add_songs",
+      "value": "添加歌曲"
+    },
+    {
+      "name": "import_added",
+      "value": "已导入 %s 首歌曲"
+    },
+    {
+      "name": "import_none",
+      "value": "所选歌曲均已在曲库"
+    },
+    {
+      "name": "mine_library",
+      "value": "音乐库"
+    },
+    {
+      "name": "more_menu",
+      "value": "更多"
+    },
+    {
+      "name": "play_mode_order",
+      "value": "顺序播放"
+    },
+    {
+      "name": "play_mode_loop",
+      "value": "列表循环"
+    },
+    {
+      "name": "play_mode_one",
+      "value": "单曲循环"
+    },
+    {
+      "name": "play_mode_shuffle",
+      "value": "随机播放"
+    },
+    {
+      "name": "view_queue",
+      "value": "查看队列"
+    },
+    {
+      "name": "sleep_timer",
+      "value": "睡眠定时器"
+    },
+    {
+      "name": "sleep_remain",
+      "value": "剩余 %s 分钟"
+    },
+    {
       "name": "str_favorites",
       "value": "收藏"
     },
@@ -142,7 +190,7 @@
     },
     {
       "name": "lib_empty_hint",
-      "value": "曲库为空:到「设置 → 扫描文件夹」添加音乐目录并扫描"
+      "value": "曲库为空,点「添加歌曲」导入本地音乐"
     },
     {
       "name": "albums_empty",

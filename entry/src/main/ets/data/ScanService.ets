@@ -53,6 +53,97 @@ export class ScanService {
     AppStorage.setOrCreate('scanVer', (AppStorage.get<number>('scanVer') ?? 0) + 1);
   }
 
+  // ===== 导入歌曲(AudioViewPicker 即选即入库,无需扫描) =====
+
+  // 应用启动时激活库内所有 URI 歌曲的持久化授权(重启后临时授权失效,否则无法访问文件)
+  async activateImportedUriPermissions(): Promise<void> {
+    if (this.context === null || !Db.get().ready()) {
+      return;
+    }
+    try {
+      const rows = await Db.get().querySongs("path LIKE 'uri:%'", [], '', 100000, 0);
+      const uris: string[] = [];
+      const seen = new Set<string>();
+      for (const r of rows) {
+        const u = openTargetOf(r.path);
+        if (u.length > 0 && !seen.has(u)) {
+          seen.add(u);
+          uris.push(u);
+        }
+      }
+      if (uris.length === 0) {
+        return;
+      }
+      const policies: fileShare.PolicyInfo[] = uris.map((u: string): fileShare.PolicyInfo => {
+        const p: fileShare.PolicyInfo = { 'uri': u, 'operationMode': fileShare.OperationMode.READ_MODE };
+        return p;
+      });
+      await fileShare.activatePermission(policies);
+      hilog.info(DOMAIN, TAG, 'imported uri perms activated n=%{public}d', policies.length);
+    } catch (e) {
+      hilog.info(DOMAIN, TAG, 'activateImportedUriPermissions skip %{public}s', (e as Error).message);
+    }
+  }
+
+  // 选中的音频 URI 即时解析入库(自动差分去重;完成后刷新曲库),返回新增数
+  async addPickedAudioUris(uris: string[]): Promise<number> {
+    if (this.context === null) {
+      return 0;
+    }
+    let added = 0;
+    for (const u of uris) {
+      try {
+        const policy: fileShare.PolicyInfo = { 'uri': u, 'operationMode': fileShare.OperationMode.READ_MODE };
+        await fileShare.persistPermission([policy]);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'persist fail %{public}s', (e as Error).message);
+      }
+      const name = this.uriDisplayName(u);
+      if (!isAudioExt(name)) {
+        continue;
+      }
+      let fsize = 0;
+      let mtime = Math.floor(Date.now());
+      try {
+        const st = await fs.stat(u);
+        fsize = st.size;
+        mtime = Math.floor(st.mtime);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'stat uri fail(按 0 处理) %{public}s', (e as Error).message);
+      }
+      const cand = new FileCandidate(name, `uri:${u}`, u);
+      const ok = await this.parseAndStore(cand, mtime, fsize);
+      if (ok) {
+        added++;
+      }
+    }
+    if (added > 0) {
+      await LibraryStore.get().reload();
+    }
+    hilog.info(DOMAIN, TAG, 'picked import added=%{public}d/%{public}d', added, uris.length);
+    return added;
+  }
+
+  // 验证通道:沙箱 music 下音频以 file:// URI 走 addPickedAudioUris(模拟器无 AudioViewPicker UI)
+  async debugImportSandboxUris(): Promise<number> {
+    if (this.context === null) {
+      return 0;
+    }
+    await this.ensureSandboxRoot();
+    await this.seedRawfileCorpus();
+    const dir = `${this.context.filesDir}/music`;
+    let names: string[] = [];
+    try {
+      names = await fs.listFile(dir);
+    } catch (e) {
+      return 0;
+    }
+    const uris: string[] = names
+      .filter((n: string): boolean => isAudioExt(n))
+      .map((n: string): string => `file://${dir}/${n}`);
+    return this.addPickedAudioUris(uris);
+  }
+
   // 重扫前激活 URI 根的持久化授权(应用重启后临时授权失效,须先激活)
   private async activateRootPermissions(roots: RootFolder[]): Promise<void> {
     const uriRoots = roots.filter((r: RootFolder): boolean => r.type === 'uri' || r.type === 'file');
