@@ -1,10 +1,11 @@
 // 应用根:Navigation + 底部 HdsTabs(音乐库/队列/设置)+ 迷你播放条(悬浮)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { HdsTabs, HdsTabsFloatingStyle, hdsMaterial, HdsBarLayoutMode } from '@kit.UIDesignKit';
+import { HdsTabs, HdsTabsFloatingStyle, hdsMaterial, HdsBarLayoutMode, HdsTabsController, HdsBarStyle } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../service/PlayerController';
 import { AppTheme, SafeAreaResult } from '../common/Theme';
+import { BarCollapse } from '../common/BarCollapse';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { LibraryTab } from './library/LibraryTab';
 import { ProTab } from './pro/ProTab';
@@ -33,6 +34,7 @@ struct Index {
   @State activeTab: number = 0;
   @State topSafe: number = 36;
   @State bottomSafe: number = 28;
+  private hdsController: HdsTabsController = new HdsTabsController();
 
   aboutToAppear(): void {
     AppStorage.setOrCreate('navStack', this.navStack);
@@ -41,6 +43,14 @@ struct Index {
       this.topSafe = r.topVp;
       this.bottomSafe = r.bottomVp;
       hilog.info(DOMAIN, TAG, 'safe areas top=%{public}d bottom=%{public}d', Math.round(r.topVp), Math.round(r.bottomVp));
+    });
+    // 滚动折叠迷你条(华为音乐共识交互):页签内容滚动方向 → applyMiniBarStyle 带默认动效折叠/展开
+    BarCollapse.bind((collapsed: boolean): void => {
+      if (!this.hasSong()) {
+        return; // 无播放内容时迷你条为空壳,不做折叠动画
+      }
+      hilog.info(DOMAIN, TAG, 'applyMiniBarStyle %{public}s', collapsed ? 'COLLAPSE' : 'EXPAND');
+      this.hdsController.applyMiniBarStyle(collapsed ? HdsBarStyle.COLLAPSE : HdsBarStyle.EXPAND);
     });
   }
 
@@ -52,7 +62,7 @@ struct Index {
   build() {
     Navigation(this.navStack) {
       Stack({ alignContent: Alignment.Bottom }) {
-        HdsTabs({ barPosition: BarPosition.End, index: this.activeTab }) {
+        HdsTabs({ barPosition: BarPosition.End, index: this.activeTab, controller: this.hdsController }) {
           TabContent() {
             LibraryTab()
           }
@@ -105,7 +115,13 @@ struct Index {
         miniBarBuilder: (): void => {
           this.miniBarBuilder();
         },
-        barLayoutMode: HdsBarLayoutMode.VERTICAL
+        barLayoutMode: HdsBarLayoutMode.VERTICAL,
+        // 初始展开(官方默认折叠);滚动折叠由 BarCollapse 驱动 applyMiniBarStyle
+        miniBarStyle: HdsBarStyle.EXPAND,
+        onBarStyleChange: (style: HdsBarStyle): void => {
+          // 折叠态镜像回写(含 USER_CLICK 点击折叠条原生展开),仅同步不通知,避免 apply 回环
+          BarCollapse.sync(style === HdsBarStyle.COLLAPSE, false);
+        }
       }
     };
     return st;

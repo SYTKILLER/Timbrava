@@ -10,6 +10,7 @@ import { SongRow, SongListParam } from '../../components/SongRow';
 import { BasicDataSource } from '../../common/DataSource';
 import { ScanService } from '../../data/ScanService';
 import { L, Ls } from '../../common/Lang';
+import { BarCollapse } from '../../common/BarCollapse';
 
 const TAG = '[Timbrava][Library]';
 const DOMAIN = 0x0001;
@@ -350,6 +351,12 @@ export struct LibraryTab {
       .cachedCount(8)
       .padding({ bottom: this.bottomSafeVp + 140 })
       .scrollBar(BarState.Auto)
+      .onWillScroll((offset: number): void => {
+        BarCollapse.feed(offset);
+      })
+      .onScrollStop((): void => {
+        BarCollapse.settle();
+      })
     }
   }
 
@@ -391,6 +398,12 @@ export struct LibraryTab {
       .width('100%')
       .height('100%')
       .scrollBar(BarState.Auto)
+      .onWillScroll((offset: number): void => {
+        BarCollapse.feed(offset);
+      })
+      .onScrollStop((): void => {
+        BarCollapse.settle();
+      })
     }
   }
 
@@ -437,6 +450,12 @@ export struct LibraryTab {
       .height('100%')
       .padding({ bottom: this.bottomSafeVp + 140 })
       .scrollBar(BarState.Auto)
+      .onWillScroll((offset: number): void => {
+        BarCollapse.feed(offset);
+      })
+      .onScrollStop((): void => {
+        BarCollapse.settle();
+      })
     }
   }
 
@@ -475,6 +494,12 @@ export struct LibraryTab {
       .height('100%')
       .padding({ bottom: this.bottomSafeVp + 140 })
       .scrollBar(BarState.Auto)
+      .onWillScroll((offset: number): void => {
+        BarCollapse.feed(offset);
+      })
+      .onScrollStop((): void => {
+        BarCollapse.settle();
+      })
     }
   }
 }

@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Added(0.10.0 迷你条滚动折叠交互)
+
+- **滚动折叠迷你条(华为音乐共识交互)**:三个页签的主滚动容器(曲库四分区 List/Grid、专业页 Scroll、我的页 Scroll)经 `onWillScroll` 逐帧馈入 `common/BarCollapse.ets` 方向累积器(向尾部浏览累积 24vp 折叠、回滚 12vp 展开、方向反转/滚动停止清残量),Index 经 `HdsTabsController.applyMiniBarStyle`(6.1.0(23))带默认动效切换 COLLAPSE/EXPAND;`miniBarStyle` 显式初始 EXPAND(官方默认折叠),`onBarStyleChange` 回写折叠态镜像(覆盖 USER_CLICK 点击折叠胶囊原生互切),无播放内容时不做空壳折叠动画。模拟器双向往返实测通过(feed→COLLAPSE→EXPAND 日志+截图)。
+- **踩坑实证(与官方 d.ts 相悖)**:`Scroll.onDidScroll` 在 SDK 26.0.0.105 模拟器上声明可用(since 12)但实测不触发,`onWillScroll` 每帧可达——统一改用 onWillScroll(Scroll 取第 2 参 yOffset,List/Grid 通用回调首参即每帧偏移);方向约定正值=向列表尾部浏览。
+- **<440vp 屏 HdsTabs 官方联动形态**(实测确认):迷你条 EXPAND 时页签栏自动折叠为单页签胶囊,两者合并单行底部居中;COLLAPSE 时页签栏恢复完整三页签,迷你条独占一行(两行 VERTICAL 布局)。即"滚动折叠迷你条"在该屏宽下的实际效果=滚动浏览时页签栏回归完整导航、停止浏览(上滑回看)时进入正在播放焦点形态。
+- 版本号 0.10.0/versionCode 10000。
+
 ### Added(0.9.1 迷你条迁移 HdsTabs 官方迷你栏)
 
 - **迷你播放条迁移至 HdsTabs 官方「迷你栏」能力**(用户推断实证正确):`barFloatingStyle.miniBar`(HdsTabsMiniBar,6.1.0(23) 新增)+ `barLayoutMode: VERTICAL`(6.1.1(24),迷你条独占一行悬浮于页签栏上方);背景材质/底部避让/与页签栏对齐全部由 HdsTabs 管理,移除自绘 Stack 叠加与手工 bottomSafeVp+56 抬升;模拟器验证:迷你条播控/切曲/点条开全屏均正常。小艺咨询对照:其"推断不成立"结论基于旧版文档,以 SDK d.ts 与《设置页签栏的悬浮样式》官方指南原文为准。

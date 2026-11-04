@@ -4,6 +4,7 @@ import { PlayerController } from '../../service/PlayerController';
 import { Song } from '../../data/Model';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { L } from '../../common/Lang';
+import { BarCollapse } from '../../common/BarCollapse';
 import { CardSection, PrefToggleRow, RgModeRow, RgScanSection } from '../settings/SettingsTab';
 
 @Component
@@ -180,6 +181,13 @@ export struct ProTab {
       .layoutWeight(1)
       .scrollBar(BarState.Auto)
       .align(Alignment.Top)
+      // Scroll.onDidScroll 实测不触发(SDK 26.0.0.105 模拟器),统一用 onWillScroll
+      .onWillScroll((_x: number, y: number): void => {
+        BarCollapse.feed(y);
+      })
+      .onScrollStop((): void => {
+        BarCollapse.settle();
+      })
     }
     .width('100%')
     .height('100%')

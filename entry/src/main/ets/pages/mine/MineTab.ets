@@ -11,6 +11,7 @@ import { PlaylistsTab } from '../playlist/PlaylistsTab';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { formatDuration } from '../../data/Model';
 import { L } from '../../common/Lang';
+import { BarCollapse } from '../../common/BarCollapse';
 
 const TAG = '[Timbrava][MineTab]';
 const DOMAIN = 0x0001;
@@ -190,6 +191,13 @@ export struct MineTab {
       .layoutWeight(1)
       .scrollBar(BarState.Auto)
       .align(Alignment.Top)
+      // 滚动折叠迷你条:实测 SDK 26.0.0.105 模拟器 Scroll.onDidScroll 不触发,onWillScroll 每帧可达
+      .onWillScroll((_x: number, y: number): void => {
+        BarCollapse.feed(y);
+      })
+      .onScrollStop((): void => {
+        BarCollapse.settle();
+      })
     }
     .width('100%')
     .height('100%')
