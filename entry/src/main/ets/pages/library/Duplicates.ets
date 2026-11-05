@@ -35,21 +35,21 @@ export struct DuplicatesDest {
     const songs = LibraryStore.get().songs;
     const groups: DupGroup[] = [];
     const used: Set<number> = new Set<number>();
-    // 第一优先:内容 hash 精确分组(键 = (hash, cueStartMs),CUE 分轨按轨对轨比较,防整组混轨)
-    const byHash: Map<string, Song[]> = new Map();
+    // 第一优先:fp 快速指纹精确分组(键 = (fp, cueStartMs),CUE 分轨按轨对轨比较,防整组混轨;fp 秒级收敛全库覆盖)
+    const byFp: Map<string, Song[]> = new Map();
     for (const s of songs) {
-      if (s.hash.length === 0) {
+      if (s.fp.length === 0) {
         continue;
       }
-      const k = `${s.hash}\u0001${s.cueStartMs}`;
-      const arr = byHash.get(k);
+      const k = `${s.fp}\u0001${s.cueStartMs}`;
+      const arr = byFp.get(k);
       if (arr === undefined) {
-        byHash.set(k, [s]);
+        byFp.set(k, [s]);
       } else {
         arr.push(s);
       }
     }
-    byHash.forEach((arr: Song[]): void => {
+    byFp.forEach((arr: Song[]): void => {
       if (arr.length <= 1) {
         return;
       }
@@ -62,7 +62,7 @@ export struct DuplicatesDest {
         used.add(s.id);
       }
     });
-    // 兜底:启发式分组(hash 未回填的存量行)
+    // 兜底:启发式分组(fp 未回填的存量行)
     for (let i = 0; i < songs.length; i++) {
       if (used.has(songs[i].id)) {
         continue;

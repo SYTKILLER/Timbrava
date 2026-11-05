@@ -11,7 +11,9 @@ const SQL_CREATE: string[] = [
   `CREATE TABLE IF NOT EXISTS songs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     path TEXT NOT NULL,
+    fp TEXT NOT NULL DEFAULT '',
     hash TEXT NOT NULL DEFAULT '',
+    pcm_md5 TEXT NOT NULL DEFAULT '',
     file_size INTEGER DEFAULT 0, mtime INTEGER DEFAULT 0,
     title TEXT NOT NULL DEFAULT '', artist TEXT DEFAULT '', album TEXT DEFAULT '', album_artist TEXT DEFAULT '',
     genre TEXT DEFAULT '', year INTEGER DEFAULT 0, track_no INTEGER DEFAULT 0, disc_no INTEGER DEFAULT 0,
@@ -118,6 +120,7 @@ export class Db {
         await this.store.executeSql(sql);
       }
       await this.migrateSongsHash();
+      await this.migrateSongsFp();
       hilog.info(DOMAIN, TAG, 'init ok, tables=%{public}d', SQL_CREATE.length);
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'init fail %{public}s', (e as Error).message);
@@ -205,6 +208,39 @@ export class Db {
     }
   }
 
+  // 迁移(0.13.0):songs 增加 fp 快速指纹列与 pcm_md5 音频身份列 + 索引(幂等,app_settings 标记)。
+  // 与 migrateSongsHash 同规:必须在 SQL_CREATE 之后执行,索引只在本方法内建(升级路径列未挂时
+  // SQL_CREATE 建索引会 no such column 并断掉整个 init)。
+  private async migrateSongsFp(): Promise<void> {
+    const st = this.store;
+    if (st === null) {
+      return;
+    }
+    const mark = await this.getSetting('dbSongsFp1', '0');
+    if (mark === '1') {
+      return;
+    }
+    try {
+      const rs = await st.querySql(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='songs'");
+      let ddl = '';
+      if (rs.goToFirstRow()) {
+        ddl = rs.getString(0);
+      }
+      rs.close();
+      if (ddl.length > 0 && ddl.indexOf('pcm_md5') < 0) {
+        await st.executeSql("ALTER TABLE songs ADD COLUMN fp TEXT NOT NULL DEFAULT ''");
+        await st.executeSql("ALTER TABLE songs ADD COLUMN pcm_md5 TEXT NOT NULL DEFAULT ''");
+        hilog.info(DOMAIN, TAG, 'songs fp/pcm_md5 columns added');
+      }
+      await st.executeSql('CREATE INDEX IF NOT EXISTS idx_songs_fp ON songs(fp)');
+      await st.executeSql('CREATE INDEX IF NOT EXISTS idx_songs_pcm_md5 ON songs(pcm_md5)');
+      await this.setSetting('dbSongsFp1', '1');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'migrateSongsFp fail %{public}s', (e as Error).message);
+    }
+  }
+
   storeOrNull(): relationalStore.RdbStore | null {
     return this.store;
   }
@@ -246,7 +282,7 @@ export class Db {
 
   // ============ songs ============
 
-  private static readonly SONG_COLS = 'id, path, hash, file_size, mtime, title, artist, album, album_artist, genre, year, ' +
+  private static readonly SONG_COLS = 'id, path, fp, hash, pcm_md5, file_size, mtime, title, artist, album, album_artist, genre, year, ' +
     'track_no, disc_no, duration_ms, sample_rate, bit_depth, channels, bitrate_kbps, codec, ' +
     'cue_start_ms, cue_end_ms, art_path, rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak';
 
@@ -273,7 +309,9 @@ export class Db {
     const st = this.storeOrThrow();
     const bucket: relationalStore.ValuesBucket = {
       'path': s.path,
+      'fp': s.fp,
       'hash': s.hash,
+      'pcm_md5': s.pcmMd5,
       'file_size': s.fileSize,
       'mtime': s.mtime,
       'title': s.title,
@@ -333,10 +371,58 @@ export class Db {
     return out;
   }
 
-  // hash 回填(0.12.0):尚未求值内容身份的物理文件路径(去重)
-  async getUnhashedPaths(limit: number): Promise<string[]> {
+  // 身份收敛查询(0.13.0,convergeIdentities 用):均按物理文件去重
+  async getPathsNeedingFp(limit: number): Promise<string[]> {
+    const st = this.storeOrThrow();
+    const rs = await st.querySql("SELECT DISTINCT path FROM songs WHERE fp = '' LIMIT ?", [limit]);
+    const out: string[] = [];
+    while (rs.goToNextRow()) {
+      out.push(rs.getString(0));
+    }
+    rs.close();
+    return out;
+  }
+
+  async getPathsNeedingPcmMd5(limit: number): Promise<string[]> {
+    const st = this.storeOrThrow();
+    const rs = await st.querySql("SELECT DISTINCT path FROM songs WHERE pcm_md5 = '' AND codec = 'flac' LIMIT ?", [limit]);
+    const out: string[] = [];
+    while (rs.goToNextRow()) {
+      out.push(rs.getString(0));
+    }
+    rs.close();
+    return out;
+  }
+
+  async getPathsNeedingHash(limit: number): Promise<string[]> {
     const st = this.storeOrThrow();
     const rs = await st.querySql("SELECT DISTINCT path FROM songs WHERE hash = '' LIMIT ?", [limit]);
+    const out: string[] = [];
+    while (rs.goToNextRow()) {
+      out.push(rs.getString(0));
+    }
+    rs.close();
+    return out;
+  }
+
+  // fp 碰撞审计(Stage C):同 fp 的全部物理文件路径
+  async getPathsByFp(fp: string): Promise<string[]> {
+    const st = this.storeOrThrow();
+    const rs = await st.querySql('SELECT DISTINCT path FROM songs WHERE fp = ?', [fp]);
+    const out: string[] = [];
+    while (rs.goToNextRow()) {
+      out.push(rs.getString(0));
+    }
+    rs.close();
+    return out;
+  }
+
+  // fp 碰撞候选(Stage C 检测):采样指纹相同但权威 hash 不同的 fp
+  async getCollidingFps(limit: number): Promise<string[]> {
+    const st = this.storeOrThrow();
+    const rs = await st.querySql(
+      "SELECT fp FROM songs WHERE fp != '' AND hash != '' GROUP BY fp " +
+      'HAVING COUNT(DISTINCT hash) > 1 LIMIT ?', [limit]);
     const out: string[] = [];
     while (rs.goToNextRow()) {
       out.push(rs.getString(0));
@@ -349,6 +435,16 @@ export class Db {
   async updateSongsHashByPath(path: string, hash: string): Promise<void> {
     const st = this.storeOrThrow();
     await st.executeSql('UPDATE songs SET hash = ? WHERE path = ?', [hash, path]);
+  }
+
+  async updateSongsFpByPath(path: string, fp: string): Promise<void> {
+    const st = this.storeOrThrow();
+    await st.executeSql('UPDATE songs SET fp = ? WHERE path = ?', [fp, path]);
+  }
+
+  async updateSongsPcmMd5ByPath(path: string, md5: string): Promise<void> {
+    const st = this.storeOrThrow();
+    await st.executeSql('UPDATE songs SET pcm_md5 = ? WHERE path = ?', [md5, path]);
   }
 
   // 从库完全移除单曲(songs + favorites;播放记录/队列行保留为孤儿,查询侧已判空)
@@ -497,7 +593,15 @@ export class Db {
     }
     for (const v of victims) {
       let survivorId = 0;
-      if (v.hash.length > 0) {
+      // 幸存者:操作身份 (fp, cueStart) 优先;fp 未回填的 0.12.0 行回退权威 hash
+      if (v.fp.length > 0) {
+        const cands = await this.querySongs('fp = ? AND cue_start_ms = ? AND id != ?',
+          [v.fp, v.cueStartMs, v.id], 'date_added DESC', 1, 0);
+        if (cands.length > 0 && !victimIds.has(cands[0].id)) {
+          survivorId = cands[0].id;
+        }
+      }
+      if (survivorId === 0 && v.hash.length > 0) {
         const cands = await this.querySongs('hash = ? AND cue_start_ms = ? AND id != ?',
           [v.hash, v.cueStartMs, v.id], 'date_added DESC', 1, 0);
         if (cands.length > 0 && !victimIds.has(cands[0].id)) {

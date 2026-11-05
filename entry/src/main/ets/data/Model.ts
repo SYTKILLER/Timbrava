@@ -9,7 +9,9 @@ export enum RepeatMode {
 export class Song {
   id: number = 0;
   path: string = '';
-  hash: string = ''; // 内容身份:物理文件 SHA-256(64位hex);''=未求值。曲目身份=(hash, cueStartMs)
+  fp: string = ''; // 操作身份:xxHash3-128 快速指纹(32位hex,头/中/尾三窗+体积;''=未求值)。曲目身份=(fp, cueStartMs)
+  hash: string = ''; // 权威确认:物理文件 SHA-256(64位hex;''=后台收敛中)。碰撞审计与完整性储备,不参与前台决策
+  pcmMd5: string = ''; // 音频内容身份:FLAC STREAMINFO 自带 PCM MD5(tag 免疫,仅认领兜底用;''=非 FLAC 或未提取)
   fileSize: number = 0;
   mtime: number = 0;
   title: string = '';
@@ -69,7 +71,9 @@ export class Song {
     const s = new Song();
     s.id = Number(o['id'] ?? 0);
     s.path = String(o['path'] ?? '');
+    s.fp = String(o['fp'] ?? '');
     s.hash = String(o['hash'] ?? '');
+    s.pcmMd5 = String(o['pcm_md5'] ?? '');
     s.fileSize = Number(o['file_size'] ?? 0);
     s.mtime = Number(o['mtime'] ?? 0);
     s.title = String(o['title'] ?? '');

@@ -136,8 +136,8 @@ export class PlayerController {
     await this.initAvSession(ctx);
     this.initAudioFocus();
     this.initDeviceListener(ctx);
-    // 存量库内容 hash 回填(0.12.0,升级后一次性;fire-and-forget,不阻塞首帧)
-    ScanService.get().backfillHashes();
+    // 身份收敛(fp/pcm_md5/SHA-256;0.13.0,升级后续算;fire-and-forget,不阻塞首帧)
+    ScanService.get().convergeIdentities();
     this.bumpPlayer();
   }
 

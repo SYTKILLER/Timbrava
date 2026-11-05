@@ -330,7 +330,7 @@
     },
     {
       "name": "dup_note",
-      "value": "\"Identical\" groups by exact file hash; \"Heuristic\" by same title+artist within ±2s or same size+duration; removing only clears library records, never deletes files"
+      "value": "\"Identical\" groups by exact file fingerprint; \"Heuristic\" by same title+artist within ±2s or same size+duration; removing only clears library records, never deletes files"
     },
     {
       "name": "dup_tag_exact",

@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+### Added(0.13.0 两级身份:fp 快速识别 + SHA-256 静默收敛)
+
+- **fp 操作身份(xxHash3-128 三窗采样)**:导入查重从全文件 SHA-256(约 0.7s/GB)降为毫秒级——native 新增 `fingerprintFd` 原语(vendored xxHash v0.8.3,BSD-2,与 dr_flac.h 同模式):头/中/尾 3×256KB 采样 + 体积混入,≤768KB 文件退化为全文件指纹;导入/认领/合并/查重页/备份重挂的全部决策键从 hash 切换为 (fp, cueStartMs),前台零全量读。
+- **SHA-256 降级为权威确认层**:不再在导入时同步求值——`convergeIdentities` 三段后台收敛(A:fp 秒级回填全库 → B:hash='' 逐文件 SHA-256 → C:fp 碰撞审计);逐文件提交、按状态查询续跑,APP 任意时刻终止重启自动续算(0.12.0 backfill 机制扩展);识别在 hash 缺失期间完全正常(fp 主身份)。
+- **fp 碰撞审计兜底**:采样指纹相同但权威 hash 不同的组(概率 ~2⁻¹²⁸)自动升级整文件 fp 消歧并留日志。
+- **pcm_md5 音频身份**:FLAC STREAMINFO 自带 PCM MD5(MetaParse.parseFlac 现有 34 字节缓冲内直接提取,零额外 I/O)——tag 免疫:FLAC 改标签后移动的文件按 (pcm_md5, cueStartMs) 认领(仅认领不查重,同音频不同文件是合法多版本);升级后 Stage A 对存量 FLAC 头解析回填。
+- **CUE fp 复用修复(0.12.0 隐患)**:分轨行携带音频 fp;parseCueFile 从同 path 任一行复用 fp(此前只查整轨行,分轨覆盖文件每次重扫全量重算 SHA-256)。
+- 备份导出附 `fpByPath`(全量)+ `hashByPath`(兼容保留),恢复重挂顺序 path → fp → hash;查重页精确分组键 hash→fp;`dup_note` 文案同步。
+- 版本号 0.13.0/versionCode 13000。
+
 ### Added(0.12.0 曲库内容身份:哈希唯一识别)
 
 - **曲目身份 = (文件 SHA-256, cueStartMs)**:曲库由 path 唯一键升级为内容哈希唯一身份——native 新增 `hashFd` 摘要原语(Crypto Architecture Kit `OH_CryptoDigest` SHA256,API 12,链 libohcrypto.so;napi 异步工作 Promise 返回,pread 8MB 分块防大 DSD 撑爆 page cache);songs 表加 `hash` 列(app_settings 标记幂等迁移,ALTER 挂列免重建)+ idx_songs_hash;path 降级为"当前位置"属性,歌单/收藏/历史/歌词缓存等全部 song_id 外键零改动。

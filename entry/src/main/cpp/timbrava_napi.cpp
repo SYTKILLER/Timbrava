@@ -13,6 +13,8 @@
 #include <CryptoArchitectureKit/crypto_common.h>
 #include <CryptoArchitectureKit/crypto_digest.h>
 
+#include "third_party/xxhash.h"
+
 #include "include/engine.h"
 #include "include/flac_tag_writer.h"
 
@@ -537,6 +539,153 @@ static napi_value JHashFd(napi_env env, napi_callback_info info)
     return promise;
 }
 
+// ---------------- 快速指纹 xxHash3-128(napi 异步工作,Promise 返回) ----------------
+// 两级身份的操作层(0.13.0):fpFd 读 头/中/尾 三窗采样(≤768KB 退化为全文件) + 体积混入;
+// full=true 整文件求值(fp 碰撞审计消歧用,与采样指纹不可比,仅同 mode 内比较)。
+// fd 契约同 hashFd:调用方保持打开至 Promise 完成。
+
+struct FpCarrier {
+    int fd = -1;
+    bool full = false;
+    bool ok = false;
+    std::string errMsg;
+    std::string hex; // 32 位小写 hex;失败为空串(调用方以空串=无身份处理)
+    napi_deferred deferred = nullptr;
+    napi_async_work work = nullptr;
+};
+
+static void ExecuteFp(napi_env env, void *data)
+{
+    (void)env;
+    FpCarrier *c = static_cast<FpCarrier *>(data);
+    if (c->fd < 0) {
+        c->errMsg = "bad fd";
+        return;
+    }
+    struct stat st {};
+    if (::fstat(c->fd, &st) != 0) {
+        c->errMsg = "fstat fail";
+        return;
+    }
+    const off_t fsize = st.st_size;
+    static constexpr size_t kWin = 256u * 1024u;
+    static constexpr size_t kSampleTotal = 3u * kWin;
+    XXH3_state_t *state = XXH3_createState();
+    if (state == nullptr) {
+        c->errMsg = "xxh3 state fail";
+        return;
+    }
+    struct Range {
+        off_t off;
+        size_t len;
+    };
+    do {
+        if (XXH3_128bits_reset(state) != XXH_OK) {
+            c->errMsg = "xxh3 reset fail";
+            break;
+        }
+        const uint64_t sizeLe = static_cast<uint64_t>(fsize); // 体积混入(固定 8 字节,等 fp 隐含同体积)
+        if (XXH3_128bits_update(state, &sizeLe, sizeof(sizeLe)) != XXH_OK) {
+            c->errMsg = "xxh3 update fail";
+            break;
+        }
+        std::vector<Range> ranges;
+        if (c->full || fsize <= static_cast<off_t>(kSampleTotal)) {
+            ranges.push_back({0, static_cast<size_t>(fsize)});
+        } else {
+            const off_t midOff = fsize / 2 - static_cast<off_t>(kWin / 2);
+            ranges.push_back({0, kWin});
+            ranges.push_back({midOff, kWin});
+            ranges.push_back({fsize - static_cast<off_t>(kWin), kWin});
+        }
+        std::vector<uint8_t> buf(kWin);
+        bool ioError = false;
+        for (const Range &r : ranges) {
+            off_t done = 0;
+            while (done < static_cast<off_t>(r.len)) {
+                size_t want = r.len - static_cast<size_t>(done);
+                if (want > kWin) {
+                    want = kWin;
+                }
+                ssize_t n = ::pread(c->fd, buf.data(), want, r.off + done);
+                if (n < 0) {
+                    if (errno == EINTR) {
+                        continue;
+                    }
+                    c->errMsg = "pread fail";
+                    ioError = true;
+                    break;
+                }
+                if (n == 0) {
+                    c->errMsg = "unexpected eof";
+                    ioError = true;
+                    break;
+                }
+                if (XXH3_128bits_update(state, buf.data(), static_cast<size_t>(n)) != XXH_OK) {
+                    c->errMsg = "xxh3 update fail";
+                    ioError = true;
+                    break;
+                }
+                done += n;
+            }
+            if (ioError) {
+                break;
+            }
+        }
+        if (ioError) {
+            break;
+        }
+        const XXH128_hash_t h = XXH3_128bits_digest(state);
+        static const char *kHex = "0123456789abcdef";
+        const uint64_t parts[2] = {h.high64, h.low64};
+        c->hex.reserve(32);
+        for (int p = 0; p < 2; p++) {
+            for (int b = 7; b >= 0; b--) {
+                const uint8_t byte = static_cast<uint8_t>((parts[p] >> (b * 8)) & 0xFF);
+                c->hex.push_back(kHex[(byte >> 4) & 0xF]);
+                c->hex.push_back(kHex[byte & 0xF]);
+            }
+        }
+        c->ok = true;
+    } while (false);
+    XXH3_freeState(state);
+}
+
+static void CompleteFp(napi_env env, napi_status status, void *data)
+{
+    (void)status;
+    FpCarrier *c = static_cast<FpCarrier *>(data);
+    napi_value result = nullptr;
+    napi_create_string_utf8(env, c->hex.c_str(), NAPI_AUTO_LENGTH, &result);
+    if (!c->ok) {
+        OH_LOG_Print(LOG_APP, LOG_WARN, 0, LOG_TAG, "fingerprintFd fail: %{public}s", c->errMsg.c_str());
+    }
+    napi_resolve_deferred(env, c->deferred, result);
+    napi_delete_async_work(env, c->work);
+    delete c;
+}
+
+static napi_value JFingerprintFd(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    FpCarrier *c = new FpCarrier();
+    if (argc >= 1) {
+        napi_get_value_int32(env, args[0], &c->fd);
+    }
+    if (argc >= 2) {
+        napi_get_value_bool(env, args[1], &c->full);
+    }
+    napi_value promise;
+    napi_create_promise(env, &c->deferred, &promise);
+    napi_value name;
+    napi_create_string_utf8(env, "timbravaFp", NAPI_AUTO_LENGTH, &name);
+    napi_create_async_work(env, nullptr, name, ExecuteFp, CompleteFp, c, &c->work);
+    napi_queue_async_work(env, c->work);
+    return promise;
+}
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
 {
@@ -563,6 +712,7 @@ static napi_value Init(napi_env env, napi_value exports)
         {"analyzeFd", nullptr, JAnalyzeFd, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"writeFlacTags", nullptr, JWriteFlacTags, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"hashFd", nullptr, JHashFd, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"fingerprintFd", nullptr, JFingerprintFd, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

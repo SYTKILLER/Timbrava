@@ -25,6 +25,7 @@ export class SongMeta {
   rgAlbumPeak: number = 0;
   coverData: Uint8Array | null = null;
   coverMime: string = '';
+  pcmMd5: string = ''; // FLAC STREAMINFO 自带 PCM MD5(仅 flac 有,音频内容身份/tag 免疫)
   ok: boolean = false;
 }
 
@@ -52,6 +53,15 @@ function clampRead(readAt: ReadAt, size: number, off: number, len: number): Uint
   }
   const want = Math.min(len, size - off);
   return readAt(off, want);
+}
+
+function hexOf(u8: Uint8Array): string {
+  const kHex = '0123456789abcdef';
+  let out = '';
+  for (let i = 0; i < u8.length; i++) {
+    out += kHex[(u8[i] >> 4) & 0xF] + kHex[u8[i] & 0xF];
+  }
+  return out;
 }
 
 function setBitrate(meta: SongMeta, fileSize: number): void {
@@ -281,6 +291,10 @@ function parseFlac(head: ReadAt, size: number, meta: SongMeta, fileSize: number)
         const hi = (si[13] & 0x0F);
         const total = (hi * 4294967296) + u32be(si, 14);
         meta.durationMs = meta.sampleRate > 0 ? Math.round(total * 1000 / meta.sampleRate) : 0;
+        // 音频内容身份(0.13.0):STREAMINFO 自带未压缩 PCM 的 MD5(块体 18-33 字节,已在缓冲区)——tag 改动免疫
+        if (si.length >= 34) {
+          meta.pcmMd5 = hexOf(si.subarray(18, 34));
+        }
       }
     } else if (type === 4) {
       const vc = clampRead(head, size, bodyOff, Math.min(len, 2 * 1024 * 1024));

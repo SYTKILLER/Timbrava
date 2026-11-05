@@ -142,7 +142,14 @@ export class BackupService {
     rb.close();
     backup['blacklist'] = blacklist;
 
-    // 内容身份映射(0.12.0):恢复时 path 失配(跨设备/换目录)按 hash 重挂
+    // 内容身份映射(0.12.0 hash / 0.13.0 fp):恢复时 path 失配(跨设备/换目录)按身份重挂,fp 优先
+    const fpByPath: Record<string, string> = {};
+    const rfp = await st.querySql("SELECT path, fp FROM songs WHERE fp != ''");
+    while (rfp.goToNextRow()) {
+      fpByPath[rfp.getString(0)] = rfp.getString(1);
+    }
+    rfp.close();
+    backup['fpByPath'] = fpByPath;
     const hashByPath: Record<string, string> = {};
     const rh = await st.querySql("SELECT path, hash FROM songs WHERE hash != ''");
     while (rh.goToNextRow()) {
@@ -181,14 +188,20 @@ export class BackupService {
     }
   }
 
-  // 恢复重挂(0.12.0):path 命中优先;失配时经导出的 hashByPath 按内容身份重挂(跨设备/换目录)
-  private static async resolveSong(p: string, hashByPath: Record<string, string>,
-    wholeTrackOnly: boolean): Promise<Song[]> {
+  // 恢复重挂(0.13.0):path 命中优先;失配时按 fpByPath(操作身份)→ hashByPath(权威,旧备份兼容)重挂
+  private static async resolveSong(p: string, fpByPath: Record<string, string>,
+    hashByPath: Record<string, string>, wholeTrackOnly: boolean): Promise<Song[]> {
     const rows = wholeTrackOnly
       ? await Db.get().querySongs('path = ? AND cue_start_ms = 0', [p], '', 1, 0)
       : await Db.get().querySongs('path = ?', [p], '', 1, 0);
     if (rows.length > 0) {
       return rows;
+    }
+    const f = fpByPath[p];
+    if (f !== undefined && f.length > 0) {
+      return wholeTrackOnly
+        ? await Db.get().querySongs('fp = ? AND cue_start_ms = 0', [f], '', 1, 0)
+        : await Db.get().querySongs('fp = ?', [f], '', 1, 0);
     }
     const h = hashByPath[p];
     if (h !== undefined && h.length > 0) {
@@ -210,6 +223,7 @@ export class BackupService {
       throw new Error('db not ready');
     }
     const hashByPath: Record<string, string> = obj['hashByPath'] as Record<string, string> ?? {};
+    const fpByPath: Record<string, string> = obj['fpByPath'] as Record<string, string> ?? {};
     // settings
     const settings = obj['settings'] as Array<Array<string>>;
     if (settings !== undefined && settings !== null) {
@@ -231,7 +245,7 @@ export class BackupService {
         const plId = await PlaylistRepo.get().createPlaylist(name);
         const ids: number[] = [];
         for (const p of paths) {
-          const rows = await BackupService.resolveSong(p, hashByPath, true);
+          const rows = await BackupService.resolveSong(p, fpByPath, hashByPath, true);
           if (rows.length > 0) {
             ids.push(rows[0].id);
           }
@@ -245,7 +259,7 @@ export class BackupService {
     const favs = obj['favorites'] as Array<string>;
     if (favs !== undefined && favs !== null) {
       for (const p of favs) {
-        const rows = await BackupService.resolveSong(p, hashByPath, false);
+        const rows = await BackupService.resolveSong(p, fpByPath, hashByPath, false);
         if (rows.length > 0) {
           await Db.get().setFavorite(rows[0].id, true);
         }
@@ -263,7 +277,7 @@ export class BackupService {
         const ids: number[] = [];
         if (paths !== undefined) {
           for (const p of paths) {
-            const rows = await BackupService.resolveSong(p, hashByPath, false);
+            const rows = await BackupService.resolveSong(p, fpByPath, hashByPath, false);
             if (rows.length > 0) {
               ids.push(rows[0].id);
             }

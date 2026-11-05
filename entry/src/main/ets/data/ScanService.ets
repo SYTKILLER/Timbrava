@@ -25,9 +25,10 @@ class ManifestEntry {
 }
 const DOMAIN = 0x0001;
 
-// libtimbrava_core 内容摘要原语(native 异步工作;fd 保持打开至 Promise 完成,失败 resolve '')
+// libtimbrava_core 身份原语(native 异步工作;fd 保持打开至 Promise 完成,失败 resolve '')
 interface NativeHashModule {
   hashFd(fd: number): Promise<string>;
+  fingerprintFd(fd: number, full: boolean): Promise<string>;
 }
 
 export class ScanService {
@@ -41,7 +42,7 @@ export class ScanService {
 
   private progress: ScanProgress = new ScanProgress();
   private scanning: boolean = false;
-  private backfilling: boolean = false;
+  private converging: boolean = false;
   private context: common.Context | null = null;
 
   init(context: common.Context): void {
@@ -545,9 +546,20 @@ export class ScanService {
     return out;
   }
 
-  // ===== 内容身份(0.12.0):SHA-256 求值 + 身份判定辅助 =====
+  // ===== 两级身份(0.13.0):fp 快速指纹(前台决策) + SHA-256 权威收敛(后台) =====
 
-  // 内容摘要(native 异步工作;失败返回 ''=无身份,该行退回 path 语义)
+  // 快速指纹(native 异步;full=true 整文件模式仅 fp 碰撞消歧用;失败返回 ''=无身份,该行退回 path 语义)
+  private async fingerprintFileFd(fd: number, full: boolean): Promise<string> {
+    try {
+      const v = await (timbravaCore as NativeHashModule).fingerprintFd(fd, full);
+      return typeof v === 'string' ? v : '';
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'fingerprintFd fail %{public}s', (e as Error).message);
+      return '';
+    }
+  }
+
+  // 内容摘要 SHA-256(native 异步工作;仅后台收敛 Stage B 使用,失败返回 ''=待重试)
   private async hashFileFd(fd: number): Promise<string> {
     try {
       const h = await (timbravaCore as NativeHashModule).hashFd(fd);
@@ -567,52 +579,156 @@ export class ScanService {
     }
   }
 
-  // 存量库 hash 回填(升级后一次性):静默串行补齐,扫描优先让路,失联文件留空待自愈
-  async backfillHashes(): Promise<void> {
-    if (this.backfilling || this.scanning || this.context === null || !Db.get().ready()) {
+  // 等待扫描结束(收敛任务让路后原地续跑,不放弃本轮)
+  private async waitScanQuiet(): Promise<void> {
+    while (this.scanning) {
+      await new Promise<void>((resolve: () => void) => {
+        setTimeout(resolve, 500);
+      });
+    }
+  }
+
+  // 单路径开文件求值 → 按物理文件回写所有行;返回 false=文件失联/求值失败(留空自愈)
+  private async convergePath(p: string, kind: 'fp' | 'pcm' | 'hash'): Promise<boolean> {
+    try {
+      const f = await fs.open(openTargetOf(p), fs.OpenMode.READ_ONLY);
+      try {
+        if (kind === 'fp') {
+          const fp = await this.fingerprintFileFd(f.fd, false);
+          if (fp.length === 0) {
+            return false;
+          }
+          await Db.get().updateSongsFpByPath(p, fp);
+          return true;
+        }
+        if (kind === 'pcm') {
+          let fsize = 0;
+          try {
+            fsize = fs.statSync(openTargetOf(p)).size;
+          } catch (e) {
+            fsize = 0;
+          }
+          const name = p.substring(p.lastIndexOf('/') + 1);
+          const readAt: ReadAt = (off: number, len: number): Uint8Array => {
+            const buf = new ArrayBuffer(len);
+            const n = fs.readSync(f.fd, buf, { offset: off, length: len });
+            return new Uint8Array(buf, 0, n);
+          };
+          const meta = parseAudioMeta(name, fsize, readAt, readAt);
+          if (meta.pcmMd5.length === 0) {
+            return false;
+          }
+          await Db.get().updateSongsPcmMd5ByPath(p, meta.pcmMd5);
+          return true;
+        }
+        const hash = await this.hashFileFd(f.fd);
+        if (hash.length === 0) {
+          return false;
+        }
+        await Db.get().updateSongsHashByPath(p, hash);
+        return true;
+      } finally {
+        fs.closeSync(f);
+      }
+    } catch (e) {
+      return false; // 失联/无权限:留空,下次启动续算(行保持 path 语义)
+    }
+  }
+
+  // 身份收敛(升级后/断点续算):静默串行,扫描让路,任意时刻终止均幂等续算。
+  // Stage A(秒级):fp 快速指纹回填 + FLAC pcm_md5 回填(头读)——全库操作身份覆盖先于一切;
+  // Stage B(后台):SHA-256 权威收敛(全文件,可中断);
+  // Stage C:fp 碰撞审计——采样指纹相同但权威 hash 不同 → 该组升级整文件 fp 消歧。
+  async convergeIdentities(): Promise<void> {
+    if (this.converging || this.scanning || this.context === null || !Db.get().ready()) {
       return;
     }
-    this.backfilling = true;
+    this.converging = true;
     try {
-      const paths = await Db.get().getUnhashedPaths(2000);
-      if (paths.length === 0) {
-        return;
-      }
       const started = Date.now();
-      hilog.info(DOMAIN, TAG, 'hash backfill start n=%{public}d', paths.length);
-      let done = 0;
-      let failed = 0;
-      for (const p of paths) {
-        if (this.scanning) {
-          // 让路:等本轮扫描结束再继续(不放弃,避免回填拖到下次启动)
-          hilog.info(DOMAIN, TAG, 'hash backfill yield to scan done=%{public}d', done);
-          while (this.scanning) {
-            await new Promise<void>((resolve: () => void) => {
-              setTimeout(resolve, 500);
-            });
+      const fpPaths = await Db.get().getPathsNeedingFp(4000);
+      if (fpPaths.length > 0) {
+        hilog.info(DOMAIN, TAG, 'converge stageA fp start n=%{public}d', fpPaths.length);
+        let done = 0;
+        let failed = 0;
+        for (const p of fpPaths) {
+          await this.waitScanQuiet();
+          if (await this.convergePath(p, 'fp')) {
+            done++;
+          } else {
+            failed++;
           }
         }
-        try {
-          const f = await fs.open(openTargetOf(p), fs.OpenMode.READ_ONLY);
-          try {
-            const h = await this.hashFileFd(f.fd);
-            if (h.length > 0) {
-              await Db.get().updateSongsHashByPath(p, h);
-              done++;
-            } else {
-              failed++;
-            }
-          } finally {
-            fs.closeSync(f);
+        hilog.info(DOMAIN, TAG, 'converge stageA fp done=%{public}d failed=%{public}d', done, failed);
+      }
+      const pcmPaths = await Db.get().getPathsNeedingPcmMd5(4000);
+      if (pcmPaths.length > 0) {
+        hilog.info(DOMAIN, TAG, 'converge stageA pcm start n=%{public}d', pcmPaths.length);
+        let done = 0;
+        let failed = 0;
+        for (const p of pcmPaths) {
+          await this.waitScanQuiet();
+          if (await this.convergePath(p, 'pcm')) {
+            done++;
+          } else {
+            failed++;
           }
-        } catch (e) {
-          failed++; // 失联/无权限:留空,下次启动不再误判(行保持 path 语义)
+        }
+        hilog.info(DOMAIN, TAG, 'converge stageA pcm done=%{public}d failed=%{public}d', done, failed);
+      }
+      const hashPaths = await Db.get().getPathsNeedingHash(4000);
+      if (hashPaths.length > 0) {
+        hilog.info(DOMAIN, TAG, 'converge stageB hash start n=%{public}d', hashPaths.length);
+        let done = 0;
+        let failed = 0;
+        for (const p of hashPaths) {
+          await this.waitScanQuiet();
+          if (await this.convergePath(p, 'hash')) {
+            done++;
+          } else {
+            failed++;
+          }
+        }
+        hilog.info(DOMAIN, TAG, 'converge stageB hash done=%{public}d failed=%{public}d in %{public}dms',
+          done, failed, Date.now() - started);
+      }
+      // Stage C:碰撞审计(重算后 fp 变化,集合自然收敛;整文件 128 位再撞概率 ~2^-128 可忽略)
+      for (;;) {
+        await this.waitScanQuiet();
+        const fps = await Db.get().getCollidingFps(20);
+        if (fps.length === 0) {
+          break;
+        }
+        for (const fp of fps) {
+          hilog.warn(DOMAIN, TAG, 'fp collision detected, upgrade to full-file fp %{public}s', fp);
+          const paths = await Db.get().getPathsByFp(fp);
+          for (const p of paths) {
+            await this.waitScanQuiet();
+            await this.convergeFullFp(p);
+          }
         }
       }
-      hilog.info(DOMAIN, TAG, 'hash backfill done=%{public}d failed=%{public}d in %{public}dms',
-        done, failed, Date.now() - started);
+      hilog.info(DOMAIN, TAG, 'converge all stages done in %{public}dms', Date.now() - started);
     } finally {
-      this.backfilling = false;
+      this.converging = false;
+    }
+  }
+
+  // Stage C 消歧:整文件 xxHash3 重算单路径 fp(与采样指纹同构,mode 内可比)
+  private async convergeFullFp(p: string): Promise<void> {
+    try {
+      const f = await fs.open(openTargetOf(p), fs.OpenMode.READ_ONLY);
+      try {
+        const fp = await this.fingerprintFileFd(f.fd, true);
+        if (fp.length > 0) {
+          await Db.get().updateSongsFpByPath(p, fp);
+          hilog.info(DOMAIN, TAG, 'fp upgraded to full-file %{public}s', p);
+        }
+      } finally {
+        fs.closeSync(f);
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'fp upgrade fail %{public}s %{public}s', p, (e as Error).message);
     }
   }
 
@@ -638,8 +754,8 @@ export class ScanService {
         hilog.warn(DOMAIN, TAG, 'parse fail(跳过) %{public}s', cand.path);
         return false;
       }
-      // 内容身份:整文件 SHA-256(失败留空,该行退回 path 语义)
-      const hash = await this.hashFileFd(fd);
+      // 操作身份:三窗采样快速指纹(毫秒级;失败留空该行退回 path 语义)。SHA-256 交后台收敛
+      const fp = await this.fingerprintFileFd(fd, false);
       // 同 path 已有 CUE 分轨行 → 不再落整轨行(两者共用 path UNIQUE,分轨为准)
       const cueRows = await Db.get().querySongs('path = ? AND cue_start_ms > 0', [cand.path], '', 1, 0);
       if (cueRows.length > 0) {
@@ -647,7 +763,8 @@ export class ScanService {
         return true;
       }
       const s = new Song();
-      s.hash = hash;
+      s.fp = fp;
+      s.pcmMd5 = meta.pcmMd5; // 仅 FLAC 非空(MetaParse 从 STREAMINFO 提取)
       s.path = cand.path;
       s.fileSize = fsize;
       s.mtime = mtime;
@@ -674,22 +791,23 @@ export class ScanService {
       }
       const known = await Db.get().querySongs('path = ?', [cand.path], '', 1, 0);
       if (known.length > 0) {
-        // 同路径:原位更新(身份随内容刷新)
+        // 同路径:原位更新(内容已变,hash 置空待后台重收敛)
         s.id = known[0].id;
         const bucket: relationalStore.ValuesBucket = {
           'title': s.title, 'artist': s.artist, 'album': s.album, 'album_artist': s.albumArtist,
           'genre': s.genre, 'year': s.year, 'track_no': s.trackNo, 'disc_no': s.discNo,
           'duration_ms': s.durationMs, 'sample_rate': s.sampleRate, 'bit_depth': s.bitDepth,
           'channels': s.channels, 'bitrate_kbps': s.bitrateKbps, 'codec': s.codec,
-          'file_size': s.fileSize, 'mtime': s.mtime, 'art_path': s.artPath, 'hash': s.hash,
+          'file_size': s.fileSize, 'mtime': s.mtime, 'art_path': s.artPath,
+          'hash': '', 'fp': s.fp, 'pcm_md5': s.pcmMd5,
           'rg_track_gain': s.rgTrackGain, 'rg_track_peak': s.rgTrackPeak
         };
         await Db.get().updateSongFields(s.id, bucket);
         this.progress.updated++;
       } else {
-        // 跨路径内容身份判定:hash 相同 = 同一份文件
-        if (hash.length > 0) {
-          const ident = await Db.get().querySongs('hash = ? AND cue_start_ms = 0', [hash], '', 1, 0);
+        // 跨路径身份判定 1:操作身份 fp(同一份文件)
+        if (fp.length > 0) {
+          const ident = await Db.get().querySongs('fp = ? AND cue_start_ms = 0', [fp], '', 1, 0);
           if (ident.length > 0) {
             if (await this.fileAlive(ident[0].path)) {
               // 无感知查重:同内容已在库且旧文件仍可达 → 跳过
@@ -697,11 +815,23 @@ export class ScanService {
               hilog.info(DOMAIN, TAG, 'dedup skip %{public}s (dup of %{public}s)', cand.name, ident[0].path);
               return true;
             }
-            // 移动认领:原行改挂新路径,id 与全部关系保留
+            // 移动认领:fp 同 ⇒ 同内容,旧 hash 仍有效保留;id 与全部关系保留
             await Db.get().updateSongFields(ident[0].id,
-              { 'path': cand.path, 'hash': hash, 'mtime': mtime, 'file_size': fsize });
+              { 'path': cand.path, 'mtime': mtime, 'file_size': fsize, 'pcm_md5': s.pcmMd5 });
             this.progress.relinked++;
             hilog.info(DOMAIN, TAG, 'relink song=%{public}d -> %{public}s', ident[0].id, cand.path);
+            return true;
+          }
+        }
+        // 跨路径身份判定 2:音频身份 pcm_md5(FLAC 改标签后移动;仅认领,不做查重跳过——同音频不同文件是合法多版本)
+        if (s.pcmMd5.length > 0) {
+          const ident2 = await Db.get().querySongs('pcm_md5 = ? AND cue_start_ms = 0', [s.pcmMd5], '', 1, 0);
+          if (ident2.length > 0 && !(await this.fileAlive(ident2[0].path))) {
+            // 音频同但文件已不同(重标签):旧 hash 失效置空,fp/pcm 随新文件
+            await Db.get().updateSongFields(ident2[0].id,
+              { 'path': cand.path, 'fp': s.fp, 'pcm_md5': s.pcmMd5, 'hash': '', 'mtime': mtime, 'file_size': fsize });
+            this.progress.relinked++;
+            hilog.info(DOMAIN, TAG, 'relink(pcm) song=%{public}d -> %{public}s', ident2[0].id, cand.path);
             return true;
           }
         }
@@ -754,7 +884,14 @@ export class ScanService {
         let codec = '';
         let sr = 0;
         let bd = 0;
-        let audioHash = ''; // 音频文件内容身份(全部分轨共用)
+        let audioFp = ''; // 音频文件操作身份(全部分轨共用)
+        let audioPcm = ''; // 音频内容身份(仅 FLAC)
+        // fp 复用:同 path 任一行(整轨行被分轨取代后不存在,必须查分轨行;未变文件免二次求值)
+        const fpRow = await Db.get().querySongs("path = ? AND fp != ''", [audioKey], 'date_added DESC', 1, 0);
+        if (fpRow.length > 0 && fpRow[0].mtime === mtime && fpRow[0].fileSize === fsize) {
+          audioFp = fpRow[0].fp;
+          audioPcm = fpRow[0].pcmMd5;
+        }
         // 整轨行 = cue_start=0 且 cue_end=-1(排除 CueA 这类 start=0 的分轨行,否则末轨时长算错)
         const known = await Db.get().querySongs('path = ? AND cue_start_ms = 0 AND cue_end_ms = -1',
           [audioKey], '', 1, 0);;
@@ -764,9 +901,8 @@ export class ScanService {
           codec = known[0].codec;
           sr = known[0].sampleRate;
           bd = known[0].bitDepth;
-          // 同文件未变:直接复用已有身份,免二次求值
-          if (known[0].hash.length > 0 && known[0].mtime === mtime && known[0].fileSize === fsize) {
-            audioHash = known[0].hash;
+          if (audioPcm.length === 0) {
+            audioPcm = known[0].pcmMd5;
           }
         } else {
           try {
@@ -788,8 +924,13 @@ export class ScanService {
             sr = meta.sampleRate;
             bd = meta.bitDepth;
             audioDurMs = meta.durationMs;
-            // 内容身份(新文件必算;fd 打开期间完成)
-            audioHash = await this.hashFileFd(aFd);
+            // 操作身份(仅未复用时求值,毫秒级;fd 打开期间完成);SHA-256 交后台收敛
+            if (audioFp.length === 0) {
+              audioFp = await this.fingerprintFileFd(aFd, false);
+            }
+            if (audioPcm.length === 0) {
+              audioPcm = meta.pcmMd5;
+            }
             if (meta.coverData !== null && meta.coverData.length > 0) {
               audioArt = await this.saveCover(meta.coverData, meta.coverMime, aSize, mtime);
             }
@@ -797,13 +938,13 @@ export class ScanService {
             hilog.warn(DOMAIN, TAG, 'cue audio probe fail %{public}s', (e as Error).message);
           }
         }
-        // 兜底:仍无身份(整轨行存在但未回填 hash)→ 单独打开求值
-        if (audioHash.length === 0 && audioFile === null) {
+        // 兜底:仍无操作身份(元数据探针失败)→ 单独打开求值
+        if (audioFp.length === 0 && audioFile === null) {
           try {
             audioFile = await fs.open(audioPath, fs.OpenMode.READ_ONLY);
-            audioHash = await this.hashFileFd(audioFile.fd);
+            audioFp = await this.fingerprintFileFd(audioFile.fd, false);
           } catch (e) {
-            hilog.warn(DOMAIN, TAG, 'cue audio hash fail %{public}s', (e as Error).message);
+            hilog.warn(DOMAIN, TAG, 'cue audio fp fail %{public}s', (e as Error).message);
           }
         }
         // 清掉同 path 整轨行(先扫到音频后扫到 cue 的顺序),分轨为准
@@ -815,7 +956,8 @@ export class ScanService {
         let added = 0;
         for (const t of sheet.tracks) {
           const song = new Song();
-          song.hash = audioHash;
+          song.fp = audioFp;
+          song.pcmMd5 = audioPcm;
           song.path = audioKey;
           song.fileSize = fsize;
           song.mtime = mtime;
@@ -848,15 +990,15 @@ export class ScanService {
               'title': song.title, 'artist': song.artist, 'album': song.album, 'album_artist': song.albumArtist,
               'track_no': song.trackNo, 'duration_ms': song.durationMs, 'mtime': song.mtime,
               'cue_start_ms': song.cueStartMs, 'cue_end_ms': song.cueEndMs, 'art_path': song.artPath,
-              'hash': audioHash
+              'hash': '', 'fp': audioFp, 'pcm_md5': audioPcm
             };
             await Db.get().updateSongFields(song.id, bucket);
             this.progress.updated++;
             added++;
           } else {
-            // 跨路径内容身份判定:(hash, cueStartMs) 相同 = 同一轨
-            if (audioHash.length > 0) {
-              const ident = await Db.get().querySongs('hash = ? AND cue_start_ms = ?', [audioHash, t.startMs], '', 1, 0);
+            // 跨路径身份判定 1:操作身份 (fp, cueStartMs) 相同 = 同一轨
+            if (audioFp.length > 0) {
+              const ident = await Db.get().querySongs('fp = ? AND cue_start_ms = ?', [audioFp, t.startMs], '', 1, 0);
               if (ident.length > 0) {
                 if (await this.fileAlive(ident[0].path)) {
                   // 无感知查重:同内容分轨已在库且旧文件仍可达 → 跳过
@@ -865,13 +1007,26 @@ export class ScanService {
                     t.index, ident[0].path);
                   continue;
                 }
-                // 移动认领:原行改挂新路径
+                // 移动认领:fp 同 ⇒ 同内容,旧 hash 保留
                 await Db.get().updateSongFields(ident[0].id,
-                  { 'path': audioKey, 'hash': audioHash, 'mtime': mtime, 'file_size': fsize });
+                  { 'path': audioKey, 'mtime': mtime, 'file_size': fsize, 'pcm_md5': audioPcm });
                 this.progress.relinked++;
                 added++;
                 hilog.info(DOMAIN, TAG, 'cue relink song=%{public}d track=%{public}d -> %{public}s',
                   ident[0].id, t.index, audioKey);
+                continue;
+              }
+            }
+            // 跨路径身份判定 2:音频身份 (pcm_md5, cueStartMs)(仅认领)
+            if (audioPcm.length > 0) {
+              const ident2 = await Db.get().querySongs('pcm_md5 = ? AND cue_start_ms = ?', [audioPcm, t.startMs], '', 1, 0);
+              if (ident2.length > 0 && !(await this.fileAlive(ident2[0].path))) {
+                await Db.get().updateSongFields(ident2[0].id,
+                  { 'path': audioKey, 'fp': audioFp, 'pcm_md5': audioPcm, 'hash': '', 'mtime': mtime, 'file_size': fsize });
+                this.progress.relinked++;
+                added++;
+                hilog.info(DOMAIN, TAG, 'cue relink(pcm) song=%{public}d track=%{public}d -> %{public}s',
+                  ident2[0].id, t.index, audioKey);
                 continue;
               }
             }
