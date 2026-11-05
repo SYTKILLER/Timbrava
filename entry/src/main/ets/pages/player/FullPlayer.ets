@@ -66,9 +66,13 @@ export struct FullPlayerDest {
   // 26-5:当前曲封面短边 <500px 时实时超分(26 设备),完成后回到本曲才上屏
   private loadCoverSr(): void {
     const s = this.song();
-    if (s === null || s.artPath.length === 0 || !CoverSuperRes.get().available()) {
+    if (s === null || s.artPath.length === 0) {
       this.srPm = null;
       this.srFor = '';
+      return;
+    }
+    if (!CoverSuperRes.get().available()) {
+      hilog.info(DOMAIN, TAG, 'sr unavailable(api/syscap)');
       return;
     }
     const key = String(s.id);

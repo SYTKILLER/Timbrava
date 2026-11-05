@@ -22,6 +22,16 @@
 - **26-7 桌面歌词(floatView)**:`DesktopLyricsService` + `pages/player/DesktopLyricsPage`(floatView 标准悬浮窗,ROUNDED_RECTANGLE 模板)——仅当前行,词级双色已唱/未唱,marquee 长行;播放页「更多」菜单入口(26+isFloatViewEnabled 守卫,FLOAT_VIEW 权限未授提示后停用)。
 - **targetSdk 26 行为变更回归(§3)**:V2 触摸热区——播放历史删除钮视觉 16vp+热区扩 40vp(responseRegion)、队列管理删除 30→32、打轴删行 28→32;V1 弹层审计(更多 Sheet 主题 token/系统菜单默认材质)合规、V5 无 radius:0 阴影、V3 文本与 V6 复用规则入模拟器验证清单。
 - **小型项**:24-4 `getRdbStoreSync` 同步建库(消除首帧与 RDB 初始化异步竞态);24-6 `setBackgroundPlayMode(ENABLE_BACKGROUND_PLAY)` 显式声明后台播放模式;24-3 LRCLIB 已有 connectTimeout/readTimeout+deadline 竞速(全工程无 taskpool 调用点,RG 扫描走 native 线程,taskpool 超时无落地场景,如实跳过)。
+### Fixed(0.11.0 验证期实测发现)
+
+- **歌词词级解析潜伏 bug(0.3.0 起)**:模块级 `/g` 正则 `WORD_TAG.lastIndex` 复位后 while 重入从 0 重复匹配,首个时间标签被当词文本渲染(逐词歌词真语料实证);改为每行新建局部正则,plain 提取同源。顺带修末词永不高亮(无后继边界时 pos≥start 即判已唱)。
+- **26-3 mmap 回归**:MmapFile::open 用 `lseek(END)` 取尺寸会移动 dup 共享文件偏移,DSD 头解析读到 EOF 全失败;改 `fstat` 不动偏移。DSD(DSF)/FLAC(742MB) mmap 双链路模拟器复验通过。
+- **曲库内容列表 Spring 回弹误触迷你条展开**(内容不足一屏时回弹负 offset 累积):四分区 List/Grid 加 `edgeEffect(EdgeEffect.None)`。
+- **V2 触摸热区(targetSdk 26 行为变更)回归**:播放历史删除钮(16vp,热区扩 40vp responseRegion)、队列管理删除(30→32)、打轴删行(28→32)。
+
+- **26-5 守卫策略调整(小艺咨询+SDK 实证)**:canIUse 对 HMS syscap 依赖设备声明(模拟器镜像未含 VisionBase 恒 false,会误杀真机可用性;小艺建议的 'SystemCapability.AI.Vision.ImageSuperResolution' 名在本机 SDK 26.0.0.105 d.ts/device-define 中不存在,未采信)——改为 26 版本门槛 + `ImageSRAnalyzer.create()` 实试探测,失败(服务异常)本会话静默降级;模拟器实测 `sr fail The service is abnormal` 降级路径生效,真机待验。
+- **验证结论**:26-6 实况窗(isLiveViewEnabled 模拟器未实现该服务,AGC 场景权未申请,真机项)、26-7 桌面歌词(FLOAT_VIEW=system_basic/system_grant,需 ACL 调试 profile,模拟器报 201 降级路径生效)均按设计静默降级,代码路径已实证。
+
 - 版本号 0.11.0/versionCode 11000。
 
 ### Added(0.10.0 迷你条滚动折叠交互)

@@ -133,6 +133,8 @@ export struct LyricsPanel {
         .ellipsisMode(EllipsisMode.MULTILINE_CENTER)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .onClick((): void => {
+          hilog.info(DOMAIN, TAG, 'line tap i=%{public}d -> %{public}dms', i,
+            i >= 0 && i < this.times.length ? Math.round(this.times[i]) : -1);
           if (i >= 0 && i < this.times.length) {
             PlayerController.get().seekTo(this.times[i]);
           }
@@ -149,7 +151,7 @@ export struct LyricsPanel {
     return this.parsed.lines[this.activeIdx].words;
   }
 
-  // 词状态:0 未唱 / 1 正在唱 / 2 已唱
+  // 词状态:0 未唱 / 1 正在唱 / 2 已唱(末词无后继边界:到点即判已唱)
   private wordState(w: LyricWord, wi: number): number {
     if (this.parsed === null) {
       return 0;
@@ -160,7 +162,10 @@ export struct LyricsPanel {
       return 0;
     }
     const start = w.timeMs;
-    const end = wi + 1 < words.length ? words[wi + 1].timeMs : Number.MAX_SAFE_INTEGER;
+    if (wi + 1 >= words.length) {
+      return pos >= start ? 2 : 0;
+    }
+    const end = words[wi + 1].timeMs;
     if (pos >= end) {
       return 2;
     }

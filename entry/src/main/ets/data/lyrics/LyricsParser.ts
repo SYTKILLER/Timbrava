@@ -30,7 +30,6 @@ export class ParsedLyrics {
 }
 
 const TIME_TAG = /^\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/;
-const WORD_TAG = /<(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?>/g;
 const OFFSET_TAG = /^\[offset:\s*([+-]?\d+)\s*\]/i;
 const META_TAG = /^\[(ti|ar|al|by|length|re|ve|tool):/i;
 
@@ -83,15 +82,16 @@ export function parseLrc(rawText: string): ParsedLyrics {
     if (times.length === 0 || rest.trim().length === 0) {
       continue;
     }
-    // 逐词标签
+    // 逐词标签(每行新建正则:模块级 /g 正则 reset 后 while 重入会从 0 重复匹配,
+    // 把首个时间标签当词文本——0.3.0 潜伏 bug,真语料(24-2)实证)
     const words: LyricWord[] = [];
     let wordText = rest;
-    let wm = WORD_TAG.exec(rest);
+    const wordTag = /<(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?>/g;
+    let wm = wordTag.exec(rest);
     if (wm !== null) {
       let cursor = 0;
       let lastTime = -1;
       let pendingText = '';
-      WORD_TAG.lastIndex = 0;
       while (wm !== null) {
         const wTime = tagToMs(wm[1], wm[2], wm[3]);
         pendingText = rest.substring(cursor, wm.index);
@@ -102,16 +102,15 @@ export function parseLrc(rawText: string): ParsedLyrics {
         }
         lastTime = wTime;
         cursor = wm.index + wm[0].length;
-        wm = WORD_TAG.exec(rest);
+        wm = wordTag.exec(rest);
       }
       const tailText = rest.substring(cursor);
       if (lastTime >= 0 && tailText.length > 0) {
         words.push(new LyricWord(lastTime, tailText));
       }
-      WORD_TAG.lastIndex = 0;
     }
 
-    const plain = wordText.replace(WORD_TAG, '').trim();
+    const plain = wordText.replace(wordTag, '').trim();
     if (plain.length === 0) {
       continue;
     }

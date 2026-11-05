@@ -22,8 +22,10 @@ export class CoverSuperRes {
   }
 
   private analyzer: imageSuperResolution.ImageSRAnalyzer | null = null;
-  private supported: boolean = deviceInfo.sdkApiVersion >= 26 &&
-    canIUse('SystemCapability.AI.Vision.VisionBase');
+  // 守卫策略:26 仅做版本门槛,能力探测交给 ImageSRAnalyzer.create() 实试——
+  // canIUse 对 HMS syscap 依赖设备声明(模拟器镜像未含 VisionBase 时恒 false,误杀真机可用性);
+  // create 失败(801/1018700001)置 disabled 本会话降级。
+  private supported: boolean = deviceInfo.sdkApiVersion >= 26;
   private lastKey: string = '';
   private lastPm: image.PixelMap | null = null;
   private inflight: Promise<image.PixelMap | null> | null = null;
@@ -60,6 +62,7 @@ export class CoverSuperRes {
       const info = await src.getImageInfo();
       const side = Math.min(info.size.width, info.size.height);
       if (side <= 0 || side >= MIN_SIDE_VP) {
+        hilog.info(DOMAIN, TAG, 'sr skip %{public}dx%{public}d(>=500)', info.size.width, info.size.height);
         return null; // 封面已够大,无需超分
       }
       inputPm = await src.createPixelMap();
