@@ -75,6 +75,8 @@ export struct LibraryTab {
   @State genreCount: number = 0;
   @State topSafe: number = 36;
   @State recentAlbums: RecentAlbum[] = [];
+  @State vpH: number = 0;   // 外层 Scroll 视口高(onAreaChange 实测)
+  @State segH: number = 40; // 分段器行高(onAreaChange 实测)
   private songSrc: SongSource = new SongSource();
   private albumSrc: AlbumSource = new AlbumSource();
   private artistSrc: ArtistSource = new ArtistSource();
@@ -148,8 +150,9 @@ export struct LibraryTab {
 
   build() {
     Column() {
-      // 24-1 页头联动收起:标题/智能入口/最近添加/分段器装进外层 Scroll,内容 List 经
-      // nestedScroll(PARENT_FIRST/SELF_FIRST) 链接——上滑先收页头再滚列表,回滚先到顶再展开页头。
+      // 24-1 页头联动收起:整页(页头+内容)装进外层 Scroll,Swiper 定高留出页头余量——
+      // 内容 List 经 nestedScroll(PARENT_FIRST/SELF_FIRST) 链接:上滑先收页头再滚列表,
+      // 回滚先到顶再展开页头。总内容高=视口高+页头高(可收起距离)。
       Scroll() {
         Column() {
           Row({ space: 8 }) {
@@ -256,6 +259,9 @@ export struct LibraryTab {
             .scrollBar(BarState.Off)
           }
 
+          // 收起后分段器停在状态栏下方:页头与分段器之间垫 topSafe 空档(随内容滚走)
+          Blank().height(this.topSafe)
+
           Row() {
             TabSegmentButtonV2({
               items: SEG_ITEMS,
@@ -264,26 +270,34 @@ export struct LibraryTab {
           }
           .padding({ left: 16, right: 16, bottom: 8 })
           .width('100%')
+          .onAreaChange((_o: Area, n: Area): void => {
+            this.segH = n.height as number;
+          })
+
+          // Swiper 定高:视口 - 状态栏垫 - 分段器行 → 收起到底时分段器贴状态栏、内容占满
+          Swiper(this.swiper) {
+            this.SongsPage()
+            this.AlbumsPage()
+            this.ArtistsPage()
+            this.GenresPage()
+          }
+          .index(this.segmentIndex)
+          .onChange((i: number): void => {
+            this.segmentIndex = i;
+          })
+          .width('100%')
+          .height(Math.max(300, this.vpH - this.topSafe - this.segH))
+          .indicator(false)
+          .nestedScroll(SwiperNestedScrollMode.SELF_FIRST)
         }
       }
       .width('100%')
+      .layoutWeight(1)
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.None)
-
-      Swiper(this.swiper) {
-        this.SongsPage()
-        this.AlbumsPage()
-        this.ArtistsPage()
-        this.GenresPage()
-      }
-      .index(this.segmentIndex)
-      .onChange((i: number): void => {
-        this.segmentIndex = i;
+      .onAreaChange((_o: Area, n: Area): void => {
+        this.vpH = n.height as number;
       })
-      .layoutWeight(1)
-      .width('100%')
-      .indicator(false)
-      .nestedScroll(SwiperNestedScrollMode.SELF_FIRST)
     }
     .width('100%')
     .height('100%')
@@ -358,9 +372,10 @@ export struct LibraryTab {
       .width('100%')
       .height('100%')
       .cachedCount(8)
-      .padding({ bottom: this.bottomSafeVp + 140 })
+      .contentEndOffset(this.bottomSafeVp + 140) // 视口全出血渲染到屏底,仅滚动终点避让(padding 会内缩视口裁行)
       .scrollBar(BarState.Auto)
       .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST })
+      .edgeEffect(EdgeEffect.None) // 内容不足一屏时防 Spring 回弹负 offset 误触迷你条展开
       .onWillScroll((offset: number): void => {
         BarCollapse.feed(offset);
       })
@@ -404,11 +419,13 @@ export struct LibraryTab {
       .columnsTemplate('1fr 1fr 1fr')
       .columnsGap(12)
       .rowsGap(16)
-      .padding({ left: 16, right: 16, bottom: this.bottomSafeVp + 140 })
+      .padding({ left: 16, right: 16 })
+      .contentEndOffset(this.bottomSafeVp + 140) // 视口全出血渲染到屏底,仅滚动终点避让
       .width('100%')
       .height('100%')
       .scrollBar(BarState.Auto)
       .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST })
+      .edgeEffect(EdgeEffect.None) // 内容不足一屏时防 Spring 回弹负 offset 误触迷你条展开
       .onWillScroll((offset: number): void => {
         BarCollapse.feed(offset);
       })
@@ -459,9 +476,10 @@ export struct LibraryTab {
       }
       .width('100%')
       .height('100%')
-      .padding({ bottom: this.bottomSafeVp + 140 })
+      .contentEndOffset(this.bottomSafeVp + 140) // 视口全出血渲染到屏底,仅滚动终点避让
       .scrollBar(BarState.Auto)
       .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST })
+      .edgeEffect(EdgeEffect.None) // 内容不足一屏时防 Spring 回弹负 offset 误触迷你条展开
       .onWillScroll((offset: number): void => {
         BarCollapse.feed(offset);
       })
@@ -504,9 +522,10 @@ export struct LibraryTab {
       }
       .width('100%')
       .height('100%')
-      .padding({ bottom: this.bottomSafeVp + 140 })
+      .contentEndOffset(this.bottomSafeVp + 140) // 视口全出血渲染到屏底,仅滚动终点避让
       .scrollBar(BarState.Auto)
       .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST })
+      .edgeEffect(EdgeEffect.None) // 内容不足一屏时防 Spring 回弹负 offset 误触迷你条展开
       .onWillScroll((offset: number): void => {
         BarCollapse.feed(offset);
       })

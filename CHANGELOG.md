@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 曲库列表底部白区/断行修复:四个分页 List/Grid 的底部避让由 `.padding({bottom})` 改为 `.contentEndOffset()`——ArkUI 列表 padding 会内缩滚动视口,行到 padding 上缘被裁断形成白区(页头收起态尤甚);contentEndOffset 只约束滚动终点,视口全出血渲染到屏底,行可穿过迷你条/悬浮页签下方(对齐华为音乐形态)。
+
 ### Added(0.11.0 API 24/26 新特性创意落地)
 
 - **24-1 曲库页头联动收起(嵌套滚动)**:标题/智能入口/最近添加/分段器收入外层 Scroll,四分区内容 List/Grid 经 `nestedScroll(PARENT_FIRST/SELF_FIRST)` 链接——上滑先收页头再滚列表、回滚先到顶再展开页头;与 0.10.0 滚动折叠迷你条形成完整沉浸浏览链路(Tabs.nestedScroll 为 API 24 特性,免守卫)。
