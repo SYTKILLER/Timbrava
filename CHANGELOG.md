@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+### Added(0.12.0 曲库内容身份:哈希唯一识别)
+
+- **曲目身份 = (文件 SHA-256, cueStartMs)**:曲库由 path 唯一键升级为内容哈希唯一身份——native 新增 `hashFd` 摘要原语(Crypto Architecture Kit `OH_CryptoDigest` SHA256,API 12,链 libohcrypto.so;napi 异步工作 Promise 返回,pread 8MB 分块防大 DSD 撑爆 page cache);songs 表加 `hash` 列(app_settings 标记幂等迁移,ALTER 挂列免重建)+ idx_songs_hash;path 降级为"当前位置"属性,歌单/收藏/历史/歌词缓存等全部 song_id 外键零改动。
+- **查重无感知自动化**:导入即哈希——同内容跨路径旧文件仍在→自动跳过(deduped 计数);旧文件已失联→移动认领 relink(原行改挂新路径,id 与全部关系保留);rescan 清理失联路径升级 `retireSongsByPaths` 合并语义(同 (hash,cueStartMs) 幸存行先继承 favorites/history/play_count/playlist_songs/lyrics_cache 关系再删行,防双失联关系丢失的两阶段退役);扫描统计追加"重复跳过/移动认领"段(有非零才显示)。
+- **CUE 分轨同权**:分轨身份键 (hash, cueStartMs),整轨/分轨压制与 stale 清理保持 path 键(单文件实例内语义);音频 hash 每文件求值一次全轨共用,未变文件复用免二次求值。
+- **存量库无感知回填**:启动后 `backfillHashes` 串行补齐 hash='' 行(fire-and-forget 不阻塞首帧,扫描优先让路,失联文件留空待自愈);mtime+size 未变的差分跳过零哈希开销,身份终身一次求值。
+- **备份恢复按内容重挂**:导出附 `hashByPath` 映射(增量兼容旧备份),恢复 path 失配(跨设备/换目录)时按 hash 重挂歌单/收藏/队列。
+- **查重页精确分组**:第一优先按 (hash, cueStartMs) 精确分组(标"内容相同"),启发式降级"疑似"兜底 hash='' 存量行;CUE 按轨对轨比较防整组混轨。
+- 版本号 0.12.0/versionCode 12000。
+
 ### Fixed
 
 - 曲库列表底部白区/断行修复:四个分页 List/Grid 的底部避让由 `.padding({bottom})` 改为 `.contentEndOffset()`——ArkUI 列表 padding 会内缩滚动视口,行到 padding 上缘被裁断形成白区(页头收起态尤甚);contentEndOffset 只约束滚动终点,视口全出血渲染到屏底,行可穿过迷你条/悬浮页签下方(对齐华为音乐形态)。

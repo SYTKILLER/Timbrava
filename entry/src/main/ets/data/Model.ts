@@ -9,6 +9,7 @@ export enum RepeatMode {
 export class Song {
   id: number = 0;
   path: string = '';
+  hash: string = ''; // 内容身份:物理文件 SHA-256(64位hex);''=未求值。曲目身份=(hash, cueStartMs)
   fileSize: number = 0;
   mtime: number = 0;
   title: string = '';
@@ -68,6 +69,7 @@ export class Song {
     const s = new Song();
     s.id = Number(o['id'] ?? 0);
     s.path = String(o['path'] ?? '');
+    s.hash = String(o['hash'] ?? '');
     s.fileSize = Number(o['file_size'] ?? 0);
     s.mtime = Number(o['mtime'] ?? 0);
     s.title = String(o['title'] ?? '');
@@ -154,6 +156,8 @@ export class ScanProgress {
   added: number = 0;
   updated: number = 0;
   removed: number = 0;
+  deduped: number = 0; // 内容 hash 命中且旧文件仍在:跳过导入
+  relinked: number = 0; // 内容 hash 命中且旧文件已失联:原行改挂新路径(关系保留)
   message: string = '';
 
   constructor() {

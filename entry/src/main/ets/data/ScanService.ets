@@ -1,4 +1,5 @@
-// 媒体库扫描:根目录(路径/URI)递归遍历 → 扩展名过滤 → 标签解析 → 差分入库 → 封面缓存。
+// 媒体库扫描:根目录(路径/URI)递归遍历 → 扩展名过滤 → 标签解析 → 差分入库(mtime/size 差分 + 内容 hash 身份) → 封面缓存。
+// 内容身份(0.12.0):曲目身份 = (文件 SHA-256, cueStartMs);导入自动查重/移动认领/退役合并,详见 parseAndStore。
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { http } from '@kit.NetworkKit';
@@ -24,6 +25,11 @@ class ManifestEntry {
 }
 const DOMAIN = 0x0001;
 
+// libtimbrava_core 内容摘要原语(native 异步工作;fd 保持打开至 Promise 完成,失败 resolve '')
+interface NativeHashModule {
+  hashFd(fd: number): Promise<string>;
+}
+
 export class ScanService {
   private static instance: ScanService | null = null;
   static get(): ScanService {
@@ -35,6 +41,7 @@ export class ScanService {
 
   private progress: ScanProgress = new ScanProgress();
   private scanning: boolean = false;
+  private backfilling: boolean = false;
   private context: common.Context | null = null;
 
   init(context: common.Context): void {
@@ -91,6 +98,7 @@ export class ScanService {
       return 0;
     }
     let added = 0;
+    const addedMark = this.progress.added; // 新增计数在 parseAndStore 内部(dedup/relink 不计新增)
     for (const u of uris) {
       try {
         const policy: fileShare.PolicyInfo = { 'uri': u, 'operationMode': fileShare.OperationMode.READ_MODE };
@@ -112,15 +120,14 @@ export class ScanService {
         hilog.warn(DOMAIN, TAG, 'stat uri fail(按 0 处理) %{public}s', (e as Error).message);
       }
       const cand = new FileCandidate(name, `uri:${u}`, u);
-      const ok = await this.parseAndStore(cand, mtime, fsize);
-      if (ok) {
-        added++;
-      }
+      await this.parseAndStore(cand, mtime, fsize);
     }
+    added = this.progress.added - addedMark;
     if (added > 0) {
       await LibraryStore.get().reload();
     }
-    hilog.info(DOMAIN, TAG, 'picked import added=%{public}d/%{public}d', added, uris.length);
+    hilog.info(DOMAIN, TAG, 'picked import added=%{public}d/%{public}d deduped=%{public}d relinked=%{public}d',
+      added, uris.length, this.progress.deduped, this.progress.relinked);
     return added;
   }
 
@@ -225,16 +232,9 @@ export class ScanService {
             cand.name.toLowerCase().endsWith('.cue') ? 'path = ?' : 'path = ? AND cue_start_ms = 0',
             [cand.path], '', 1, 0);
           if (known.length === 1 && known[0].mtime === mtime && known[0].fileSize === fsize) {
-            // 未变化
+            // 未变化(内容 hash 已在库,零开销)
           } else {
-            const ok = await this.parseAndStore(cand, mtime, fsize);
-            if (ok) {
-              if (known.length === 0) {
-                this.progress.added++;
-              } else {
-                this.progress.updated++;
-              }
-            }
+            await this.parseAndStore(cand, mtime, fsize); // added/updated/deduped/relinked 计数在内部
           }
         } catch (e) {
           hilog.warn(DOMAIN, TAG, 'stat/parse fail %{public}s %{public}s', cand.path, (e as Error).message);
@@ -247,22 +247,30 @@ export class ScanService {
         }
       }
 
-      // 清理:库中属于已扫根目录但本轮未见的记录
+      // 清理:库中属于已扫根目录但本轮未见的记录(内容身份感知:同 hash 幸存行先继承关系)
       for (const root of roots) {
         const prefix = root.type === 'path' ? root.value : `uri:${root.value}`;
         const dbPaths = await Db.get().getSongsByPathPrefix(prefix);
+        const gone: string[] = [];
         for (const p of dbPaths) {
           if (!seenPaths.has(p)) {
-            await Db.get().deleteSongsByPaths([p]);
-            removed++;
+            gone.push(p);
           }
+        }
+        if (gone.length > 0) {
+          removed += await Db.get().retireSongsByPaths(gone);
         }
       }
       this.progress.removed = removed;
       this.progress.state = 'done';
-      this.progress.message = L($r('app.string.scan_progress_stats'), this.progress.added, this.progress.updated, removed);
-      hilog.info(DOMAIN, TAG, 'scan done in %{public}dms added=%{public}d updated=%{public}d removed=%{public}d',
-        Date.now() - started, this.progress.added, this.progress.updated, removed);
+      let stats = L($r('app.string.scan_progress_stats'), this.progress.added, this.progress.updated, removed);
+      if (this.progress.deduped > 0 || this.progress.relinked > 0) {
+        stats += ' · ' + L($r('app.string.scan_progress_identity'), this.progress.deduped, this.progress.relinked);
+      }
+      this.progress.message = stats;
+      hilog.info(DOMAIN, TAG, 'scan done in %{public}dms added=%{public}d updated=%{public}d removed=%{public}d deduped=%{public}d relinked=%{public}d',
+        Date.now() - started, this.progress.added, this.progress.updated, removed,
+        this.progress.deduped, this.progress.relinked);
     } catch (e) {
       this.progress.state = 'error';
       this.progress.message = (e as Error).message;
@@ -537,6 +545,77 @@ export class ScanService {
     return out;
   }
 
+  // ===== 内容身份(0.12.0):SHA-256 求值 + 身份判定辅助 =====
+
+  // 内容摘要(native 异步工作;失败返回 ''=无身份,该行退回 path 语义)
+  private async hashFileFd(fd: number): Promise<string> {
+    try {
+      const h = await (timbravaCore as NativeHashModule).hashFd(fd);
+      return typeof h === 'string' ? h : '';
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'hashFd fail %{public}s', (e as Error).message);
+      return '';
+    }
+  }
+
+  // 库内路径的文件当前是否仍可达(picker URI / 沙箱路径 / 真实路径)
+  private async fileAlive(libPath: string): Promise<boolean> {
+    try {
+      return await fs.access(openTargetOf(libPath));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 存量库 hash 回填(升级后一次性):静默串行补齐,扫描优先让路,失联文件留空待自愈
+  async backfillHashes(): Promise<void> {
+    if (this.backfilling || this.scanning || this.context === null || !Db.get().ready()) {
+      return;
+    }
+    this.backfilling = true;
+    try {
+      const paths = await Db.get().getUnhashedPaths(2000);
+      if (paths.length === 0) {
+        return;
+      }
+      const started = Date.now();
+      hilog.info(DOMAIN, TAG, 'hash backfill start n=%{public}d', paths.length);
+      let done = 0;
+      let failed = 0;
+      for (const p of paths) {
+        if (this.scanning) {
+          // 让路:等本轮扫描结束再继续(不放弃,避免回填拖到下次启动)
+          hilog.info(DOMAIN, TAG, 'hash backfill yield to scan done=%{public}d', done);
+          while (this.scanning) {
+            await new Promise<void>((resolve: () => void) => {
+              setTimeout(resolve, 500);
+            });
+          }
+        }
+        try {
+          const f = await fs.open(openTargetOf(p), fs.OpenMode.READ_ONLY);
+          try {
+            const h = await this.hashFileFd(f.fd);
+            if (h.length > 0) {
+              await Db.get().updateSongsHashByPath(p, h);
+              done++;
+            } else {
+              failed++;
+            }
+          } finally {
+            fs.closeSync(f);
+          }
+        } catch (e) {
+          failed++; // 失联/无权限:留空,下次启动不再误判(行保持 path 语义)
+        }
+      }
+      hilog.info(DOMAIN, TAG, 'hash backfill done=%{public}d failed=%{public}d in %{public}dms',
+        done, failed, Date.now() - started);
+    } finally {
+      this.backfilling = false;
+    }
+  }
+
   // 解析单文件并入库(含封面缓存)
   async parseAndStore(cand: FileCandidate, mtime: number, fsize: number): Promise<boolean> {
     if (this.context === null) {
@@ -559,6 +638,8 @@ export class ScanService {
         hilog.warn(DOMAIN, TAG, 'parse fail(跳过) %{public}s', cand.path);
         return false;
       }
+      // 内容身份:整文件 SHA-256(失败留空,该行退回 path 语义)
+      const hash = await this.hashFileFd(fd);
       // 同 path 已有 CUE 分轨行 → 不再落整轨行(两者共用 path UNIQUE,分轨为准)
       const cueRows = await Db.get().querySongs('path = ? AND cue_start_ms > 0', [cand.path], '', 1, 0);
       if (cueRows.length > 0) {
@@ -566,6 +647,7 @@ export class ScanService {
         return true;
       }
       const s = new Song();
+      s.hash = hash;
       s.path = cand.path;
       s.fileSize = fsize;
       s.mtime = mtime;
@@ -592,18 +674,39 @@ export class ScanService {
       }
       const known = await Db.get().querySongs('path = ?', [cand.path], '', 1, 0);
       if (known.length > 0) {
+        // 同路径:原位更新(身份随内容刷新)
         s.id = known[0].id;
         const bucket: relationalStore.ValuesBucket = {
           'title': s.title, 'artist': s.artist, 'album': s.album, 'album_artist': s.albumArtist,
           'genre': s.genre, 'year': s.year, 'track_no': s.trackNo, 'disc_no': s.discNo,
           'duration_ms': s.durationMs, 'sample_rate': s.sampleRate, 'bit_depth': s.bitDepth,
           'channels': s.channels, 'bitrate_kbps': s.bitrateKbps, 'codec': s.codec,
-          'file_size': s.fileSize, 'mtime': s.mtime, 'art_path': s.artPath,
+          'file_size': s.fileSize, 'mtime': s.mtime, 'art_path': s.artPath, 'hash': s.hash,
           'rg_track_gain': s.rgTrackGain, 'rg_track_peak': s.rgTrackPeak
         };
         await Db.get().updateSongFields(s.id, bucket);
+        this.progress.updated++;
       } else {
+        // 跨路径内容身份判定:hash 相同 = 同一份文件
+        if (hash.length > 0) {
+          const ident = await Db.get().querySongs('hash = ? AND cue_start_ms = 0', [hash], '', 1, 0);
+          if (ident.length > 0) {
+            if (await this.fileAlive(ident[0].path)) {
+              // 无感知查重:同内容已在库且旧文件仍可达 → 跳过
+              this.progress.deduped++;
+              hilog.info(DOMAIN, TAG, 'dedup skip %{public}s (dup of %{public}s)', cand.name, ident[0].path);
+              return true;
+            }
+            // 移动认领:原行改挂新路径,id 与全部关系保留
+            await Db.get().updateSongFields(ident[0].id,
+              { 'path': cand.path, 'hash': hash, 'mtime': mtime, 'file_size': fsize });
+            this.progress.relinked++;
+            hilog.info(DOMAIN, TAG, 'relink song=%{public}d -> %{public}s', ident[0].id, cand.path);
+            return true;
+          }
+        }
         s.id = await Db.get().upsertSong(s, false);
+        this.progress.added++;
       }
       hilog.debug(DOMAIN, TAG, 'stored [%{public}s] %{public}s %{public}dms %{public}dbit/%{public}d',
         s.codec, s.title, s.durationMs, s.bitDepth, s.sampleRate);
@@ -651,6 +754,7 @@ export class ScanService {
         let codec = '';
         let sr = 0;
         let bd = 0;
+        let audioHash = ''; // 音频文件内容身份(全部分轨共用)
         // 整轨行 = cue_start=0 且 cue_end=-1(排除 CueA 这类 start=0 的分轨行,否则末轨时长算错)
         const known = await Db.get().querySongs('path = ? AND cue_start_ms = 0 AND cue_end_ms = -1',
           [audioKey], '', 1, 0);;
@@ -660,6 +764,10 @@ export class ScanService {
           codec = known[0].codec;
           sr = known[0].sampleRate;
           bd = known[0].bitDepth;
+          // 同文件未变:直接复用已有身份,免二次求值
+          if (known[0].hash.length > 0 && known[0].mtime === mtime && known[0].fileSize === fsize) {
+            audioHash = known[0].hash;
+          }
         } else {
           try {
             audioFile = await fs.open(audioPath, fs.OpenMode.READ_ONLY);
@@ -680,11 +788,22 @@ export class ScanService {
             sr = meta.sampleRate;
             bd = meta.bitDepth;
             audioDurMs = meta.durationMs;
+            // 内容身份(新文件必算;fd 打开期间完成)
+            audioHash = await this.hashFileFd(aFd);
             if (meta.coverData !== null && meta.coverData.length > 0) {
               audioArt = await this.saveCover(meta.coverData, meta.coverMime, aSize, mtime);
             }
           } catch (e) {
             hilog.warn(DOMAIN, TAG, 'cue audio probe fail %{public}s', (e as Error).message);
+          }
+        }
+        // 兜底:仍无身份(整轨行存在但未回填 hash)→ 单独打开求值
+        if (audioHash.length === 0 && audioFile === null) {
+          try {
+            audioFile = await fs.open(audioPath, fs.OpenMode.READ_ONLY);
+            audioHash = await this.hashFileFd(audioFile.fd);
+          } catch (e) {
+            hilog.warn(DOMAIN, TAG, 'cue audio hash fail %{public}s', (e as Error).message);
           }
         }
         // 清掉同 path 整轨行(先扫到音频后扫到 cue 的顺序),分轨为准
@@ -696,6 +815,7 @@ export class ScanService {
         let added = 0;
         for (const t of sheet.tracks) {
           const song = new Song();
+          song.hash = audioHash;
           song.path = audioKey;
           song.fileSize = fsize;
           song.mtime = mtime;
@@ -727,12 +847,36 @@ export class ScanService {
             const bucket: relationalStore.ValuesBucket = {
               'title': song.title, 'artist': song.artist, 'album': song.album, 'album_artist': song.albumArtist,
               'track_no': song.trackNo, 'duration_ms': song.durationMs, 'mtime': song.mtime,
-              'cue_start_ms': song.cueStartMs, 'cue_end_ms': song.cueEndMs, 'art_path': song.artPath
+              'cue_start_ms': song.cueStartMs, 'cue_end_ms': song.cueEndMs, 'art_path': song.artPath,
+              'hash': audioHash
             };
             await Db.get().updateSongFields(song.id, bucket);
+            this.progress.updated++;
             added++;
           } else {
+            // 跨路径内容身份判定:(hash, cueStartMs) 相同 = 同一轨
+            if (audioHash.length > 0) {
+              const ident = await Db.get().querySongs('hash = ? AND cue_start_ms = ?', [audioHash, t.startMs], '', 1, 0);
+              if (ident.length > 0) {
+                if (await this.fileAlive(ident[0].path)) {
+                  // 无感知查重:同内容分轨已在库且旧文件仍可达 → 跳过
+                  this.progress.deduped++;
+                  hilog.info(DOMAIN, TAG, 'cue dedup skip track=%{public}d (dup of %{public}s)',
+                    t.index, ident[0].path);
+                  continue;
+                }
+                // 移动认领:原行改挂新路径
+                await Db.get().updateSongFields(ident[0].id,
+                  { 'path': audioKey, 'hash': audioHash, 'mtime': mtime, 'file_size': fsize });
+                this.progress.relinked++;
+                added++;
+                hilog.info(DOMAIN, TAG, 'cue relink song=%{public}d track=%{public}d -> %{public}s',
+                  ident[0].id, t.index, audioKey);
+                continue;
+              }
+            }
             await Db.get().upsertSong(song, false);
+            this.progress.added++;
             added++;
           }
         }

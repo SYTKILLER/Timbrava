@@ -118,16 +118,47 @@ async function runDebugCommands(ctx: common.UIAbilityContext, params: Record<str
       RgScanner.get().cancel();
     }
     if (get('debugDup') === '1') {
-      // 造重复语料:同内容跨路径文件 + 重扫(重复清理检测用)
+      // 造重复语料:同内容跨路径文件 + 重扫(0.12.0 hash 查重验证:期望 deduped 跳过)
       const dir = `${ctx.filesDir}/music`;
       const dst = `${dir}/Dup_Song.flac`;
       try {
         if (!fs.accessSync(dst)) {
-          fs.copyFileSync(`${dir}/Song16_441.flac`, dst);
-          hilog.info(DBG_DOMAIN, DBG_TAG, 'dup file created');
+          // 语料源回退:取现存的任一语料文件(旧 Song16_441.flac 可能已不在)
+          const srcs = [`${dir}/Song16_441.flac`, `${dir}/Test_Tone.flac`, `${dir}/Moved_Tone.flac`, `${dir}/dbg_a.wav`];
+          let src = '';
+          for (const s of srcs) {
+            if (fs.accessSync(s)) {
+              src = s;
+              break;
+            }
+          }
+          if (src.length > 0) {
+            fs.copyFileSync(src, dst);
+            hilog.info(DBG_DOMAIN, DBG_TAG, 'dup file created from %{public}s', src);
+          } else {
+            hilog.warn(DBG_DOMAIN, DBG_TAG, 'dup create skip: no corpus source');
+          }
         }
       } catch (e) {
         hilog.warn(DBG_DOMAIN, DBG_TAG, 'dup create fail %{public}s', (e as Error).message);
+      }
+      await ScanService.get().rescan();
+    }
+    if (get('debugMove') === '1') {
+      // 造移动场景:重命名语料文件 + 重扫(0.12.0 hash 移动认领验证:期望 relinked 且关系保留)
+      const dir = `${ctx.filesDir}/music`;
+      try {
+        if (fs.accessSync(`${dir}/Test_Tone.flac`)) {
+          fs.renameSync(`${dir}/Test_Tone.flac`, `${dir}/Moved_Tone.flac`);
+          hilog.info(DBG_DOMAIN, DBG_TAG, 'move: Test_Tone.flac -> Moved_Tone.flac');
+        } else if (fs.accessSync(`${dir}/Moved_Tone.flac`)) {
+          fs.renameSync(`${dir}/Moved_Tone.flac`, `${dir}/Test_Tone.flac`);
+          hilog.info(DBG_DOMAIN, DBG_TAG, 'move: Moved_Tone.flac -> Test_Tone.flac');
+        } else {
+          hilog.warn(DBG_DOMAIN, DBG_TAG, 'move skip: no corpus source');
+        }
+      } catch (e) {
+        hilog.warn(DBG_DOMAIN, DBG_TAG, 'move fail %{public}s', (e as Error).message);
       }
       await ScanService.get().rescan();
     }

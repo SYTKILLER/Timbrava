@@ -330,7 +330,15 @@
     },
     {
       "name": "dup_note",
-      "value": "按「同标题+艺人且时长±2s」或「同体积同时长」检测;移除只清曲库记录,不删文件"
+      "value": "「内容相同」按文件哈希精确判定;「疑似」按同标题+艺人时长±2s 或同体积同时长;移除只清曲库记录,不删文件"
+    },
+    {
+      "name": "dup_tag_exact",
+      "value": "内容相同"
+    },
+    {
+      "name": "dup_tag_guess",
+      "value": "疑似"
     },
     {
       "name": "dup_none",
@@ -1003,6 +1011,10 @@
     {
       "name": "scan_progress_stats",
       "value": "新增 %d · 更新 %d · 移除 %d"
+    },
+    {
+      "name": "scan_progress_identity",
+      "value": "重复跳过 %d · 移动认领 %d"
     },
     {
       "name": "check_update",

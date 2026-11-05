@@ -1,6 +1,6 @@
 // 备份恢复(#50):设置/歌单/收藏/队列/EQ 预设/黑名单 → JSON。
 // 导出经 DocumentViewPicker.save、导入经 select(零权限模式);歌曲本体不备份(重扫恢复),
-// 歌单曲目按 path 映射(恢复时库内按 path 重挂 id)。
+// 歌单曲目按 path 映射(恢复时库内按 path 重挂 id);0.12.0 起附 hashByPath,path 失配时按内容 hash 重挂。
 import { common } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -8,6 +8,7 @@ import { util } from '@kit.ArkTS';
 import { relationalStore } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Db } from '../data/Db';
+import { Song } from '../data/Model';
 import { LibraryStore } from '../data/LibraryStore';
 import { PlaylistRepo } from '../data/PlaylistRepo';
 import { QueueService } from './QueueService';
@@ -141,6 +142,15 @@ export class BackupService {
     rb.close();
     backup['blacklist'] = blacklist;
 
+    // 内容身份映射(0.12.0):恢复时 path 失配(跨设备/换目录)按 hash 重挂
+    const hashByPath: Record<string, string> = {};
+    const rh = await st.querySql("SELECT path, hash FROM songs WHERE hash != ''");
+    while (rh.goToNextRow()) {
+      hashByPath[rh.getString(0)] = rh.getString(1);
+    }
+    rh.close();
+    backup['hashByPath'] = hashByPath;
+
     return JSON.stringify(backup);
   }
 
@@ -171,6 +181,24 @@ export class BackupService {
     }
   }
 
+  // 恢复重挂(0.12.0):path 命中优先;失配时经导出的 hashByPath 按内容身份重挂(跨设备/换目录)
+  private static async resolveSong(p: string, hashByPath: Record<string, string>,
+    wholeTrackOnly: boolean): Promise<Song[]> {
+    const rows = wholeTrackOnly
+      ? await Db.get().querySongs('path = ? AND cue_start_ms = 0', [p], '', 1, 0)
+      : await Db.get().querySongs('path = ?', [p], '', 1, 0);
+    if (rows.length > 0) {
+      return rows;
+    }
+    const h = hashByPath[p];
+    if (h !== undefined && h.length > 0) {
+      return wholeTrackOnly
+        ? await Db.get().querySongs('hash = ? AND cue_start_ms = 0', [h], '', 1, 0)
+        : await Db.get().querySongs('hash = ?', [h], '', 1, 0);
+    }
+    return [];
+  }
+
   static async restore(jsonText: string): Promise<void> {
     const obj = JSON.parse(jsonText) as Record<string, Object>;
     const kind = String(obj['kind'] ?? '');
@@ -181,6 +209,7 @@ export class BackupService {
     if (st === null) {
       throw new Error('db not ready');
     }
+    const hashByPath: Record<string, string> = obj['hashByPath'] as Record<string, string> ?? {};
     // settings
     const settings = obj['settings'] as Array<Array<string>>;
     if (settings !== undefined && settings !== null) {
@@ -202,7 +231,7 @@ export class BackupService {
         const plId = await PlaylistRepo.get().createPlaylist(name);
         const ids: number[] = [];
         for (const p of paths) {
-          const rows = await Db.get().querySongs('path = ? AND cue_start_ms = 0', [p], '', 1, 0);
+          const rows = await BackupService.resolveSong(p, hashByPath, true);
           if (rows.length > 0) {
             ids.push(rows[0].id);
           }
@@ -216,7 +245,7 @@ export class BackupService {
     const favs = obj['favorites'] as Array<string>;
     if (favs !== undefined && favs !== null) {
       for (const p of favs) {
-        const rows = await Db.get().querySongs('path = ?', [p], '', 1, 0);
+        const rows = await BackupService.resolveSong(p, hashByPath, false);
         if (rows.length > 0) {
           await Db.get().setFavorite(rows[0].id, true);
         }
@@ -234,7 +263,7 @@ export class BackupService {
         const ids: number[] = [];
         if (paths !== undefined) {
           for (const p of paths) {
-            const rows = await Db.get().querySongs('path = ?', [p], '', 1, 0);
+            const rows = await BackupService.resolveSong(p, hashByPath, false);
             if (rows.length > 0) {
               ids.push(rows[0].id);
             }

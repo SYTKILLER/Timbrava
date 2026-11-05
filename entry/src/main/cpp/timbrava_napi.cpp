@@ -7,6 +7,11 @@
 #include <vector>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+
+#include <CryptoArchitectureKit/crypto_common.h>
+#include <CryptoArchitectureKit/crypto_digest.h>
 
 #include "include/engine.h"
 #include "include/flac_tag_writer.h"
@@ -425,6 +430,113 @@ static napi_value JWriteFlacTags(napi_env env, napi_callback_info info)
     return promise;
 }
 
+// ---------------- 文件内容摘要 SHA-256(napi 异步工作,Promise 返回) ----------------
+// 曲库内容身份原语(0.12.0):fd 契约与 analyzeFd 一致——调用方保持 fd 打开至 Promise 完成。
+// pread 分块读(非 mmap):数 GB DSD 文件不整段进 page cache;读至 EOF,长度以实际读到的为准。
+
+struct HashCarrier {
+    int fd = -1;
+    bool ok = false;
+    std::string errMsg;
+    std::string hex; // 64 位小写 hex;失败时为空串(调用方以空串=无身份处理)
+    napi_deferred deferred = nullptr;
+    napi_async_work work = nullptr;
+};
+
+static void ExecuteHash(napi_env env, void *data)
+{
+    (void)env;
+    HashCarrier *c = static_cast<HashCarrier *>(data);
+    OH_CryptoDigest *ctx = nullptr;
+    Crypto_DataBlob out = {nullptr, 0};
+    do {
+        if (c->fd < 0) {
+            c->errMsg = "bad fd";
+            break;
+        }
+        if (OH_CryptoDigest_Create("SHA256", &ctx) != CRYPTO_SUCCESS) {
+            c->errMsg = "digest create fail";
+            break;
+        }
+        static constexpr size_t kChunk = 8u * 1024u * 1024u;
+        std::vector<uint8_t> buf(kChunk);
+        off_t off = 0;
+        bool ioError = false;
+        for (;;) {
+            ssize_t n = ::pread(c->fd, buf.data(), kChunk, off);
+            if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                c->errMsg = "pread fail";
+                ioError = true;
+                break;
+            }
+            if (n == 0) {
+                break; // EOF
+            }
+            Crypto_DataBlob in = {buf.data(), static_cast<size_t>(n)};
+            if (OH_CryptoDigest_Update(ctx, &in) != CRYPTO_SUCCESS) {
+                c->errMsg = "digest update fail";
+                ioError = true;
+                break;
+            }
+            off += n;
+        }
+        if (ioError) {
+            break;
+        }
+        if (OH_CryptoDigest_Final(ctx, &out) != CRYPTO_SUCCESS) {
+            c->errMsg = "digest final fail";
+            break;
+        }
+        static const char *kHex = "0123456789abcdef";
+        c->hex.reserve(out.len * 2);
+        for (size_t i = 0; i < out.len; i++) {
+            c->hex.push_back(kHex[(out.data[i] >> 4) & 0xF]);
+            c->hex.push_back(kHex[out.data[i] & 0xF]);
+        }
+        c->ok = true;
+    } while (false);
+    if (out.data != nullptr) {
+        OH_Crypto_FreeDataBlob(&out);
+    }
+    if (ctx != nullptr) {
+        OH_DigestCrypto_Destroy(ctx);
+    }
+}
+
+static void CompleteHash(napi_env env, napi_status status, void *data)
+{
+    HashCarrier *c = static_cast<HashCarrier *>(data);
+    napi_value result = nullptr;
+    napi_create_string_utf8(env, c->hex.c_str(), NAPI_AUTO_LENGTH, &result);
+    if (!c->ok) {
+        OH_LOG_Print(LOG_APP, LOG_WARN, 0, LOG_TAG, "hashFd fail: %{public}s", c->errMsg.c_str());
+    }
+    napi_resolve_deferred(env, c->deferred, result);
+    napi_delete_async_work(env, c->work);
+    delete c;
+}
+
+static napi_value JHashFd(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    HashCarrier *c = new HashCarrier();
+    if (argc >= 1) {
+        napi_get_value_int32(env, args[0], &c->fd);
+    }
+    napi_value promise;
+    napi_create_promise(env, &c->deferred, &promise);
+    napi_value name;
+    napi_create_string_utf8(env, "timbravaHash", NAPI_AUTO_LENGTH, &name);
+    napi_create_async_work(env, nullptr, name, ExecuteHash, CompleteHash, c, &c->work);
+    napi_queue_async_work(env, c->work);
+    return promise;
+}
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
 {
@@ -450,6 +562,7 @@ static napi_value Init(napi_env env, napi_value exports)
         {"setSkipSilence", nullptr, JSetSkipSilence, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"analyzeFd", nullptr, JAnalyzeFd, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"writeFlacTags", nullptr, JWriteFlacTags, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"hashFd", nullptr, JHashFd, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

@@ -17,4 +17,4 @@ add_library(timbrava_core SHARED
             src/mmap_file.cpp
             src/audio_output.cpp)
 
-target_link_libraries(timbrava_core PUBLIC libohaudio.so libhilog_ndk.z.so libace_napi.z.so)
+target_link_libraries(timbrava_core PUBLIC libohaudio.so libhilog_ndk.z.so libace_napi.z.so libohcrypto.so)

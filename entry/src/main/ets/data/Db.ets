@@ -11,6 +11,7 @@ const SQL_CREATE: string[] = [
   `CREATE TABLE IF NOT EXISTS songs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     path TEXT NOT NULL,
+    hash TEXT NOT NULL DEFAULT '',
     file_size INTEGER DEFAULT 0, mtime INTEGER DEFAULT 0,
     title TEXT NOT NULL DEFAULT '', artist TEXT DEFAULT '', album TEXT DEFAULT '', album_artist TEXT DEFAULT '',
     genre TEXT DEFAULT '', year INTEGER DEFAULT 0, track_no INTEGER DEFAULT 0, disc_no INTEGER DEFAULT 0,
@@ -27,6 +28,7 @@ const SQL_CREATE: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_songs_album ON songs(album_artist, album, disc_no, track_no)`,
   `CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist)`,
   `CREATE INDEX IF NOT EXISTS idx_songs_path ON songs(path)`,
+  // idx_songs_hash 不在此处建:升级路径上须先走 migrateSongsHash 的 ALTER 挂列(见该方法注释)
   `CREATE TABLE IF NOT EXISTS playlists(
     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL,
     created_at INTEGER DEFAULT 0, sort INTEGER DEFAULT 0)`,
@@ -115,6 +117,7 @@ export class Db {
       for (const sql of SQL_CREATE) {
         await this.store.executeSql(sql);
       }
+      await this.migrateSongsHash();
       hilog.info(DOMAIN, TAG, 'init ok, tables=%{public}d', SQL_CREATE.length);
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'init fail %{public}s', (e as Error).message);
@@ -171,6 +174,37 @@ export class Db {
     return this.store !== null;
   }
 
+  // 迁移(0.12.0):songs 增加 hash 内容身份列 + 索引(幂等,app_settings 标记)。
+  // 必须在 SQL_CREATE 之后执行:老库先 ALTER 挂列再建 idx_songs_hash(索引放 SQL_CREATE 会因列未挂而失败);
+  // 新装直建已含 hash,此处自动跳过 ALTER 只补索引。两条路径都收敛到本方法。
+  private async migrateSongsHash(): Promise<void> {
+    const st = this.store;
+    if (st === null) {
+      return;
+    }
+    const mark = await this.getSetting('dbSongsHash1', '0');
+    if (mark === '1') {
+      return;
+    }
+    try {
+      const rs = await st.querySql(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='songs'");
+      let ddl = '';
+      if (rs.goToFirstRow()) {
+        ddl = rs.getString(0);
+      }
+      rs.close();
+      if (ddl.length > 0 && ddl.indexOf('hash') < 0) {
+        await st.executeSql("ALTER TABLE songs ADD COLUMN hash TEXT NOT NULL DEFAULT ''");
+        hilog.info(DOMAIN, TAG, 'songs hash column added');
+      }
+      await st.executeSql('CREATE INDEX IF NOT EXISTS idx_songs_hash ON songs(hash)');
+      await this.setSetting('dbSongsHash1', '1');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'migrateSongsHash fail %{public}s', (e as Error).message);
+    }
+  }
+
   storeOrNull(): relationalStore.RdbStore | null {
     return this.store;
   }
@@ -212,7 +246,7 @@ export class Db {
 
   // ============ songs ============
 
-  private static readonly SONG_COLS = 'id, path, file_size, mtime, title, artist, album, album_artist, genre, year, ' +
+  private static readonly SONG_COLS = 'id, path, hash, file_size, mtime, title, artist, album, album_artist, genre, year, ' +
     'track_no, disc_no, duration_ms, sample_rate, bit_depth, channels, bitrate_kbps, codec, ' +
     'cue_start_ms, cue_end_ms, art_path, rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak';
 
@@ -239,6 +273,7 @@ export class Db {
     const st = this.storeOrThrow();
     const bucket: relationalStore.ValuesBucket = {
       'path': s.path,
+      'hash': s.hash,
       'file_size': s.fileSize,
       'mtime': s.mtime,
       'title': s.title,
@@ -298,6 +333,24 @@ export class Db {
     return out;
   }
 
+  // hash 回填(0.12.0):尚未求值内容身份的物理文件路径(去重)
+  async getUnhashedPaths(limit: number): Promise<string[]> {
+    const st = this.storeOrThrow();
+    const rs = await st.querySql("SELECT DISTINCT path FROM songs WHERE hash = '' LIMIT ?", [limit]);
+    const out: string[] = [];
+    while (rs.goToNextRow()) {
+      out.push(rs.getString(0));
+    }
+    rs.close();
+    return out;
+  }
+
+  // hash 回填写回:同物理文件所有行(整轨+CUE 分轨)统一身份
+  async updateSongsHashByPath(path: string, hash: string): Promise<void> {
+    const st = this.storeOrThrow();
+    await st.executeSql('UPDATE songs SET hash = ? WHERE path = ?', [hash, path]);
+  }
+
   // 从库完全移除单曲(songs + favorites;播放记录/队列行保留为孤儿,查询侧已判空)
   async removeSongCompletely(songId: number): Promise<void> {
     const st = this.storeOrThrow();
@@ -316,6 +369,154 @@ export class Db {
       pred.equalTo('path', p);
       await st.delete(pred);
     }
+  }
+
+  // 内容身份合并(0.12.0):src 的全部关系迁给 dst(id 保留 dst),src songs 行删除。
+  // favorites/lyrics_cache 主键冲突时保 dst 已有;play_count 计数累加;queue_items 瞬态直接删。
+  async mergeSongs(srcId: number, dstId: number): Promise<void> {
+    if (srcId === dstId) {
+      return;
+    }
+    const st = this.storeOrThrow();
+    try {
+      // favorites:dst 已有则丢弃 src 行,否则改挂
+      const fav = await st.querySql('SELECT song_id FROM favorites WHERE song_id IN (?, ?)', [srcId, dstId]);
+      let favSrc = false;
+      let favDst = false;
+      if (fav.goToFirstRow()) {
+        do {
+          const sid = fav.getLong(fav.getColumnIndex('song_id'));
+          if (sid === srcId) {
+            favSrc = true;
+          }
+          if (sid === dstId) {
+            favDst = true;
+          }
+        } while (fav.goToNextRow());
+      }
+      fav.close();
+      if (favSrc) {
+        if (favDst) {
+          await st.executeSql('DELETE FROM favorites WHERE song_id = ?', [srcId]);
+        } else {
+          await st.executeSql('UPDATE favorites SET song_id = ? WHERE song_id = ?', [dstId, srcId]);
+        }
+      }
+      // history:全量改挂
+      await st.executeSql('UPDATE history SET song_id = ? WHERE song_id = ?', [dstId, srcId]);
+      // play_count:计数累加,last_played 取较大
+      const pc = await st.querySql('SELECT song_id, count, total_ms, last_played FROM play_count WHERE song_id IN (?, ?)',
+        [srcId, dstId]);
+      const rows: number[][] = [];
+      while (pc.goToNextRow()) {
+        rows.push([pc.getLong(pc.getColumnIndex('song_id')), pc.getLong(pc.getColumnIndex('count')),
+          pc.getLong(pc.getColumnIndex('total_ms')), pc.getLong(pc.getColumnIndex('last_played'))]);
+      }
+      pc.close();
+      const srcPc = rows.find((r: number[]): boolean => r[0] === srcId);
+      const dstPc = rows.find((r: number[]): boolean => r[0] === dstId);
+      if (srcPc !== undefined) {
+        if (dstPc !== undefined) {
+          await st.executeSql('UPDATE play_count SET count = ?, total_ms = ?, last_played = ? WHERE song_id = ?',
+            [dstPc[1] + srcPc[1], dstPc[2] + srcPc[2], Math.max(dstPc[3], srcPc[3]), dstId]);
+          await st.executeSql('DELETE FROM play_count WHERE song_id = ?', [srcId]);
+        } else {
+          await st.executeSql('UPDATE play_count SET song_id = ? WHERE song_id = ?', [dstId, srcId]);
+        }
+      }
+      // playlist_songs:逐 playlist 判重——dst 已在则删 src 行,否则改挂
+      const ps = await st.querySql('SELECT playlist_id, position FROM playlist_songs WHERE song_id = ?', [srcId]);
+      const psRows: number[][] = [];
+      while (ps.goToNextRow()) {
+        psRows.push([ps.getLong(ps.getColumnIndex('playlist_id')), ps.getLong(ps.getColumnIndex('position'))]);
+      }
+      ps.close();
+      for (const r of psRows) {
+        const dup = await st.querySql('SELECT 1 FROM playlist_songs WHERE playlist_id = ? AND song_id = ? LIMIT 1',
+          [r[0], dstId]);
+        const hasDup = dup.goToFirstRow();
+        dup.close();
+        if (hasDup) {
+          await st.executeSql('DELETE FROM playlist_songs WHERE playlist_id = ? AND song_id = ?', [r[0], srcId]);
+        } else {
+          await st.executeSql('UPDATE playlist_songs SET song_id = ? WHERE playlist_id = ? AND song_id = ?',
+            [dstId, r[0], srcId]);
+        }
+      }
+      // lyrics_cache:dst 缺则改挂,已有则删 src
+      const lc = await st.querySql('SELECT song_id FROM lyrics_cache WHERE song_id IN (?, ?)', [srcId, dstId]);
+      let lcSrc = false;
+      let lcDst = false;
+      if (lc.goToFirstRow()) {
+        do {
+          const sid = lc.getLong(lc.getColumnIndex('song_id'));
+          if (sid === srcId) {
+            lcSrc = true;
+          }
+          if (sid === dstId) {
+            lcDst = true;
+          }
+        } while (lc.goToNextRow());
+      }
+      lc.close();
+      if (lcSrc) {
+        if (lcDst) {
+          await st.executeSql('DELETE FROM lyrics_cache WHERE song_id = ?', [srcId]);
+        } else {
+          await st.executeSql('UPDATE lyrics_cache SET song_id = ? WHERE song_id = ?', [dstId, srcId]);
+        }
+      }
+      // queue_items:瞬态,不合并
+      await st.executeSql('DELETE FROM queue_items WHERE song_id = ?', [srcId]);
+      hilog.info(DOMAIN, TAG, 'songs merged src=%{public}d dst=%{public}d', srcId, dstId);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'mergeSongs fail %{public}s', (e as Error).message);
+    }
+  }
+
+  // 内容身份感知的路径退役(0.12.0,rescan 清理段用):
+  // 路径失联的行,若库内存在同 (hash, cueStartMs) 且不在本轮退役集的幸存行 → 关系并给幸存者再删行;
+  // 否则按旧语义删除(songs + favorites,其余留孤儿)。返回退役行数。
+  async retireSongsByPaths(paths: string[]): Promise<number> {
+    const st = this.storeOrThrow();
+    let retired = 0;
+    // 两阶段:先收集全部待退役行,幸存者检索排除本轮退役集(防"两份都失联"时关系并进同批被删的行)
+    const victims: Song[] = [];
+    for (const p of paths) {
+      const rows = await this.querySongs('path = ?', [p], '', 1000, 0);
+      for (const r of rows) {
+        victims.push(r);
+      }
+    }
+    if (victims.length === 0) {
+      return 0;
+    }
+    const victimIds = new Set<number>();
+    for (const v of victims) {
+      victimIds.add(v.id);
+    }
+    for (const v of victims) {
+      let survivorId = 0;
+      if (v.hash.length > 0) {
+        const cands = await this.querySongs('hash = ? AND cue_start_ms = ? AND id != ?',
+          [v.hash, v.cueStartMs, v.id], 'date_added DESC', 1, 0);
+        if (cands.length > 0 && !victimIds.has(cands[0].id)) {
+          survivorId = cands[0].id;
+        }
+      }
+      if (survivorId > 0) {
+        await this.mergeSongs(v.id, survivorId);
+        const pred = new relationalStore.RdbPredicates('songs');
+        pred.equalTo('id', v.id);
+        await st.delete(pred);
+        hilog.info(DOMAIN, TAG, 'retired path=%{public}s id=%{public}d -> merged into %{public}d', v.path, v.id, survivorId);
+      } else {
+        await this.removeSongCompletely(v.id);
+        hilog.info(DOMAIN, TAG, 'retired path=%{public}s id=%{public}d (no survivor)', v.path, v.id);
+      }
+      retired++;
+    }
+    return retired;
   }
 
   async querySongs(where: string, args: Array<string | number>, orderBy: string, limit: number, offset: number): Promise<Song[]> {

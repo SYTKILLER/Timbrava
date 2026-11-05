@@ -330,7 +330,15 @@
     },
     {
       "name": "dup_note",
-      "value": "Detects \"same title+artist within ±2s\" or \"same size+duration\"; removing only clears library records, never deletes files"
+      "value": "\"Identical\" groups by exact file hash; \"Heuristic\" by same title+artist within ±2s or same size+duration; removing only clears library records, never deletes files"
+    },
+    {
+      "name": "dup_tag_exact",
+      "value": "Identical"
+    },
+    {
+      "name": "dup_tag_guess",
+      "value": "Heuristic"
     },
     {
       "name": "dup_none",
@@ -1003,6 +1011,10 @@
     {
       "name": "scan_progress_stats",
       "value": "Added %d · Updated %d · Removed %d"
+    },
+    {
+      "name": "scan_progress_identity",
+      "value": "Deduped %d · Relinked %d"
     },
     {
       "name": "check_update",

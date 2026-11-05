@@ -1,4 +1,5 @@
-// 重复清理(#9):同标题+艺人且时长±2s、或同体积同时长的跨路径重复检测
+// 重复清理(#9 + 0.12.0):优先按内容 hash 精确分组(同一份文件的跨路径副本),
+// 启发式(同标题+艺人且时长±2s、或同体积同时长)降级为「疑似」兜底 hash='' 的存量行;
 // → 分组报告;每组默认保留首条,其余可从库移除(不删文件)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { LibraryStore } from '../../data/LibraryStore';
@@ -11,6 +12,7 @@ const DOMAIN = 0x0001;
 
 class DupGroup {
   label: string = '';
+  exact: boolean = false; // true=内容 hash 完全相同;false=启发式疑似
   songs: Song[] = [];
 }
 
@@ -32,17 +34,45 @@ export struct DuplicatesDest {
   private rebuild(): void {
     const songs = LibraryStore.get().songs;
     const groups: DupGroup[] = [];
-    const used: boolean[] = new Array<boolean>(songs.length).fill(false);
+    const used: Set<number> = new Set<number>();
+    // 第一优先:内容 hash 精确分组(键 = (hash, cueStartMs),CUE 分轨按轨对轨比较,防整组混轨)
+    const byHash: Map<string, Song[]> = new Map();
+    for (const s of songs) {
+      if (s.hash.length === 0) {
+        continue;
+      }
+      const k = `${s.hash}\u0001${s.cueStartMs}`;
+      const arr = byHash.get(k);
+      if (arr === undefined) {
+        byHash.set(k, [s]);
+      } else {
+        arr.push(s);
+      }
+    }
+    byHash.forEach((arr: Song[]): void => {
+      if (arr.length <= 1) {
+        return;
+      }
+      const group = new DupGroup();
+      group.exact = true;
+      group.songs = arr;
+      group.label = `${arr[0].displayTitle()} — ${arr[0].displayArtist()}`;
+      groups.push(group);
+      for (const s of arr) {
+        used.add(s.id);
+      }
+    });
+    // 兜底:启发式分组(hash 未回填的存量行)
     for (let i = 0; i < songs.length; i++) {
-      if (used[i]) {
+      if (used.has(songs[i].id)) {
         continue;
       }
       const a = songs[i];
       const group = new DupGroup();
       group.songs.push(a);
-      used[i] = true;
+      used.add(a.id);
       for (let j = i + 1; j < songs.length; j++) {
-        if (used[j]) {
+        if (used.has(songs[j].id)) {
           continue;
         }
         const b = songs[j];
@@ -55,7 +85,7 @@ export struct DuplicatesDest {
         const sameFile = a.fileSize === b.fileSize && a.fileSize > 0 && Math.abs(a.durationMs - b.durationMs) <= 2000;
         if (sameMeta || sameFile) {
           group.songs.push(b);
-          used[j] = true;
+          used.add(b.id);
         }
       }
       if (group.songs.length > 1) {
@@ -100,11 +130,17 @@ export struct DuplicatesDest {
             ForEach(this.groups, (g: DupGroup, gi: number) => {
               ListItem() {
                 Column({ space: 4 }) {
-                  Text(L($r('app.string.dup_group'), g.label, g.songs.length))
-                    .fontSize(13)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor($r('app.color.text_primary'))
-                    .width('100%')
+                  Row({ space: 8 }) {
+                    Text(L($r('app.string.dup_group'), g.label, g.songs.length))
+                      .fontSize(13)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor($r('app.color.text_primary'))
+                      .layoutWeight(1)
+                    Text(g.exact ? $r('app.string.dup_tag_exact') : $r('app.string.dup_tag_guess'))
+                      .fontSize(10)
+                      .fontColor(g.exact ? $r('app.color.accent') : $r('app.color.text_secondary'))
+                  }
+                  .width('100%')
                   ForEach(g.songs, (s: Song, si: number) => {
                     Row({ space: 8 }) {
                       Column({ space: 2 }) {
@@ -139,7 +175,7 @@ export struct DuplicatesDest {
                 .borderRadius(12)
                 .backgroundColor($r('app.color.card_bg'))
               }
-            }, (g: DupGroup): string => `dupg_${g.label}_${g.songs.length}_${this.libVer}`)
+            }, (g: DupGroup): string => `dupg_${g.exact}_${g.label}_${g.songs.length}_${this.libVer}`)
           }
           .width('100%')
           .layoutWeight(1)
