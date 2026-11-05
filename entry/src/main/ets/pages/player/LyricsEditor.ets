@@ -268,8 +268,8 @@ export struct LyricsEditorDest {
                         .fontSize(15)
                         .fontColor([$r('app.color.text_secondary')])
                     }
-                    .width(28)
-                    .height(28)
+                    .width(32)
+                    .height(32)
                     .backgroundColor(Color.Transparent)
                     .onClick(() => {
                       this.clearLine(i);

@@ -54,6 +54,26 @@ bool FlacDecoder::openFile(int fd, const TrackInfo &hint)
         OH_LOG_Print(LOG_APP, LOG_ERROR, 0, LOG_TAG, "dup fd fail errno=%{public}d", errno);
         return false;
     }
+    // 26-3 mmap 快路径:≥16MB 整文件映射,drflac_open_memory 从映射内存直读(解封装/解码
+    // 零 read 拷贝,seek 指针归位)。映射成功后即可关闭 fd,失败则回退 FILE* 流路径。
+    if (mmap_.open(dupFd)) {
+        ::close(dupFd);
+        flac_ = drflac_open_memory(mmap_.data(), mmap_.size(), nullptr);
+        if (flac_ == nullptr) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, 0, LOG_TAG, "drflac_open_memory fail(非 FLAC 或头损坏)");
+            close();
+            return false;
+        }
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "open ok(mmap) rate=%{public}d ch=%{public}d bits=%{public}d",
+                     static_cast<int>(flac_->sampleRate), static_cast<int>(flac_->channels),
+                     static_cast<int>(flac_->bitsPerSample));
+        info_.sampleRate = static_cast<int>(flac_->sampleRate);
+        info_.channels = static_cast<int>(flac_->channels);
+        info_.bitsPerSample = static_cast<int>(flac_->bitsPerSample);
+        info_.totalFrames = static_cast<int64_t>(flac_->totalPCMFrameCount);
+        info_.codec = "flac";
+        return true;
+    }
     file_ = fdopen(dupFd, "rb");
     if (file_ == nullptr) {
         ::close(dupFd);
@@ -89,6 +109,7 @@ void FlacDecoder::close()
         fclose(file_);
         file_ = nullptr;
     }
+    mmap_.close();
 }
 
 const TrackInfo &FlacDecoder::info() const { return info_; }

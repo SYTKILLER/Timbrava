@@ -107,6 +107,8 @@ bool DsdDecoder::openFile(int fd, const TrackInfo &hint)
     if (fseek(file_, 0, SEEK_SET) != 0) {
         OH_LOG_Print(LOG_APP, LOG_ERROR, 0, LOG_TAG, "fseek rewind fail");
     }
+    // 26-3:≥16MB 整文件映射,采样热路径指针直读;失败/小文件回退 FILE*(映射不依赖 fd 存活)
+    mmap_.open(dupFd);
 
     uint8_t magic[4] = {0};
     if (fread(magic, 1, 4, file_) != 4) {
@@ -298,11 +300,27 @@ void DsdDecoder::close()
         fclose(file_);
         file_ = nullptr;
     }
+    mmap_.close();
     kind_ = DsdContainer::NONE;
     framesTotal_ = 0;
     framePos_ = 0;
     dataStart_ = 0;
     dataSize_ = 0;
+}
+
+bool DsdDecoder::readBytesAt(int64_t off, uint8_t *dst, size_t n)
+{
+    if (mmap_.valid()) {
+        if (off < 0 || n > mmap_.size() || static_cast<uint64_t>(off) > mmap_.size() - n) {
+            return false;
+        }
+        std::memcpy(dst, mmap_.data() + off, n);
+        return true;
+    }
+    if (file_ == nullptr || fseek(file_, off, SEEK_SET) != 0) {
+        return false;
+    }
+    return fread(dst, 1, n, file_) == n;
 }
 
 uint64_t DsdDecoder::countOnesAt(int ch, int64_t bytePos, size_t len)
@@ -323,10 +341,7 @@ uint64_t DsdDecoder::countOnesAt(int ch, int64_t bytePos, size_t len)
             size_t take = static_cast<size_t>(std::min<int64_t>(static_cast<int64_t>(len - got),
                                                                 blockSize_ - off));
             take = std::min(take, buf.size());
-            if (fseek(file_, dataStart_ + (block * chNum_ + ch) * blockSize_ + off, SEEK_SET) != 0) {
-                break;
-            }
-            if (fread(buf.data(), 1, take, file_) != take) {
+            if (!readBytesAt(dataStart_ + (block * chNum_ + ch) * blockSize_ + off, buf.data(), take)) {
                 break;
             }
             for (size_t i = 0; i < take; ++i) {
@@ -342,10 +357,7 @@ uint64_t DsdDecoder::countOnesAt(int ch, int64_t bytePos, size_t len)
     size_t got = 0;
     while (got < span) {
         const size_t take = std::min(span - got, buf.size());
-        if (fseek(file_, dataStart_ + (bytePos * chNum_) + static_cast<int64_t>(got), SEEK_SET) != 0) {
-            break;
-        }
-        if (fread(buf.data(), 1, take, file_) != take) {
+        if (!readBytesAt(dataStart_ + (bytePos * chNum_) + static_cast<int64_t>(got), buf.data(), take)) {
             break;
         }
         for (size_t i = 0; i < take; ++i) {

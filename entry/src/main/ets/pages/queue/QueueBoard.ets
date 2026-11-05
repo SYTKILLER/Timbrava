@@ -128,8 +128,8 @@ export struct QueueBoardDest {
                         .fontSize(14)
                         .fontColor([$r('app.color.text_secondary')])
                     }
-                    .width(30)
-                    .height(30)
+                    .width(32)
+                    .height(32)
                     .backgroundColor(Color.Transparent)
                     .onClick(() => {
                       QueueService.get().deleteQueue(b.id);

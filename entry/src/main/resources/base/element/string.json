@@ -1163,6 +1163,14 @@
     {
       "name": "eq_scope_hint",
       "value": "此曲线仅作用于所选作用域"
+    },
+    {
+      "name": "desktop_lyrics",
+      "value": "桌面歌词"
+    },
+    {
+      "name": "float_lyrics_fail",
+      "value": "桌面歌词开启失败(设备/权限不支持)"
     }
   ]
 }

@@ -9,6 +9,7 @@
 #include <cstdio>
 
 #include "decoder.h"
+#include "mmap_file.h"
 
 namespace timbrava {
 
@@ -36,12 +37,15 @@ private:
     int readU64be(uint64_t *v);
     bool parseDsf();
     bool parseDff();
+    // 文件绝对偏移读 n 字节:26-3 mmap 直读优先,否则 FILE* seek+read(头解析/降级路径)
+    bool readBytesAt(int64_t off, uint8_t *dst, size_t n);
     // 某通道 [bytePos, bytePos+len) 字节的 1-bit 计数(DSF 块交织 / DFF 字节交织)
     uint64_t countOnesAt(int ch, int64_t bytePos, size_t len);
     // 单字节 1-bit 计数表
     static const uint8_t *popTab();
 
     FILE *file_ = nullptr;
+    MmapFile mmap_; // 26-3:DSD 热路径(每帧逐通道取窗)指针直读,免 fseek/fread syscall
     TrackInfo info_{};
     DsdContainer kind_ = DsdContainer::NONE;
 

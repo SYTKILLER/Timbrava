@@ -14,6 +14,7 @@ add_library(timbrava_core SHARED
             src/wav_decoder.cpp
             src/dsd_decoder.cpp
             src/flac_tag_writer.cpp
+            src/mmap_file.cpp
             src/audio_output.cpp)
 
 target_link_libraries(timbrava_core PUBLIC libohaudio.so libhilog_ndk.z.so libace_napi.z.so)

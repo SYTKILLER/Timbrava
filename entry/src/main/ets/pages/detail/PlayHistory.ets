@@ -128,6 +128,8 @@ export struct PlayHistoryDest {
       .borderRadius(8)
       .backgroundColor($r('app.color.danger'))
       .padding(0)
+      // V2(26 行为变更):视觉 16 保留,热区扩到 40vp ≥32vp 最小热区
+      .responseRegion({ x: -12, y: -12, width: 40, height: 40 })
       .onClick(() => {
         onDelete();
       })

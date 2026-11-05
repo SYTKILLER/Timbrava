@@ -10,7 +10,11 @@ import { L, Ls } from '../common/Lang';
 const TAG = '[Timbrava][SongRow]';
 const DOMAIN = 0x0001;
 
+// 26-2 全局复用池:全局池宿主在 Index(reusePool 'shared' + poolAccepts [SongRow],26 能力),
+// 本组件仅 @Reusable(API 10)标记可复用——曲库/歌单/搜索/队列四处滚动节点跨页面互相复用。
+// V6 规则适配:复用参数经 @Prop 自动重绑,无 aboutToReuse 手工状态。
 @Component
+@Reusable
 export struct SongRow {
   @Prop song: Song = new Song();
   @Prop listIds: number[] = [];      // 所在列表的曲目顺序(空=未知,回退单曲插播)

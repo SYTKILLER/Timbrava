@@ -1163,6 +1163,14 @@
     {
       "name": "eq_scope_hint",
       "value": "This curve applies to the selected scope only"
+    },
+    {
+      "name": "desktop_lyrics",
+      "value": "Desktop lyrics"
+    },
+    {
+      "name": "float_lyrics_fail",
+      "value": "Failed to enable desktop lyrics (device/permission)"
     }
   ]
 }

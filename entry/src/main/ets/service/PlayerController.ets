@@ -14,6 +14,7 @@ import { SettingsService, PlayerBridge } from './SettingsService';
 import { QueueService } from './QueueService';
 import { Song, RepeatMode } from '../data/Model';
 import { LrcLibClient } from './LrcLibClient';
+import { LiveViewService } from './LiveViewService';
 import { IAudioEngine, EngineKind, EngineEventData, EngineEventKind, EngineTrackInfo } from './engine/EngineTypes';
 import { SystemEngine } from './engine/SystemEngine';
 import { LosslessEngine, NativeAnalyzeResult } from './engine/LosslessEngine';
@@ -72,10 +73,22 @@ export class PlayerController {
   private bumpPlayer(): void {
     AppStorage.setOrCreate('playerVer', (AppStorage.get<number>('playerVer') ?? 0) + 1);
     this.pushCardThrottled(); // 服务卡片(M5):状态变化节流推送
+    this.syncLiveView();      // 26-6 实况窗:状态/曲目变化即刷,进度内部按步进节流
   }
 
   private bumpPos(): void {
     AppStorage.setOrCreate('posVer', (AppStorage.get<number>('posVer') ?? 0) + 1);
+    this.syncLiveView(); // 进度环走步进节流(5%),实际 updateLiveView 频率被服务内部限流
+  }
+
+  private syncLiveView(): void {
+    const song = this.currentSong;
+    if (!this.isPlaying || song === null) {
+      LiveViewService.get().sync(false, '', '', 0);
+      return;
+    }
+    const pct = this.durationMs > 0 ? this.positionMs / this.durationMs * 100 : 0;
+    LiveViewService.get().sync(true, song.displayTitle(), song.displayArtist(), pct);
   }
 
   // ============ 初始化 ============
@@ -766,6 +779,8 @@ export class PlayerController {
         }
       });
       await s.activate();
+      // 24-6:显式声明后台播放模式,规范后台行为(音乐类语义=允许后台播放)
+      await s.setBackgroundPlayMode(avSession.BackgroundPlayMode.ENABLE_BACKGROUND_PLAY);
       hilog.info(DOMAIN, TAG, 'avsession activated');
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'avsession init fail %{public}s', (e as Error).message);
@@ -1027,6 +1042,7 @@ export class PlayerController {
       clearInterval(this.ticker);
       this.ticker = -1;
     }
+    LiveViewService.get().stop();
     this.queue.persistNow();
     this.stopEngine();
     if (this.session !== null) {

@@ -5,6 +5,7 @@
 // - 底部 ≥28vp 导航条避让。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
+import { image } from '@kit.ImageKit';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { PlayerController } from '../../service/PlayerController';
 import { QueueService, PlayMode } from '../../service/QueueService';
@@ -12,6 +13,8 @@ import { EngineKind } from '../../service/engine/EngineTypes';
 import { LibraryStore } from '../../data/LibraryStore';
 import { Song, RepeatMode, formatDuration } from '../../data/Model';
 import { LyricsPanel } from '../../components/LyricsPanel';
+import { CoverSuperRes } from '../../service/CoverSuperRes';
+import { DesktopLyricsService } from '../../service/DesktopLyricsService';
 import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][FullPlayer]';
@@ -36,6 +39,8 @@ export struct FullPlayerDest {
   @State playBounce: boolean = false; // 点击缩放弹跳
   @State topSafe: number = 36;
   @State bottomSafe: number = 28;
+  @State srPm: image.PixelMap | null = null; // 26-5 超分封面(小封面实时超分,失败/不支持=null 原图)
+  private srFor: string = '';
   private pathStack: NavPathStack | null = null;
   private swiperCtrl: SwiperController = new SwiperController();
 
@@ -55,6 +60,27 @@ export struct FullPlayerDest {
   onPlayerChanged(): void {
     this.playingMirror = PlayerController.get().isPlaying;
     this.modeMirror = QueueService.get().playMode();
+    this.loadCoverSr();
+  }
+
+  // 26-5:当前曲封面短边 <500px 时实时超分(26 设备),完成后回到本曲才上屏
+  private loadCoverSr(): void {
+    const s = this.song();
+    if (s === null || s.artPath.length === 0 || !CoverSuperRes.get().available()) {
+      this.srPm = null;
+      this.srFor = '';
+      return;
+    }
+    const key = String(s.id);
+    if (this.srFor === key) {
+      return;
+    }
+    this.srFor = key;
+    CoverSuperRes.get().superRes(key, s.artPath).then((pm: image.PixelMap | null): void => {
+      if (this.srFor === key) {
+        this.srPm = pm;
+      }
+    });
   }
 
   onQueueChanged(): void {
@@ -184,6 +210,13 @@ export struct FullPlayerDest {
         Column() {
           if (this.playerVer < 0) {
             Text('')
+          } else if (this.srPm !== null) {
+            Image(this.srPm)
+              .width(this.playerSkin === 'minimal' ? '56%' : '78%')
+              .aspectRatio(1)
+              .borderRadius(24)
+              .objectFit(ImageFit.Cover)
+              .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
           } else if ((this.song() as Song).artPath.length > 0) {
             Image((this.song() as Song).artPath)
               .width(this.playerSkin === 'minimal' ? '56%' : '78%')
@@ -465,6 +498,15 @@ export struct FullPlayerDest {
               this.cycleSleepTimer();
             })
         }
+        // 桌面歌词(26-7,floatView;24 设备/权限未授时不显示入口)
+        if (DesktopLyricsService.get().available()) {
+          ListItem() {
+            this.SheetRow($r('sys.symbol.music_note_list'), $r('app.string.desktop_lyrics'),
+              DesktopLyricsService.get().isOn(), (): void => {
+                this.toggleDesktopLyrics();
+              })
+          }
+        }
         // 查看队列
         ListItem() {
           this.SheetRow($r('sys.symbol.list_bullet'), $r('app.string.view_queue'), false, (): void => {
@@ -617,6 +659,17 @@ export struct FullPlayerDest {
     .borderRadius({ topLeft: 24, topRight: 24 })
     .backgroundColor($r('app.color.card_bg'))
     .shadow({ radius: 32, color: '#33000000', offsetX: 0, offsetY: -6 })
+  }
+
+  // 桌面歌词开关:开→floatView 拉起浮窗页;失败提示(权限/设备不支持)
+  private async toggleDesktopLyrics(): Promise<void> {
+    try {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      await DesktopLyricsService.get().toggle(ctx);
+      this.showMoreSheet = false;
+    } catch (e) {
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.float_lyrics_fail') });
+    }
   }
 
   // ===== 辅助 =====

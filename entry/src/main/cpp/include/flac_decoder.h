@@ -2,6 +2,7 @@
 #define TIMBRAVA_FLAC_DECODER_H
 
 #include "decoder.h"
+#include "mmap_file.h"
 #include "third_party/dr_flac.h"
 
 #include <unistd.h>
@@ -26,6 +27,7 @@ public:
 private:
     drflac *flac_ = nullptr;
     FILE *file_ = nullptr;
+    MmapFile mmap_; // 26-3:大文件整映射(drflac_open_memory 直读,seek 免 read 拷贝)
     TrackInfo info_{};
 };
 

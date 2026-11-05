@@ -4,6 +4,7 @@ import { HdsTabs, HdsTabsFloatingStyle, hdsMaterial, HdsBarLayoutMode, HdsTabsCo
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../service/PlayerController';
+import { SongRow } from '../components/SongRow';
 import { AppTheme, SafeAreaResult } from '../common/Theme';
 import { BarCollapse } from '../common/BarCollapse';
 import { MiniPlayer } from '../components/MiniPlayer';
@@ -24,8 +25,10 @@ import { DuplicatesDest } from './library/Duplicates';
 const TAG = '[Timbrava][Index]';
 const DOMAIN = 0x0001;
 
+// 26-2 全局复用池宿主:root 常驻,shared 池接收 SongRow(@Reusable)回收实例——
+// 曲库/歌单/搜索/队列四处滚动节点跨页面互相复用(26 能力;24 运行时忽略未知 option)。
 @Entry
-@Component
+@Component({ freezeWhenInactive: false, reusePool: 'shared', poolAccepts: [SongRow] })
 struct Index {
   @Provide navStack: NavPathStack = new NavPathStack();
   @StorageProp('playerVer') playerVer: number = 0;

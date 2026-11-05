@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+### Added(0.11.0 API 24/26 新特性创意落地)
+
+- **24-1 曲库页头联动收起(嵌套滚动)**:标题/智能入口/最近添加/分段器收入外层 Scroll,四分区内容 List/Grid 经 `nestedScroll(PARENT_FIRST/SELF_FIRST)` 链接——上滑先收页头再滚列表、回滚先到顶再展开页头;与 0.10.0 滚动折叠迷你条形成完整沉浸浏览链路(Tabs.nestedScroll 为 API 24 特性,免守卫)。
+- **24-2 逐字卡拉OK歌词底座**:LyricsPanel 活动行逐词染色(已唱=主色/正在唱=强调色/未唱=次色,A2 扩展 `<mm:ss.xx>` 词标签);点词跳播——`TextController` 布局管理器 `getCharacterPositionAtCoordinate`(API 24)点击坐标(px)→字符偏移(UTF-16/UTF-8 字节双轨换算)→定位所属词 seek 词起点,定位失败退化整行 seek;长行 `EllipsisMode.MULTILINE_CENTER`(API 24)多行缩略。
+- **26-3 native mmap 大文件读流**:`MmapFile`(≥16MB 整文件映射+madvise WILLNEED)接入无损引擎——FLAC 大文件走 `drflac_open_memory` 映射直读(解封装零 read 拷贝、seek 指针归位),DSD(DSF/DFF) 采样热路径 `countOnesAt` 每帧逐通道取窗由 fseek+fread 改指针直读(免 syscall);小文件/映射失败回退 FILE* 流路径。工程选型说明:落地在 C++ 层 POSIX mmap(全 API 版本可用),非 ETS fs.mmap(26)——直击 1GB+ IO 瓶颈且无需守卫。
+- **26-2 全局复用池**:SongRow 加 `@Reusable`(API 10)+ Index 作为全局池宿主 `@Component({reusePool:'shared', poolAccepts:[SongRow]})`(26;编译器强制两者同给、禁止池宿主自引)——曲库/歌单/搜索/队列四处滚动节点跨页面互复用;24 运行时忽略未知 option 键,@Reusable 照常生效。
+- **26-5 封面超分(Core Vision)**:`CoverSuperRes` 服务——嵌入封面短边<500px 时 `ImageSRAnalyzer.create().process()`(26,HMS)实时超分,守卫 sdkApiVersion≥26 + VisionBase syscap 双检,失败静默降级原图;FullPlayer 大封面优先展示超分结果。
+- **26-6 实况窗进度环(Live View Kit)**:`LiveViewService` PROGRESS 场景 ProgressCapsule(max/progress)+ LAYOUT_TYPE_PROGRESS 主区,播放中锁屏/通知中心可视化;进度按 5% 步进节流,暂停/无歌即停;26+isLiveViewEnabled 守卫,实况窗场景权未授(AGC)时静默停用记日志。
+- **26-7 桌面歌词(floatView)**:`DesktopLyricsService` + `pages/player/DesktopLyricsPage`(floatView 标准悬浮窗,ROUNDED_RECTANGLE 模板)——仅当前行,词级双色已唱/未唱,marquee 长行;播放页「更多」菜单入口(26+isFloatViewEnabled 守卫,FLOAT_VIEW 权限未授提示后停用)。
+- **targetSdk 26 行为变更回归(§3)**:V2 触摸热区——播放历史删除钮视觉 16vp+热区扩 40vp(responseRegion)、队列管理删除 30→32、打轴删行 28→32;V1 弹层审计(更多 Sheet 主题 token/系统菜单默认材质)合规、V5 无 radius:0 阴影、V3 文本与 V6 复用规则入模拟器验证清单。
+- **小型项**:24-4 `getRdbStoreSync` 同步建库(消除首帧与 RDB 初始化异步竞态);24-6 `setBackgroundPlayMode(ENABLE_BACKGROUND_PLAY)` 显式声明后台播放模式;24-3 LRCLIB 已有 connectTimeout/readTimeout+deadline 竞速(全工程无 taskpool 调用点,RG 扫描走 native 线程,taskpool 超时无落地场景,如实跳过)。
+- 版本号 0.11.0/versionCode 11000。
+
 ### Added(0.10.0 迷你条滚动折叠交互)
 
 - **滚动折叠迷你条(华为音乐共识交互)**:三个页签的主滚动容器(曲库四分区 List/Grid、专业页 Scroll、我的页 Scroll)经 `onWillScroll` 逐帧馈入 `common/BarCollapse.ets` 方向累积器(向尾部浏览累积 24vp 折叠、回滚 12vp 展开、方向反转/滚动停止清残量),Index 经 `HdsTabsController.applyMiniBarStyle`(6.1.0(23))带默认动效切换 COLLAPSE/EXPAND;`miniBarStyle` 显式初始 EXPAND(官方默认折叠),`onBarStyleChange` 回写折叠态镜像(覆盖 USER_CLICK 点击折叠胶囊原生互切),无播放内容时不做空壳折叠动画。模拟器双向往返实测通过(feed→COLLAPSE→EXPAND 日志+截图)。

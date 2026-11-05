@@ -109,7 +109,8 @@ export class Db {
       securityLevel: relationalStore.SecurityLevel.S1
     };
     try {
-      this.store = await relationalStore.getRdbStore(context, cfg);
+      // 24-4:同步建库,消除首页首帧与 RDB 初始化的异步竞态(CUE UNIQUE 迁移类场景前置保障)
+      this.store = relationalStore.getRdbStoreSync(context, cfg);
       await this.migrateSongsUnique();
       for (const sql of SQL_CREATE) {
         await this.store.executeSql(sql);
