@@ -1,6 +1,8 @@
-// 主题应用:跟随系统/浅色/深色/纯黑。纯黑 = 深色 + 页面背景 token 覆盖 #000000。
+// 主题应用:跟随系统/浅色/深色 + AMOLED 纯黑开关(0.14.0)。
+// 纯黑 = 深色生效时页面背景 token 覆盖 #000000(themePageBg 已有页面消费点);浅色下不生效。
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { window, display } from '@kit.ArkUI';
+import { resourceManager } from '@kit.LocalizationKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SettingsService, ThemeMode } from '../service/SettingsService';
 
@@ -8,10 +10,13 @@ const TAG = '[Timbrava][Theme]';
 const DOMAIN = 0x0001;
 
 export class AppTheme {
+  // 再入哨兵:setColorMode 会同步/异步触发 onConfigurationUpdate,
+  // 若回调里再走 apply→setColorMode 就是无限递归(0.14.0 首验 jscrash 栈溢出实证)。
+  private static inSetColorMode: boolean = false;
+
   static apply(ctx: common.UIAbilityContext | null): void {
     const mode = SettingsService.get().themeMode;
     let cm = ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
-    let bgOverride = '';
     if (mode === ThemeMode.LIGHT) {
       cm = ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT;
     } else if (mode === ThemeMode.DARK) {
@@ -19,14 +24,45 @@ export class AppTheme {
     }
     if (ctx !== null) {
       try {
+        AppTheme.inSetColorMode = true;
         ctx.getApplicationContext().setColorMode(cm);
+        AppTheme.inSetColorMode = false;
       } catch (e) {
+        AppTheme.inSetColorMode = false;
         hilog.warn(DOMAIN, TAG, 'setColorMode fail %{public}s', (e as Error).message);
+      }
+    }
+    AppTheme.recomputeOverride(ctx);
+    hilog.info(DOMAIN, TAG, 'theme applied mode=%{public}s', mode);
+  }
+
+  // 只重算页面背景覆盖位(AMOLED 纯黑)+ bump themeVer,不动 colorMode——
+  // 系统配置变更(onConfigurationUpdate)与 apply 共用,浅色/未开纯黑时覆盖位为空串。
+  static isReapplyingColorMode(): boolean {
+    return AppTheme.inSetColorMode;
+  }
+
+  static recomputeOverride(ctx: common.UIAbilityContext | null): void {
+    const mode = SettingsService.get().themeMode;
+    let bgOverride = '';
+    if (SettingsService.get().amoledBlack) {
+      let dark = mode === ThemeMode.DARK;
+      if (!dark && mode === ThemeMode.SYSTEM && ctx !== null) {
+        try {
+          // KB §9.1:colorMode 是 resourceManager.ColorMode(DARK=0),与 ConfigurationConstant 不互通
+          const cfg = ctx.getApplicationContext().resourceManager.getConfigurationSync();
+          dark = cfg.colorMode === resourceManager.ColorMode.DARK;
+        } catch (e) {
+          hilog.warn(DOMAIN, TAG, 'colorMode probe fail %{public}s', (e as Error).message);
+        }
+      }
+      if (dark) {
+        bgOverride = '#000000';
       }
     }
     AppStorage.setOrCreate('themePageBg', bgOverride);
     AppStorage.setOrCreate('themeVer', (AppStorage.get<number>('themeVer') ?? 0) + 1);
-    hilog.info(DOMAIN, TAG, 'theme applied mode=%{public}s', mode);
+    hilog.info(DOMAIN, TAG, 'theme override amoledBg=%{public}s', bgOverride);
   }
 
   // 页面安全区:沉浸式后需要避让状态栏/导航条(px → vp)

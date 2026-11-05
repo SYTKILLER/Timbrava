@@ -121,10 +121,31 @@ export class Db {
       }
       await this.migrateSongsHash();
       await this.migrateSongsFp();
+      await this.migrateDateAddedBackfill();
       hilog.info(DOMAIN, TAG, 'init ok, tables=%{public}d', SQL_CREATE.length);
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'init fail %{public}s', (e as Error).message);
       throw e as Error;
+    }
+  }
+
+  // 迁移(0.14.0):date_added 存量回填——此前 upsertSong 从不写入该列(恒 0),
+  // "最近添加"区/排序全空;以 mtime(秒→毫秒)兜底一次,幂等由 app_settings 标记保证。
+  private async migrateDateAddedBackfill(): Promise<void> {
+    const st = this.store;
+    if (st === null) {
+      return;
+    }
+    const mark = await this.getSetting('dateAddedBackfill1', '0');
+    if (mark === '1') {
+      return;
+    }
+    try {
+      await st.executeSql('UPDATE songs SET date_added = mtime * 1000 WHERE date_added = 0 AND mtime > 0');
+      await this.setSetting('dateAddedBackfill1', '1');
+      hilog.info(DOMAIN, TAG, 'date_added backfill done');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'date_added backfill fail %{public}s', (e as Error).message);
     }
   }
 
@@ -284,7 +305,8 @@ export class Db {
 
   private static readonly SONG_COLS = 'id, path, fp, hash, pcm_md5, file_size, mtime, title, artist, album, album_artist, genre, year, ' +
     'track_no, disc_no, duration_ms, sample_rate, bit_depth, channels, bitrate_kbps, codec, ' +
-    'cue_start_ms, cue_end_ms, art_path, rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak';
+    'cue_start_ms, cue_end_ms, art_path, rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak, ' +
+    'date_added';
 
   private static rowToSong(rs: relationalStore.ResultSet): Song {
     const o: Record<string, Object | null> = {};
@@ -334,7 +356,9 @@ export class Db {
       'rg_track_gain': s.rgTrackGain,
       'rg_track_peak': s.rgTrackPeak,
       'rg_album_gain': s.rgAlbumGain,
-      'rg_album_peak': s.rgAlbumPeak
+      'rg_album_peak': s.rgAlbumPeak,
+      // 入库时间(最近添加/排序用;0.14.0 修复:此前从不写入,恒 0 致"最近添加"恒空)
+      'date_added': s.dateAdded > 0 ? s.dateAdded : Math.floor(Date.now())
     };
     if (isReplace) {
       return st.insert('songs', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);

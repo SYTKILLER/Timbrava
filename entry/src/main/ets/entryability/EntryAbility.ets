@@ -1,4 +1,4 @@
-import { AbilityConstant, common, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, common, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { PlayerController } from '../service/PlayerController';
 import { AppTheme } from '../common/Theme';
@@ -241,6 +241,13 @@ export default class EntryAbility extends UIAbility {
 
   onDestroy(): void {
     hilog.info(DOMAIN, TAG, 'Ability onDestroy');
+  }
+
+  // 系统配置变更(深浅色切换/语言):只重算主题覆盖位,不重设 colorMode(否则无限递归)
+  onConfigurationUpdate(newConfig: Configuration): void {
+    if (!AppTheme.isReapplyingColorMode()) {
+      AppTheme.recomputeOverride(this.context);
+    }
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {

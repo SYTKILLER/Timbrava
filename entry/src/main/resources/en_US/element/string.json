@@ -522,7 +522,7 @@
     },
     {
       "name": "sleep_off",
-      "value": "Turn off sleep timer"
+      "value": "Off"
     },
     {
       "name": "sleep_15",
@@ -1183,6 +1183,90 @@
     {
       "name": "float_lyrics_fail",
       "value": "Failed to enable desktop lyrics (device/permission)"
+    },
+    {
+      "name": "chip_songs",
+      "value": "Songs %d"
+    },
+    {
+      "name": "chip_albums",
+      "value": "Albums %d"
+    },
+    {
+      "name": "chip_artists",
+      "value": "Artists %d"
+    },
+    {
+      "name": "sleep_chip_min",
+      "value": "%s min"
+    },
+    {
+      "name": "sort_title",
+      "value": "Title"
+    },
+    {
+      "name": "sort_artist",
+      "value": "Artist"
+    },
+    {
+      "name": "sort_album",
+      "value": "Album"
+    },
+    {
+      "name": "sort_added",
+      "value": "Recently added"
+    },
+    {
+      "name": "sort_duration",
+      "value": "Duration"
+    },
+    {
+      "name": "sort_name",
+      "value": "Name"
+    },
+    {
+      "name": "sort_songs",
+      "value": "Song count"
+    },
+    {
+      "name": "shuffle_play",
+      "value": "Shuffle"
+    },
+    {
+      "name": "stat_hours_f",
+      "value": "%d hr %d min"
+    },
+    {
+      "name": "stat_hours_exact",
+      "value": "%d hr"
+    },
+    {
+      "name": "stat_minutes_f",
+      "value": "%d min"
+    },
+    {
+      "name": "search_history",
+      "value": "Search History"
+    },
+    {
+      "name": "search_clear",
+      "value": "Clear"
+    },
+    {
+      "name": "skin_immersive",
+      "value": "Immersive"
+    },
+    {
+      "name": "amoled_black",
+      "value": "AMOLED Black"
+    },
+    {
+      "name": "amoled_black_sub",
+      "value": "Pure black page background in dark mode, for OLED screens"
+    },
+    {
+      "name": "total_duration",
+      "value": "Total %s"
     }
   ]
 }

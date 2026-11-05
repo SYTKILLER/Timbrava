@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+### Added(0.14.0 播放页体验重构 + 曲库浏览效率,对齐 QQ音乐/网易云/华为音乐共识)
+
+- **播放页下滑关闭手势**:垂直下拉跟手(削顶 55%vh 防手势失灵),位移/速度双阈值判定关闭或回弹;内容 Column + Swiper 两页容器三处绑定(子级手势优先于 Swiper 内建手势,Swiper 区垂直事件被其内建手势吞掉的场景走真机实测);顶栏返回键改 chevron_down。
+- **播放页顶栏收藏红心**:一键收藏当前曲,收藏态 accent 高亮(libVer 依赖注册,修复更多菜单红心状态此前不刷新的潜伏问题)。
+- **播放页音量条(双引擎)**:无损引擎走 native `OH_AudioRenderer_SetVolume`(napi `setVolume` 已有),系统引擎走 AVPlayer `setVolume`(API 9);`IAudioEngine` 契约加 `setVolume`;设置持久化(app_settings `playerVolume`),开新曲 prepared 后重放。
+- **睡眠定时渐弱**:到点前 30s 线性渐弱(引擎音量链路),到点暂停并还原音量。
+- **更多菜单重做**:新增均衡器直达(全局 EQ,免专业页三级跳);倍速/睡眠定时从"循环点击"改弹层档位 chips(0.5x~3x / 关闭~90 分钟,当前档位高亮);修复 @Builder 参数快照导致的 label 不刷新(体内直读)。
+- **沉浸皮肤(第三皮肤)**:封面高斯模糊(blur 120px)+ 主题色蒙版(opacity 0.87,保证 text token 对比度)全屏背景;设置外观三选:标准/极简/沉浸。
+- **AMOLED 纯黑**:深色实际生效时页面背景覆盖 #000000(themePageBg 覆盖位启用);`onConfigurationUpdate` 重算覆盖位(拆分 apply/recomputeOverride + 再入哨兵,修复 setColorMode 与配置回调互递归导致的启动栈溢出 jscrash)。
+- **曲库分区排序**:歌曲(标题/艺人/专辑/最近添加/时长)、专辑(名称/艺人/最近添加/歌曲数)、艺人(名称/歌曲数)bindMenu 排序,持久化 app_settings;索引条仅按名称排序时显示。
+- **字母索引条**:歌曲/艺人分区 AlphabetIndexer(API 7)+ 字母分组头;汉字拼音首字母经 `i18n.Transliterator('Any-Latin')`(API 9,设备不支持退化 '#');点选跳组+滚动反向高亮+气泡(气泡字色修 badge_text 防白底白字)。
+- **SongList 头部卡**:专辑模式封面头图/其他模式图标瓦片 + 统计行(专辑/曲目数·总时长,小时/分钟自适应)+「全部播放 N/随机播放」双钮(随机经 toggleShuffle);原 play_all 按钮从动作行迁入。
+- **搜索增强**:搜索历史(最近 10 条,提交即记,单删/清空,app_settings 持久化)+ 结果分类 chips(歌曲/专辑/艺人命中数,从 300 条命中聚合,专辑/艺人点击跳详情)。
+- **修复:最近添加自 M6 起恒空**——`upsertSong` 从不写 date_added(恒 0)且 SONG_COLS 漏 date_added 列:补写入(新增取当前时间)+ 查询列 + 存量回填迁移(mtime×1000 兜底,幂等标记 dateAddedBackfill1)。
+- **修复:曲库分段器点击无响应**——TabSegmentButtonV2 `$selectedIndex` 事件从未接线(只能滑动切页),接 Swiper.changeIndex。
+- **修复:曲库索引条压住行内徽章**——索引条显示时列表右侧留白 26vp。
+- 多语言:新增 22 键(base 中文 + en_US),共 317 键。版本号 0.14.0/versionCode 14000。
+
 ### Added(0.13.0 两级身份:fp 快速识别 + SHA-256 静默收敛)
 
 - **fp 操作身份(xxHash3-128 三窗采样)**:导入查重从全文件 SHA-256(约 0.7s/GB)降为毫秒级——native 新增 `fingerprintFd` 原语(vendored xxHash v0.8.3,BSD-2,与 dr_flac.h 同模式):头/中/尾 3×256KB 采样 + 体积混入,≤768KB 文件退化为全文件指纹;导入/认领/合并/查重页/备份重挂的全部决策键从 hash 切换为 (fp, cueStartMs),前台零全量读。

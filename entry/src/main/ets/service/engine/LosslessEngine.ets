@@ -202,6 +202,11 @@ export class LosslessEngine implements IAudioEngine {
     (timbravaCore as NativeModule).setSpeed(speed);
   }
 
+  // 引擎音量:renderer 流音量(OH_AudioRenderer_SetVolume;native 侧缓存值在开新 renderer 时重放)
+  setVolume(v: number): void {
+    (timbravaCore as NativeModule).setVolume(v);
+  }
+
   setSkipSilence(on: boolean): void {
     (timbravaCore as NativeModule).setSkipSilence(on);
   }

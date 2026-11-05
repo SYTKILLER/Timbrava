@@ -1,11 +1,14 @@
 // 全屏播放页(对齐华为音乐/QQ音乐共识交互):
 // - 封面⇄歌词左右 Swiper 切换(官方《多设备音乐界面》最佳实践:窄屏 Swiper 分页);
+// - 下滑手势关闭(跟手位移+速度阈值;0.14.0) + 顶栏 chevron_down/红心收藏直达;
+// - 音量条(双引擎;0.14.0)+ 沉浸皮肤(封面高斯模糊背景);
 // - 控制区:左播放模式键(顺序→列表循环→单曲→随机,symbol 显示当前模式)+ 上一曲/播放暂停(缩放动画)/下一曲 + 右队列键;
-// - 右上角"更多"入口 → bindSheet 菜单(收藏/编辑歌词/倍速/A-B/跳过静音/睡眠定时/查看队列);
+// - 右上角"更多"入口 → bindSheet 菜单(收藏/均衡器/编辑歌词/倍速弹层/A-B/跳过静音/睡眠定时弹层/桌面歌词/查看队列);
 // - 底部 ≥28vp 导航条避让。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
+import { display } from '@kit.ArkUI';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { PlayerController } from '../../service/PlayerController';
 import { QueueService, PlayMode } from '../../service/QueueService';
@@ -19,6 +22,12 @@ import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][FullPlayer]';
 const DOMAIN = 0x0001;
+
+// 倍速弹层档位(0.14.0:循环点击改离散选择)
+const SPEED_OPTIONS: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
+// 睡眠定时弹层档位(分钟;0=关)
+const SLEEP_OPTIONS: number[] = [0, 15, 30, 45, 60, 90];
+const SLEEP_FADE_MS = 30000; // 到点前线性渐弱时长(与 PlayerController 一致)
 
 @Component
 export struct FullPlayerDest {
@@ -40,6 +49,9 @@ export struct FullPlayerDest {
   @State topSafe: number = 36;
   @State bottomSafe: number = 28;
   @State srPm: image.PixelMap | null = null; // 26-5 超分封面(小封面实时超分,失败/不支持=null 原图)
+  @State dragY: number = 0;          // 下滑关闭跟手位移(0.14.0)
+  @State volMirror: number = 100;    // 音量条镜像(拖动中本地值,End 才落库)
+  @State sheetExpand: string = '';   // 更多菜单展开区:'' | 'speed' | 'sleep'
   private srFor: string = '';
   private pathStack: NavPathStack | null = null;
   private swiperCtrl: SwiperController = new SwiperController();
@@ -53,6 +65,7 @@ export struct FullPlayerDest {
     this.posMs = Math.round(PlayerController.get().positionMs);
     this.playingMirror = PlayerController.get().isPlaying;
     this.modeMirror = QueueService.get().playMode();
+    this.volMirror = Math.round(PlayerController.get().volume * 100);
     // 页面可能晚于播放打开:@Watch 不会补发,主动拉一次(歌词由控制器中心化加载)
     this.onPlayerChanged();
   }
@@ -119,11 +132,43 @@ export struct FullPlayerDest {
   build() {
     NavDestination() {
       Stack({ alignContent: Alignment.Bottom }) {
+      // 沉浸皮肤背景层:当前封面高斯模糊 + 主题色蒙版(标准/极简皮肤不渲染,保持纯色底)
+      if (this.playerSkin === 'immersive' && this.song() !== null) {
+        Stack() {
+          if (this.playerVer < 0) {
+            Text('') // 注册切曲刷新依赖:封面切换驱动背景重挂
+          }
+          if (this.srPm !== null) {
+            Image(this.srPm)
+              .width('100%')
+              .height('100%')
+              .objectFit(ImageFit.Cover)
+              .blur(120)
+          } else if ((this.song() as Song).artPath.length > 0) {
+            Image((this.song() as Song).artPath)
+              .width('100%')
+              .height('100%')
+              .objectFit(ImageFit.Cover)
+              .blur(120)
+          }
+        }
+        .width('100%')
+        .height('100%')
+        // 主题色蒙版:保证 text token 在模糊图上对比度不随封面漂移
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor(this.pageBg())
+          .opacity(0.87)
+      }
       Column() {
-        // 顶栏:返回 | 正在播放 | 更多(右上角,bindSheet)
+        // 顶栏:下滑关闭 | 正在播放 | 收藏 | 更多(右上角,bindSheet)
         Row() {
+          if (this.libVer < 0) {
+            Text('') // 注册 libVer 依赖:收藏状态变化驱动顶栏/菜单红心刷新
+          }
           Button({ stateEffect: true }) {
-            SymbolGlyph($r('sys.symbol.chevron_left'))
+            SymbolGlyph($r('sys.symbol.chevron_down'))
               .fontSize(24)
               .fontColor([$r('app.color.text_primary')])
           }
@@ -140,6 +185,17 @@ export struct FullPlayerDest {
             .fontColor($r('app.color.text_secondary'))
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
+          Button({ stateEffect: true }) {
+            SymbolGlyph(this.isFav() ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
+              .fontSize(20)
+              .fontColor([this.isFav() ? $r('app.color.accent') : $r('app.color.text_primary')])
+          }
+          .width(40)
+          .height(40)
+          .backgroundColor(Color.Transparent)
+          .onClick(() => {
+            PlayerController.get().toggleFavorite();
+          })
           Button({ stateEffect: true }) {
             SymbolGlyph($r('sys.symbol.more'))
               .fontSize(20)
@@ -173,7 +229,18 @@ export struct FullPlayerDest {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.pageBg())
+      .backgroundColor(this.playerSkin === 'immersive' && this.song() !== null
+        ? Color.Transparent : this.pageBg())
+      // 下滑关闭手势:绑在内容 Column(实证 Stack 级 .gesture 在本页不触发,Row/Column 级正常)。
+      // 跟手位移削顶 55%vh:节点拖出屏后手势失灵(KB §9.4),松手动画收尾;抽屉/菜单展开时回调内守卫。
+      .translate({ y: this.dragY })
+      .gesture(PanGesture({ fingers: 1, direction: PanDirection.Vertical, distance: 8 })
+          .onActionUpdate((e: GestureEvent): void => {
+            this.dragUpdate(e);
+          })
+          .onActionEnd((e: GestureEvent): void => {
+            this.dragFinish(e);
+          }))
 
       if (this.showQueue) {
         this.QueueDrawer()
@@ -181,8 +248,9 @@ export struct FullPlayerDest {
       }
       .width('100%')
       .height('100%')
+      .backgroundColor(Color.Transparent)
       .bindSheet(this.showMoreSheet, this.MoreSheet(), {
-        height: 440,
+        height: 500,
         showClose: true,
         dragBar: true,
         onDisappear: (): void => {
@@ -201,6 +269,51 @@ export struct FullPlayerDest {
       }
       return false;
     })
+  }
+
+  // 下滑关闭:垂直下拉跟手,松手按位移/速度判定关闭或回弹(KB §9.4:手势对象必须 build 内构造)。
+  // 位移出屏后 pop(页面已离屏,默认转场不可见)。 dismissing 防多手势实例重复触发。
+  private dismissing: boolean = false;
+
+  private dismissByGesture(vh: number): void {
+    if (this.dismissing) {
+      return;
+    }
+    this.dismissing = true;
+    this.getUIContext().animateTo({ duration: 220, curve: Curve.Friction }, (): void => {
+      this.dragY = vh + 60;
+    });
+    setTimeout((): void => {
+      this.dragY = 0;
+      if (this.pathStack !== null) {
+        this.pathStack.pop();
+      }
+    }, 230);
+  }
+
+  // 下滑关闭跟手/判定(多手势实例共用:内容 Column + Swiper 两个页面容器)
+  private dragUpdate(e: GestureEvent): void {
+    if (this.showQueue || this.showMoreSheet || this.dismissing) {
+      return;
+    }
+    const vh = px2vp(display.getDefaultDisplaySync().height);
+    const dy = e.offsetY;
+    // 仅向下滑跟手;削顶 55%vh——节点拖出屏后手势失灵(KB §9.4),松手动画收尾
+    this.dragY = Math.min(Math.max(dy, 0), vh * 0.55);
+  }
+
+  private dragFinish(e: GestureEvent): void {
+    if (this.showQueue || this.showMoreSheet || this.dismissing) {
+      return;
+    }
+    const vh = px2vp(display.getDefaultDisplaySync().height);
+    if (e.offsetY > vh * 0.22 || e.velocityY > 900) {
+      this.dismissByGesture(vh);
+    } else {
+      this.getUIContext().animateTo({ duration: 200, curve: Curve.Friction }, (): void => {
+        this.dragY = 0;
+      });
+    }
   }
 
   @Builder
@@ -244,6 +357,14 @@ export struct FullPlayerDest {
         .width('100%')
         .height('100%')
         .justifyContent(FlexAlign.Center)
+        // 子级垂直 pan:子手势优先于 Swiper 内建手势(方向正交),封面区下滑可关闭页面
+.gesture(PanGesture({ fingers: 1, direction: PanDirection.Vertical, distance: 8 })
+          .onActionUpdate((e: GestureEvent): void => {
+            this.dragUpdate(e);
+          })
+          .onActionEnd((e: GestureEvent): void => {
+            this.dragFinish(e);
+          }))
 
         // 第 2 页:歌词
         Column({ space: 6 }) {
@@ -266,7 +387,13 @@ export struct FullPlayerDest {
         .width('88%')
         .height('100%')
         .padding({ top: 8, bottom: 8 })
-        .justifyContent(FlexAlign.Center)
+        .justifyContent(FlexAlign.Center).gesture(PanGesture({ fingers: 1, direction: PanDirection.Vertical, distance: 8 })
+          .onActionUpdate((e: GestureEvent): void => {
+            this.dragUpdate(e);
+          })
+          .onActionEnd((e: GestureEvent): void => {
+            this.dragFinish(e);
+          }))
       }
       .index(this.pageIdx)
       .loop(false)
@@ -353,6 +480,38 @@ export struct FullPlayerDest {
       }
       .width('100%')
       .padding({ top: 4 })
+
+      // 音量条(0.14.0):引擎流音量(无损=OHAudio 渲染流;系统=AVPlayer),拖动 End 落库
+      Row({ space: 10 }) {
+        SymbolGlyph($r('sys.symbol.speaker_wave_2'))
+          .fontSize(16)
+          .fontColor([$r('app.color.text_secondary')])
+        Slider({
+          value: this.volMirror,
+          min: 0,
+          max: 100,
+          step: 1,
+          style: SliderStyle.OutSet
+        })
+          .selectedColor($r('app.color.accent'))
+          .trackColor($r('app.color.divider'))
+          .blockColor($r('app.color.accent'))
+          .layoutWeight(1)
+          .height(34)
+          .onChange((value: number, mode: SliderChangeMode) => {
+            this.volMirror = Math.round(value);
+            if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+              PlayerController.get().setVolume(value / 100);
+            }
+          })
+        Text(`${Math.round(this.volMirror)}%`)
+          .fontSize(10)
+          .fontColor($r('app.color.text_secondary'))
+          .width(30)
+          .textAlign(TextAlign.End)
+      }
+      .width('88%')
+      .padding({ top: 2, bottom: 2 })
 
       // 控制区:播放模式(左) | 上一曲/播放暂停(动画)/下一曲 | 队列(右)
       if (this.queueVer < 0) {
@@ -460,6 +619,16 @@ export struct FullPlayerDest {
               PlayerController.get().toggleFavorite();
             })
         }
+        // 均衡器直达(0.14.0:全局 EQ,免专业页三级跳)
+        ListItem() {
+          this.SheetRow($r('sys.symbol.adjustment'), $r('app.string.eq_entry'), false, (): void => {
+            this.showMoreSheet = false;
+            const stack = this.pathStack;
+            if (stack !== null) {
+              stack.pushPathByName('Equalizer', null);
+            }
+          })
+        }
         // 编辑歌词
         ListItem() {
           this.SheetRow($r('sys.symbol.pencil_line'), this.editLabel(), false, (): void => {
@@ -471,15 +640,33 @@ export struct FullPlayerDest {
             }
           })
         }
-        // 倍速
+        // 倍速(0.14.0:展开档位 chips,替代循环点击;label 走 SheetRow 体内直读避免快照不刷新)
         ListItem() {
           this.SheetRow($r('sys.symbol.speed_multiple'), this.speedLabel(),
             this.speedNow() !== 1.0, (): void => {
-              // 循环切常用档:1.0 → 1.25 → 1.5 → 2.0 → 0.5 → 1.0
-              const cur = this.speedNow();
-              const next = cur === 1.0 ? 1.25 : cur === 1.25 ? 1.5 : cur === 1.5 ? 2.0 : cur === 2.0 ? 0.5 : 1.0;
-              PlayerController.get().setSpeed(next);
-            })
+              this.sheetExpand = this.sheetExpand === 'speed' ? '' : 'speed';
+            }, true, this.sheetExpand === 'speed', 'speed')
+        }
+        if (this.sheetExpand === 'speed') {
+          ListItem() {
+            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+              ForEach(SPEED_OPTIONS, (v: number) => {
+                Button(`${v}x`)
+                  .fontSize(12)
+                  .fontColor(this.speedNow() === v ? $r('app.color.on_accent') : $r('app.color.text_primary'))
+                  .backgroundColor(this.speedNow() === v ? $r('app.color.accent') : $r('app.color.badge_bg'))
+                  .borderRadius(14)
+                  .height(28)
+                  .margin({ right: 8, bottom: 8, left: 4 })
+                  .onClick(() => {
+                    PlayerController.get().setSpeed(v);
+                    this.sheetExpand = '';
+                  })
+              }, (v: number): string => `spd_${v}`)
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, bottom: 4 })
+          }
         }
         // A-B 重复
         ListItem() {
@@ -495,12 +682,33 @@ export struct FullPlayerDest {
               PlayerController.get().toggleSkipSilence();
             })
         }
-        // 睡眠定时器
+        // 睡眠定时器(0.14.0:展开档位 chips;到点前 30s 渐弱;label 体内直读)
         ListItem() {
           this.SheetRow($r('sys.symbol.timer'), this.sleepLabel(),
             PlayerController.get().sleepRemainMin() > 0, (): void => {
-              this.cycleSleepTimer();
-            })
+              this.sheetExpand = this.sheetExpand === 'sleep' ? '' : 'sleep';
+            }, true, this.sheetExpand === 'sleep', 'sleep')
+        }
+        if (this.sheetExpand === 'sleep') {
+          ListItem() {
+            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+              ForEach(SLEEP_OPTIONS, (n: number) => {
+                Button(this.sleepChipLabel(n))
+                  .fontSize(12)
+                  .fontColor(this.sleepChipActive(n) ? $r('app.color.on_accent') : $r('app.color.text_primary'))
+                  .backgroundColor(this.sleepChipActive(n) ? $r('app.color.accent') : $r('app.color.badge_bg'))
+                  .borderRadius(14)
+                  .height(28)
+                  .margin({ right: 8, bottom: 8, left: 4 })
+                  .onClick(() => {
+                    PlayerController.get().setSleepTimer(n);
+                    this.sheetExpand = '';
+                  })
+              }, (n: number): string => `slp_${n}`)
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, bottom: 4 })
+          }
         }
         // 桌面歌词(26-7,floatView;24 设备/权限未授时不显示入口)
         if (DesktopLyricsService.get().available()) {
@@ -526,16 +734,25 @@ export struct FullPlayerDest {
     .backgroundColor($r('app.color.card_bg'))
   }
 
+  // 展开指示:可展开行右侧 chevron(expanded 展开态朝上)。
+  // labelKind 非空时 label/accent 在 builder 体内重新求值(@Builder 参数是快照,KB §8.2;
+  // 倍速/睡眠档位选择后 playerVer/sleepVer bump 驱动 sheet 内容重跑,体内直读才能刷新)。
   @Builder
-  SheetRow(icon: Resource, label: ResourceStr, accent: boolean, onTap: () => void) {
+  SheetRow(icon: Resource, label: ResourceStr, accent: boolean, onTap: () => void,
+    expandable: boolean = false, expanded: boolean = false, labelKind: string = '') {
     Row({ space: 12 }) {
       SymbolGlyph(icon)
         .fontSize(18)
-        .fontColor([accent ? $r('app.color.accent') : $r('app.color.text_primary')])
-      Text(label)
+        .fontColor([this.rowAccent(labelKind, accent) ? $r('app.color.accent') : $r('app.color.text_primary')])
+      Text(this.rowLabel(labelKind, label))
         .fontSize(14)
-        .fontColor(accent ? $r('app.color.accent') : $r('app.color.text_primary'))
+        .fontColor(this.rowAccent(labelKind, accent) ? $r('app.color.accent') : $r('app.color.text_primary'))
         .layoutWeight(1)
+      if (expandable) {
+        SymbolGlyph(expanded ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+          .fontSize(13)
+          .fontColor([$r('app.color.text_secondary')])
+      }
     }
     .width('100%')
     .padding({ left: 20, right: 16, top: 12, bottom: 12 })
@@ -581,7 +798,7 @@ export struct FullPlayerDest {
         .onClick(() => {
           QueueService.get().cyclePlayMode();
         })
-        // 睡眠定时器(原队列页签入口迁移)
+        // 睡眠定时器(原队列页签入口迁移;0.14.0 起档位选择在更多菜单弹层内)
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.timer'))
             .fontSize(16)
@@ -591,7 +808,9 @@ export struct FullPlayerDest {
         .height(32)
         .backgroundColor(Color.Transparent)
         .onClick(() => {
-          this.cycleSleepTimer();
+          this.showQueue = false;
+          this.sheetExpand = 'sleep';
+          this.showMoreSheet = true;
         })
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.trash'))
@@ -678,6 +897,27 @@ export struct FullPlayerDest {
 
   // ===== 辅助 =====
 
+  // SheetRow 动态 label/accent(体内直读入口)
+  private rowLabel(kind: string, fallback: ResourceStr): ResourceStr {
+    if (kind === 'speed') {
+      return this.speedLabel();
+    }
+    if (kind === 'sleep') {
+      return this.sleepLabel();
+    }
+    return fallback;
+  }
+
+  private rowAccent(kind: string, fallback: boolean): boolean {
+    if (kind === 'speed') {
+      return PlayerController.get().speed !== 1.0;
+    }
+    if (kind === 'sleep') {
+      return PlayerController.get().sleepRemainMin() > 0;
+    }
+    return fallback;
+  }
+
   private sliderValue(): number {
     if (this.seeking) {
       return Math.round(this.seekPreviewMs);
@@ -735,11 +975,21 @@ export struct FullPlayerDest {
       PlayerController.get().isSkipSilenceOn();
   }
 
-  // 睡眠定时:菜单内点按循环 关→15→30→45→60→90→关
-  private cycleSleepTimer(): void {
+  // 睡眠定时档位文案(0.14.0 弹层)
+  private sleepChipLabel(n: number): ResourceStr {
+    if (n <= 0) {
+      return $r('app.string.sleep_off');
+    }
+    return L($r('app.string.sleep_chip_min'), String(n));
+  }
+
+  private sleepChipActive(n: number): boolean {
     const cur = PlayerController.get().sleepRemainMin();
-    const next = cur <= 0 ? 15 : cur < 30 ? 30 : cur < 45 ? 45 : cur < 60 ? 60 : cur < 90 ? 90 : 0;
-    PlayerController.get().setSleepTimer(next);
+    if (n <= 0) {
+      return cur <= 0;
+    }
+    // 当前剩余与档位同段视为选中(设置后分钟数递减)
+    return cur > n - 15 && cur <= n;
   }
 
   private sleepLabel(): ResourceStr {

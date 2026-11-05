@@ -522,7 +522,7 @@
     },
     {
       "name": "sleep_off",
-      "value": "关闭睡眠定时"
+      "value": "关闭"
     },
     {
       "name": "sleep_15",
@@ -1183,6 +1183,90 @@
     {
       "name": "float_lyrics_fail",
       "value": "桌面歌词开启失败(设备/权限不支持)"
+    },
+    {
+      "name": "chip_songs",
+      "value": "歌曲 %d"
+    },
+    {
+      "name": "chip_albums",
+      "value": "专辑 %d"
+    },
+    {
+      "name": "chip_artists",
+      "value": "艺人 %d"
+    },
+    {
+      "name": "sleep_chip_min",
+      "value": "%s 分钟"
+    },
+    {
+      "name": "sort_title",
+      "value": "按标题"
+    },
+    {
+      "name": "sort_artist",
+      "value": "按艺人"
+    },
+    {
+      "name": "sort_album",
+      "value": "按专辑"
+    },
+    {
+      "name": "sort_added",
+      "value": "最近添加"
+    },
+    {
+      "name": "sort_duration",
+      "value": "按时长"
+    },
+    {
+      "name": "sort_name",
+      "value": "按名称"
+    },
+    {
+      "name": "sort_songs",
+      "value": "按歌曲数"
+    },
+    {
+      "name": "shuffle_play",
+      "value": "随机播放"
+    },
+    {
+      "name": "stat_hours_f",
+      "value": "%d 小时 %d 分"
+    },
+    {
+      "name": "stat_hours_exact",
+      "value": "%d 小时"
+    },
+    {
+      "name": "stat_minutes_f",
+      "value": "%d 分钟"
+    },
+    {
+      "name": "search_history",
+      "value": "搜索历史"
+    },
+    {
+      "name": "search_clear",
+      "value": "清空"
+    },
+    {
+      "name": "skin_immersive",
+      "value": "沉浸"
+    },
+    {
+      "name": "amoled_black",
+      "value": "纯黑深色"
+    },
+    {
+      "name": "amoled_black_sub",
+      "value": "深色模式下使用纯黑页面背景，OLED 更省电更沉浸"
+    },
+    {
+      "name": "total_duration",
+      "value": "总时长 %s"
     }
   ]
 }

@@ -198,6 +198,8 @@ export struct SettingsTab {
               ThemeRow()
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               PlayerSkinRow()
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              AmoledRow()
             }
           }
 
@@ -299,7 +301,7 @@ const THEME_OPTIONS: ThemeOption[] = [
   new ThemeOption('dark')
 ];
 
-// 播放页皮肤(#53):标准(大封面)/极简
+// 播放页皮肤(#53):标准(大封面)/极简/沉浸(封面高斯模糊背景,0.14.0)
 @Component
 struct PlayerSkinRow {
   @StorageProp('prefPlayerSkin') prefPlayerSkin: string = 'standard';
@@ -337,11 +339,52 @@ struct PlayerSkinRow {
           .onClick(() => {
             SettingsService.get().setPlayerSkin('minimal');
           })
+        Button($r('app.string.skin_immersive'))
+          .fontSize(13)
+          .fontColor(this.prefPlayerSkin === 'immersive' ? $r('app.color.on_accent') : $r('app.color.text_primary'))
+          .backgroundColor(this.prefPlayerSkin === 'immersive' ? $r('app.color.accent') : $r('app.color.badge_bg'))
+          .borderRadius(10)
+          .height(34)
+          .layoutWeight(1)
+          .onClick(() => {
+            SettingsService.get().setPlayerSkin('immersive');
+          })
       }
       .width('100%')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
+    .padding({ top: 10, bottom: 10 })
+  }
+}
+
+// AMOLED 纯黑(0.14.0):深色生效时页面背景覆盖 #000000(浅色下不生效)
+@Component
+struct AmoledRow {
+  @StorageProp('prefAmoledBlack') prefAmoledBlack: boolean = false;
+
+  build() {
+    Row({ space: 12 }) {
+      Column({ space: 2 }) {
+        Text($r('app.string.amoled_black'))
+          .fontSize(15)
+          .fontColor($r('app.color.text_primary'))
+        Text($r('app.string.amoled_black_sub'))
+          .fontSize(11)
+          .fontColor($r('app.color.text_secondary'))
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      Toggle({ type: ToggleType.Switch, isOn: this.prefAmoledBlack })
+        .selectedColor($r('app.color.accent'))
+        .onChange((v: boolean): void => {
+          SettingsService.get().setAmoledBlack(v).then((): void => {
+            const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+            AppTheme.apply(ctx);
+          });
+        })
+    }
+    .width('100%')
     .padding({ top: 10, bottom: 10 })
   }
 }

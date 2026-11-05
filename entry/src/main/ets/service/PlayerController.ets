@@ -53,6 +53,7 @@ export class PlayerController {
   engineKind: EngineKind = EngineKind.SYSTEM;
   engineInfo: string = '';
   speed: number = 1.0;                 // 倍速(0.25~3.0)
+  volume: number = 1.0;                // 引擎音量 0~1(0.14.0 播放页音量条;渐弱时临时下调)
   abStartMs: number = -1;              // A-B 重复起点(-1 未设)
   abEndMs: number = -1;                // A-B 重复终点(-1 未设)
   currentLyrics: string = '';          // 当前曲 LRC 原文(缓存/文件头/LRCLIB;空=无)
@@ -68,7 +69,7 @@ export class PlayerController {
   private pausedByInterrupt: boolean = false;
   private bgTaskRunning: boolean = false;
   private initDone: boolean = false;
-  private sleepAtMs: number = 0; // 0=未设置;Booming SleepTimer 语义简化版(P2 渐弱)
+  private sleepAtMs: number = 0; // 0=未设置;到点前 30s 线性渐弱(0.14.0,依赖引擎音量)
 
   private bumpPlayer(): void {
     AppStorage.setOrCreate('playerVer', (AppStorage.get<number>('playerVer') ?? 0) + 1);
@@ -120,6 +121,7 @@ export class PlayerController {
       }
     }
     this.speed = SettingsService.get().playSpeed;
+    this.volume = SettingsService.get().playerVolume;
     this.initDone = true;
     PlayerBridge.onDspChanged = (): void => {
       this.applyDspToEngine();
@@ -146,16 +148,23 @@ export class PlayerController {
       return;
     }
     this.ticker = setInterval((): void => {
-      // 睡眠定时到点 → 暂停
-      if (this.sleepAtMs > 0 && Date.now() >= this.sleepAtMs) {
-        this.sleepAtMs = 0;
-        if (this.isPlaying) {
-          this.engine?.pause();
-          this.isPlaying = false;
-          this.syncSessionState();
-          this.bumpPlayer();
+      // 睡眠定时:到点前 30s 线性渐弱(音量条链路),到点暂停并还原音量
+      if (this.sleepAtMs > 0 && this.engine !== null) {
+        const remainMs = this.sleepAtMs - Date.now();
+        if (remainMs <= 0) {
+          this.sleepAtMs = 0;
+          if (this.isPlaying) {
+            this.engine?.pause();
+            this.isPlaying = false;
+            this.syncSessionState();
+            this.bumpPlayer();
+          }
+          this.engine?.setVolume(this.volume);
+          hilog.info(DOMAIN, TAG, 'sleep timer fired, paused');
+        } else if (remainMs < 30000 && this.isPlaying) {
+          const fade = remainMs / 30000;
+          this.engine?.setVolume(Math.max(0.0, this.volume * fade));
         }
-        hilog.info(DOMAIN, TAG, 'sleep timer fired, paused');
       }
       if (this.engine !== null && this.isPlaying) {
         const song = this.currentSong;
@@ -257,8 +266,9 @@ export class PlayerController {
       target.seek(effectiveResume);
       this.positionMs = resumeFromMs;
     }
-    // ReplayGain/PEQ/跳过静音/倍速:按设置应用到本曲
+    // ReplayGain/PEQ/跳过静音/倍速/音量:按设置应用到本曲
     target.setSpeed(this.speed);
+    target.setVolume(this.volume);
     target.setSkipSilence(SettingsService.get().skipSilence);
     this.applySongDsp(song);
     target.play();
@@ -658,7 +668,17 @@ export class PlayerController {
     this.syncSessionLoopMode();
   }
 
-  // ===== 倍速 / A-B 重复 / 跳过静音 =====
+  // ===== 倍速 / 音量 / A-B 重复 / 跳过静音 =====
+
+  // 引擎音量 0~1:持久化 + 即时下发(渐弱恢复时用 restoreVolume 走内存值免重复落盘)
+  async setVolume(v: number): Promise<void> {
+    this.volume = Math.min(1.0, Math.max(0.0, v));
+    await SettingsService.get().setPlayerVolume(this.volume);
+    if (this.engine !== null) {
+      this.engine.setVolume(this.volume);
+    }
+    hilog.info(DOMAIN, TAG, 'volume -> %{public}d', Math.round(this.volume * 100));
+  }
 
   async setSpeed(v: number): Promise<void> {
     this.speed = Math.min(3.0, Math.max(0.25, v));

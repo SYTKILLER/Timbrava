@@ -21,6 +21,7 @@ export class SystemEngine implements IAudioEngine {
   private lastPosMs: number = 0;
   private seekTargetMs: number = -1;
   private lastSpeed: number = 1.0;
+  private lastVolume: number = 1.0; // 0.14.0 播放页音量条:开新曲 prepared 后重放
 
   getKind(): EngineKind {
     return EngineKind.SYSTEM;
@@ -118,6 +119,7 @@ export class SystemEngine implements IAudioEngine {
       if (this.lastSpeed !== 1.0) {
         this.applySpeed(this.lastSpeed);
       }
+      this.applyVolume(this.lastVolume);
       hilog.info(DOMAIN, TAG, 'open ok dur=%{public}d uri_len=%{public}d', this.durationMs, uri.length);
       const info = new EngineTrackInfo();
       info.durationMs = this.durationMs;
@@ -241,6 +243,26 @@ export class SystemEngine implements IAudioEngine {
   setSpeed(speed: number): void {
     this.lastSpeed = speed;
     this.applySpeed(speed);
+  }
+
+  private applyVolume(v: number): void {
+    const p = this.player;
+    if (p === null) {
+      return;
+    }
+    if (this.state === 'prepared' || this.state === 'playing' || this.state === 'paused') {
+      try {
+        p.setVolume(v);
+        hilog.info(DOMAIN, TAG, 'volume -> %{public}d', Math.round(v * 100));
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'setVolume fail %{public}s', (e as Error).message);
+      }
+    }
+  }
+
+  setVolume(v: number): void {
+    this.lastVolume = Math.min(1.0, Math.max(0.0, v));
+    this.applyVolume(this.lastVolume);
   }
 
   setSkipSilence(on: boolean): void {

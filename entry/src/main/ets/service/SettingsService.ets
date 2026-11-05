@@ -44,7 +44,9 @@ export class SettingsService {
   skipSilence: boolean = false;
   playSpeed: number = 1.0;     // 0.25~3.0
   onlineLyrics: boolean = false; // LRCLIB 联网歌词(默认关,#38 零联网定位)
-  playerSkin: string = 'standard'; // standard 大封面 | minimal 极简(#53)
+  playerSkin: string = 'standard'; // standard 大封面 | minimal 极简 | immersive 沉浸模糊(#0.14.0)
+  playerVolume: number = 1.0;    // 引擎音量 0~1(0.14.0 播放页音量条)
+  amoledBlack: boolean = false;  // 深色下纯黑页面背景(AMOLED;0.14.0)
 
   private loaded: boolean = false;
 
@@ -77,7 +79,10 @@ export class SettingsService {
     this.playSpeed = Number.isFinite(sp) && sp >= 0.25 && sp <= 3.0 ? sp : 1.0;
     this.onlineLyrics = (await db.getSetting('onlineLyrics', '0')) === '1';
     const skin = await db.getSetting('playerSkin', 'standard');
-    this.playerSkin = skin === 'minimal' ? 'minimal' : 'standard';
+    this.playerSkin = skin === 'minimal' || skin === 'immersive' ? skin : 'standard';
+    const vol = parseFloat(await db.getSetting('playerVolume', '1.0'));
+    this.playerVolume = Number.isFinite(vol) && vol >= 0 && vol <= 1 ? vol : 1.0;
+    this.amoledBlack = (await db.getSetting('amoledBlack', '0')) === '1';
     this.loaded = true;
     this.syncTokens();
     hilog.info(DOMAIN, TAG, 'settings loaded');
@@ -97,6 +102,8 @@ export class SettingsService {
     this.token('prefPlaySpeed', this.playSpeed);
     this.token('prefOnlineLyrics', this.onlineLyrics);
     this.token('prefPlayerSkin', this.playerSkin);
+    this.token('prefPlayerVolume', this.playerVolume);
+    this.token('prefAmoledBlack', this.amoledBlack);
   }
 
   private async save(key: string, value: string): Promise<void> {
@@ -168,9 +175,21 @@ export class SettingsService {
   }
 
   async setPlayerSkin(skin: string): Promise<void> {
-    this.playerSkin = skin === 'minimal' ? 'minimal' : 'standard';
+    this.playerSkin = skin === 'minimal' || skin === 'immersive' ? skin : 'standard';
     this.syncTokens();
     await this.save('playerSkin', this.playerSkin);
+  }
+
+  async setPlayerVolume(v: number): Promise<void> {
+    this.playerVolume = Math.min(1.0, Math.max(0.0, v));
+    this.syncTokens();
+    await this.save('playerVolume', String(this.playerVolume));
+  }
+
+  async setAmoledBlack(on: boolean): Promise<void> {
+    this.amoledBlack = on;
+    this.syncTokens();
+    await this.save('amoledBlack', on ? '1' : '0');
   }
 
   async setOnlineLyrics(on: boolean): Promise<void> {

@@ -1,8 +1,9 @@
-// 通用歌曲列表页(专辑/艺人/流派/文件夹/收藏):NavDestination + 全部播放按钮。
+// 通用歌曲列表页(专辑/艺人/流派/文件夹/收藏):NavDestination + 头部卡(封面/统计+播放全部/随机,0.14.0)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { LibraryStore } from '../../data/LibraryStore';
 import { Song, Artist, Genre } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';
+import { AlbumCover } from '../library/LibraryTab';
 import { RgScanner } from '../../service/RgScanner';
 import { TagEditorParam } from './TagEditor';
 import { QueueService } from '../../service/QueueService';
@@ -97,13 +98,142 @@ export struct SongListDest {
     });
   }
 
-  private playAll(): void {
+  private playAll(shuffle: boolean): void {
     if (this.songs.length === 0) {
       return;
     }
     const q = QueueService.get();
-    const first = q.setQueueNow(this.songs, 0, Ls(this.title));
+    q.setQueueNow(this.songs, 0, Ls(this.title));
+    if (shuffle) {
+      q.toggleShuffle();
+    }
     PlayerController.get().playQueueIndex(q.locateCurrent());
+  }
+
+  // ===== 0.14.0 头部卡数据 =====
+
+  private headerArt(): string {
+    for (const s of this.songs) {
+      if (s.artPath.length > 0) {
+        return s.artPath;
+      }
+    }
+    return '';
+  }
+
+  private headerYear(): number {
+    let y = 0;
+    for (const s of this.songs) {
+      if (s.year > y) {
+        y = s.year;
+      }
+    }
+    return y;
+  }
+
+  private headerArtist(): Artist | undefined {
+    return LibraryStore.get().artists.find((a: Artist): boolean => a.key === this.param.key);
+  }
+
+  private totalMs(): number {
+    let sum = 0;
+    for (const s of this.songs) {
+      sum += s.durationMs;
+    }
+    return sum;
+  }
+
+  private fmtTotal(ms: number): string {
+    const min = Math.round(ms / 60000);
+    if (min >= 60) {
+      const h = Math.floor(min / 60);
+      const m = min % 60;
+      return m > 0 ? L($r('app.string.stat_hours_f'), String(h), String(m))
+        : L($r('app.string.stat_hours_exact'), String(h));
+    }
+    return L($r('app.string.stat_minutes_f'), String(min));
+  }
+
+  private headerLine1(): string {
+    if (this.param.mode === 'album') {
+      const y = this.headerYear();
+      return y > 0 ? `${this.param.key} · ${y}` : this.param.key;
+    }
+    if (this.param.mode === 'artist') {
+      const a = this.headerArtist();
+      return a !== undefined ? L($r('app.string.artist_stats'), a.albumCount, a.songCount) : '';
+    }
+    return '';
+  }
+
+  private headerLine2(): string {
+    // 曲目数已在 line1(艺人模式)/标题栏语境体现,此行只给总时长,避免重复
+    return L($r('app.string.total_duration'), this.fmtTotal(this.totalMs()));
+  }
+
+  @Builder
+  ListHeader() {
+    Column({ space: 10 }) {
+      Row({ space: 12 }) {
+        if (this.param.mode === 'album') {
+          AlbumCover(this.headerArt(), 68)
+        } else {
+          Column() {
+            SymbolGlyph($r('sys.symbol.music_note_list'))
+              .fontSize(26)
+              .fontColor([$r('app.color.accent')])
+          }
+          .width(68)
+          .height(68)
+          .borderRadius(12)
+          .backgroundColor($r('app.color.badge_bg'))
+          .justifyContent(FlexAlign.Center)
+        }
+        Column({ space: 4 }) {
+          if (this.headerLine1().length > 0) {
+            Text(this.headerLine1())
+              .fontSize(13)
+              .fontColor($r('app.color.text_primary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          Text(this.headerLine2())
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+      }
+      .width('100%')
+
+      Row({ space: 10 }) {
+        Button(L($r('app.string.play_all_n'), this.songs.length))
+          .fontSize(13)
+          .fontColor($r('app.color.on_accent'))
+          .backgroundColor($r('app.color.accent'))
+          .height(36)
+          .borderRadius(18)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.playAll(false);
+          })
+        Button($r('app.string.shuffle_play'))
+          .fontSize(13)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.badge_bg'))
+          .height(36)
+          .borderRadius(18)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.playAll(true);
+          })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 8, bottom: 6 })
   }
 
   @Builder
@@ -168,15 +298,6 @@ export struct SongListDest {
             .onClick(() => {
               this.saveAsPlaylist();
             })
-          Button(L($r('app.string.play_all_n'), this.songs.length))
-            .fontSize(13)
-            .fontColor($r('app.color.on_accent'))
-            .backgroundColor($r('app.color.accent'))
-            .height(34)
-            .borderRadius(17)
-            .onClick(() => {
-              this.playAll();
-            })
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 12, bottom: 8 })
@@ -193,6 +314,8 @@ export struct SongListDest {
           .width('100%')
           .padding({ top: 80 })
         } else {
+          // 头部卡(0.14.0):封面/图标 + 统计 + 播放全部/随机双钮
+          this.ListHeader()
           List({ space: 0 }) {
             ForEach(this.songs, (s: Song) => {
               ListItem() {
