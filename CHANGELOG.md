@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Fixed(0.17.2 用户实测反馈:歌单卡片延伸到屏幕最底部)
+
+- **我的页歌单卡片未延伸到屏底(0.17.0 #2 验收遗漏,用户截图指出)**:卡片在 Scroll 内按内容自适应,只有内容高+固定垫高,底边悬在屏幕中部露页面底色。修复:实测 Scroll 视口高与卡片上方内容块高(onAreaChange 双测),卡片 `constraintSize(minHeight = 视口 - 上方内容 - 组间距)` 传入 PlaylistsTab(新增 @Prop minH)——歌单少时卡片底色铺到屏幕最底缘(迷你条/页签栏悬浮其上),歌单多时自然增高照常滚动。
+
 ### Added/Fixed(0.17.1 模拟器实测回归:统计双坑修复 + 播放页返回转场根治)
 
 - **实测补刀:累计播放恒 0:00 双根因修复(0.17.0 实测暴露)**:①`getPlayStatsTotal` 用 `RdbPredicates.query(columns)` 传聚合表达式 `'SUM(total_ms) AS total'`——columns 只收列名,表达式被静默忽略恒返 0(无任何报错),改 `querySql` + 按列类型读取(INTEGER/REAL 防呆);②统计四宫格抽的 `Stat` @Builder 按值传参是快照(KB §8.2),异步查询落地后 UI 不刷新,内联直读 @State。实测:累计播放 138:00 正常显示。

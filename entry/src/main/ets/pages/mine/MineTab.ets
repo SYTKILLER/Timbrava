@@ -25,6 +25,9 @@ export struct MineTab {
   @StorageProp('themePageBg') themePageBg: string = '';
   @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State topSafe: number = 36;
+  // 歌单卡片"延伸到屏幕最底部":实测 Scroll 视口高与卡片上方内容高,算出卡片 minHeight 传给 PlaylistsTab
+  @State scrollVpH: number = 0;
+  @State aboveCardH: number = 0;
   // 统计必须落 @State(0.17.0 #3):@Builder 参数/直读非可观察,不落 @State 则导入/播放后纹丝不动
   @State songCount: number = 0;
   @State albumCount: number = 0;
@@ -93,6 +96,14 @@ export struct MineTab {
     return formatDuration(this.totalMs);
   }
 
+  // 歌单卡片最小高 = Scroll 视口 - 卡片上方内容 - 组间距(12);实测值未就绪时 0(仅按内容高)
+  private cardMinH(): number {
+    if (this.scrollVpH <= 0 || this.aboveCardH <= 0) {
+      return 0;
+    }
+    return Math.max(0, this.scrollVpH - this.aboveCardH - 12);
+  }
+
   build() {
     Column() {
       Row({ space: 8 }) {
@@ -119,7 +130,9 @@ export struct MineTab {
 
       Scroll() {
         Column({ space: 12 }) {
-          // 曲库统计四宫格(0.17.0 内联:Stat 抽 @Builder 按值传参是快照,totalMs 异步落地后不刷新——KB §8.2)
+          // 卡片上方内容整体包一层实测高度(0.17.2):歌单卡 minHeight = 视口 - 此块 - 间距
+          Column({ space: 12 }) {
+            // 曲库统计四宫格(0.17.0 内联:Stat 抽 @Builder 按值传参是快照,totalMs 异步落地后不刷新——KB §8.2)
           Row({ space: 8 }) {
             Column() {
               Text(this.songCount.toString())
@@ -241,9 +254,14 @@ export struct MineTab {
           }
           .width('100%')
           .padding({ left: 16, right: 16 })
+          }
+          .width('100%')
+          .onAreaChange((_o: Area, n: Area): void => {
+            this.aboveCardH = n.height as number;
+          })
 
           // 歌单卡片(0.17.0 #2):左上角"+"新建,容器延伸到屏幕最底部
-          PlaylistsTab({ mode: 'card' })
+          PlaylistsTab({ mode: 'card', minH: this.cardMinH() })
             .padding({ left: 16, right: 16 })
         }
         .width('100%')
@@ -253,6 +271,9 @@ export struct MineTab {
       .layoutWeight(1)
       .scrollBar(BarState.Auto)
       .align(Alignment.Top)
+      .onAreaChange((_o: Area, n: Area): void => {
+        this.scrollVpH = n.height as number;
+      })
       // 滚动折叠迷你条:实测 SDK 26.0.0.105 模拟器 Scroll.onDidScroll 不触发,onWillScroll 每帧可达
       .onWillScroll((_x: number, y: number): void => {
         BarCollapse.feed(y);

@@ -97,6 +97,7 @@ export struct PlaylistsTab {
   @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State playlists: PlaylistInfo[] = [];
   @Prop mode: string = 'page'; // 'page' 曲库分区(满高) | 'card' 我的页卡片(延伸到底)
+  @Prop minH: number = 0;      // card 态最小高度(vp):父级实测"视口-上方内容"传入,保证卡片延伸到屏幕最底部
   @State topSafe: number = 36;
   private newCtrl: CustomDialogController | null = null;
 
@@ -244,11 +245,12 @@ export struct PlaylistsTab {
 
   build() {
     if (this.mode === 'card') {
-      // "我的"页卡片:延伸到屏幕最底部(内部垫过迷你条高度的收尾空档),圆角只留顶部
+      // "我的"页卡片:延伸到屏幕最底部(minHeight 填满视口剩余空间),圆角只留顶部
       Column() {
         this.CardContent()
       }
       .width('100%')
+      .constraintSize({ minHeight: this.minH > 0 ? this.minH : undefined })
       .borderRadius({ topLeft: 16, topRight: 16 })
       .backgroundColor(this.cardBg())
     } else {
