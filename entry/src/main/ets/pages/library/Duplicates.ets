@@ -54,6 +54,7 @@ function normKey(s: string): string {
 export struct DuplicatesDest {
   @StorageProp('libVer') libVer: number = 0;
   @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
+  @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @StorageProp('hashVer') @Watch('onHashProgress') hashVer: number = 0; // 收敛进度驱动计数/列表刷新
   @State dupTabIndex: number = 0;
   @State convergingMirror: boolean = false;
@@ -246,7 +247,7 @@ export struct DuplicatesDest {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
-        .padding({ bottom: 24 })
+        .padding({ bottom: Math.max(this.bottomSafeVp, 28) })
       }
     }
     .width('100%')

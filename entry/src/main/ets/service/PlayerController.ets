@@ -20,6 +20,7 @@ import { SystemEngine } from './engine/SystemEngine';
 import { LosslessEngine, NativeAnalyzeResult } from './engine/LosslessEngine';
 import { PEQ_FREQS, presetBands } from './EqPresets';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
 import { extractLyricsFromHead } from '../data/lyrics/LyricsExtractor';
 import { L } from '../common/Lang';
 import { openTargetOf } from '../common/PathUtil';
@@ -316,6 +317,33 @@ export class PlayerController {
         this.bumpPlayer();
         return;
       }
+      // 伴生 .lrc(同目录同名;Poweramp/Musicolet/foobar 等通行惯例)——零操作歌词来源(0.16.0)
+      const sidecar = `${song.path.substring(0, song.path.lastIndexOf('.'))}.lrc`;
+      try {
+        const sf = fs.openSync(openTargetOf(sidecar), fs.OpenMode.READ_ONLY);
+        try {
+          const sst = fs.statSync(sf.fd);
+          const sbuf = new ArrayBuffer(Math.min(sst.size, 512 * 1024));
+          fs.readSync(sf.fd, sbuf);
+          const sdec = new util.TextDecoder('utf-8');
+          const lrcText = sdec.decodeToString(new Uint8Array(sbuf));
+          if (lrcText.trim().length > 0) {
+            this.currentLyrics = lrcText;
+            Db.get().putLyricsCache(song.id, lrcText);
+            this.syncSessionNowPlaying();
+            this.bumpPlayer();
+            hilog.info(DOMAIN, TAG, 'lyrics from sidecar lrc song=%{public}d len=%{public}d', song.id, lrcText.length);
+            return;
+          }
+        } finally {
+          try {
+            fs.closeSync(sf);
+          } catch (e3) {
+          }
+        }
+      } catch (e2) {
+        // 无伴生文件/URI 歌曲目录不可达:继续常规链路
+      }
       let file: fs.File | null = null;
       try {
         file = fs.openSync(openTargetOf(song.path), fs.OpenMode.READ_ONLY);
@@ -444,6 +472,11 @@ export class PlayerController {
     const next = this.queue.nextIndex(true);
     if (next < 0) {
       return; // 队列尽头/受推进边界限制
+    }
+    if (next <= this.queue.locateCurrent()) {
+      // 循环回绕(最后一首→第一首)不预排:swap 穿界通知与 end 事件在回绕边界竞态,
+      // 会让 ArkTS 滞留旧曲(0.15.x 实测"最后一首播完卡住");回绕走普通 TRACK_END→autoNext
+      return;
     }
     const song = this.queue.songAt(next);
     if (song === null) {

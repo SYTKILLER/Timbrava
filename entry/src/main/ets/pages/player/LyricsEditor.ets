@@ -38,6 +38,7 @@ export struct LyricsEditorDest {
   @StorageProp('playerVer') playerVer: number = 0;
   @StorageProp('posVer') posVer: number = 0;
   @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
+  @StorageProp('bottomSafeVp') bottomSafeVp: number = 28; // 底部手势条避让(0.16.0 补齐)
   @State lines: EditorLine[] = [];
   @State songId: number = -1;
   @State loaded: boolean = false;
@@ -87,28 +88,70 @@ export struct LyricsEditorDest {
         }
       }
     }
-    const arr: EditorLine[] = [];
-    if (text.length > 0) {
-      // 已有时间戳的行保留;无时间戳行 timeMs=-1(可打轴)
-      for (const raw of text.split('\n')) {
-        const line = raw.replace(/\r$/, '');
-        const m = line.match(/^\s*\[(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?\](.*)$/);
-        if (m !== null) {
-          const mm = parseInt(m[1], 10);
-          const ss = parseInt(m[2], 10);
-          const fracStr = m[3] ?? '0';
-          const frac = parseInt(fracStr.padEnd(3, '0').substring(0, 3), 10);
-          const rest = m[4] ?? '';
-          if (rest.trim().length > 0) {
-            arr.push(new EditorLine(rest, (mm * 60 + ss) * 1000 + frac));
-          }
-        } else if (line.trim().length > 0 && !line.startsWith('[')) {
-          arr.push(new EditorLine(line, -1));
-        }
-      }
-    }
+    const arr: EditorLine[] = this.parseLines(text);
     this.lines = arr;
     this.loaded = true;
+  }
+
+  // LRC/纯文本 → 编辑行(时间戳行保留,无时间戳行待打轴;导入与加载共用)
+  private parseLines(text: string): EditorLine[] {
+    const arr: EditorLine[] = [];
+    if (text.length === 0) {
+      return arr;
+    }
+    for (const raw of text.split('\n')) {
+      const line = raw.replace(/\r$/, '');
+      const m = line.match(/^\s*\[(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?\](.*)$/);
+      if (m !== null) {
+        const mm = parseInt(m[1], 10);
+        const ss = parseInt(m[2], 10);
+        const fracStr = m[3] ?? '0';
+        const frac = parseInt(fracStr.padEnd(3, '0').substring(0, 3), 10);
+        const rest = m[4] ?? '';
+        if (rest.trim().length > 0) {
+          arr.push(new EditorLine(rest, (mm * 60 + ss) * 1000 + frac));
+        }
+      } else if (line.trim().length > 0 && !line.startsWith('[')) {
+        arr.push(new EditorLine(line, -1));
+      }
+    }
+    return arr;
+  }
+
+  // 导入本地 .lrc(0.16.0):选择文件 → 读文本进编辑器(带时间戳则直接可用)
+  private async importLrc(): Promise<void> {
+    try {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const opts = new picker.DocumentSelectOptions();
+      opts.maxSelectNumber = 1;
+      const docPicker = new picker.DocumentViewPicker(ctx);
+      const uris: Array<string> = await docPicker.select(opts);
+      if (uris === undefined || uris.length === 0) {
+        return;
+      }
+      const f = fs.openSync(uris[0], fs.OpenMode.READ_ONLY);
+      let text = '';
+      try {
+        const st = fs.statSync(f.fd);
+        const buf = new ArrayBuffer(Math.min(st.size, 512 * 1024));
+        const n = fs.readSync(f.fd, buf);
+        const dec = new util.TextDecoder('utf-8');
+        text = dec.decodeToString(new Uint8Array(buf, 0, n));
+      } finally {
+        fs.closeSync(f);
+      }
+      const arr = this.parseLines(text);
+      if (arr.length === 0) {
+        this.getUIContext().getPromptAction().showToast({ message: $r('app.string.lrc_import_failed') });
+        return;
+      }
+      this.lines = arr;
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.lrc_imported') });
+      hilog.info(DOMAIN, TAG, 'lrc imported lines=%{public}d', arr.length);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'import lrc fail %{public}s', (e as Error).message);
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.lrc_import_failed') });
+    }
   }
 
   private markLine(i: number): void {
@@ -300,6 +343,14 @@ export struct LyricsEditorDest {
             .fontSize(11)
             .fontColor($r('app.color.text_secondary'))
           Blank()
+          Button($r('app.string.import_lrc'))
+            .fontSize(12)
+            .height(36)
+            .fontColor($r('app.color.text_primary'))
+            .backgroundColor($r('app.color.badge_bg'))
+            .onClick(() => {
+              this.importLrc();
+            })
           Button($r('app.string.export_lrc'))
             .fontSize(12)
             .height(36)
@@ -318,7 +369,7 @@ export struct LyricsEditorDest {
             })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 16 })
+        .padding({ left: 16, right: 16, top: 8, bottom: Math.max(this.bottomSafeVp, 28) })
       }
       .width('100%')
       .height('100%')

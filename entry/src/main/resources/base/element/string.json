@@ -414,7 +414,7 @@
     },
     {
       "name": "lrc_editor_empty",
-      "value": "没有歌词文本。可先在文件里内嵌歌词,或用 LRCLIB 下载"
+      "value": "没有歌词文本。可导入 .lrc 文件、把同名 .lrc 放到歌曲同目录,或用 LRCLIB 下载"
     },
     {
       "name": "str_mark",
@@ -1311,6 +1311,18 @@
     {
       "name": "dup_tracks",
       "value": "%d 轨"
+    },
+    {
+      "name": "import_lrc",
+      "value": "导入 .lrc"
+    },
+    {
+      "name": "lrc_imported",
+      "value": "歌词已导入,打轴后保存"
+    },
+    {
+      "name": "lrc_import_failed",
+      "value": "导入失败:文件为空或不可读"
     }
   ]
 }

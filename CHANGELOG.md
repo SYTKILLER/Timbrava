@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Added/Fixed(0.16.0 歌词获取补全 + 循环回绕卡死修复 + 底部避让补齐)
+
+- **循环模式最后一首播完卡死修复(0.15.x 遗留,模拟器复现实锤)**:循环回绕(最后一首→第一首)走 gapless 预排时,native swap 穿界通知与 end 事件竞态——ArkTS 滞留旧曲、重播、recordPlay 双写,用户观感"卡住不切歌"(手动下一首正常)。修复:`refreshGaplessPrefetch` 对回绕目标(next ≤ 当前序)不再预排,回绕走已验证可靠的 TRACK_END→autoNext 普通路径(引擎重开 ~100ms 停顿,可接受);实测 seek 到最后一首结尾,自然 end → 自动切第一首,后续 dbg_a→dbg_b→CueA→Ending 循环链路健康推进。
+- **歌词获取路径补全(对齐开源播放器通行方案)**:①伴生 .lrc 自动加载——播放时检查歌曲同目录同名 .lrc(Poweramp/Musicolet/foobar2000 惯例,零操作来源),命中即入缓存;②打轴页新增「导入 .lrc」按钮(DocumentViewPicker 选文件→解析进编辑器,时间戳行直接可用);③空态文案去掉"先在文件里内嵌歌词"的旧引导,改为导入/伴生/LRCLIB 三条路径。LRCLIB 联网获取(设置开关)与文件头内嵌提取原有保留。
+- **底部 28vp 手势条避让补齐**:歌词打轴页底部操作行(bottom 16→max(bottomSafeVp,28));去重页身份列表(24→同式);播放历史两个列表补 contentEndOffset;其余路由页审计达标(SongList 60/Search 40/QueueBoard 40/TagEditor 40/About 60)。
+- 多语言:新增 3 键、更新 1 键。版本号 0.16.0/versionCode 16000。
+
 ### Fixed(0.15.2 三轮实测反馈:迷你条封面闪烁/队列抽屉改标准半模态/返回键纵向滑出)
 
 - **迷你条切页签封面闪烁**:日志实锤根因——HdsTabs 切页签内部回落会重挂 miniBarBuilder,MiniPlayer 组件销毁重建(aboutToDisappear→aboutToAppear),新 Image 节点异步解码封面出空帧。修复:封面 Image 加 `syncLoad(true)`(44px 小图同步解码,重挂首帧即有图);MiniPlayer 增加生命周期 debug 日志。实测连拍 6 帧,封面区域色彩分布逐帧一致(2688 色),无空帧。

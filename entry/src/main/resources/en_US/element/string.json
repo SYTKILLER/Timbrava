@@ -414,7 +414,7 @@
     },
     {
       "name": "lrc_editor_empty",
-      "value": "No lyrics text. Embed lyrics in the file first, or download via LRCLIB"
+      "value": "No lyrics yet. Import an .lrc file, place a same-named .lrc beside the song, or fetch from LRCLIB"
     },
     {
       "name": "str_mark",
@@ -1311,6 +1311,18 @@
     {
       "name": "dup_tracks",
       "value": "%d tracks"
+    },
+    {
+      "name": "import_lrc",
+      "value": "Import .lrc"
+    },
+    {
+      "name": "lrc_imported",
+      "value": "Lyrics imported; save after tagging"
+    },
+    {
+      "name": "lrc_import_failed",
+      "value": "Import failed: empty or unreadable file"
     }
   ]
 }

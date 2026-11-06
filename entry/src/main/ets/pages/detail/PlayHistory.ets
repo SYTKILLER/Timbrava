@@ -218,6 +218,7 @@ export struct PlayHistoryDest {
             .width('100%')
             .layoutWeight(1)
             .scrollBar(BarState.Auto)
+            .contentEndOffset(Math.max(this.bottomSafeVp, 28)) // 底部手势条避让(0.16.0)
             .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 68, endMargin: 16 })
           }
         } else {
@@ -278,6 +279,7 @@ export struct PlayHistoryDest {
             .width('100%')
             .layoutWeight(1)
             .scrollBar(BarState.Auto)
+            .contentEndOffset(Math.max(this.bottomSafeVp, 28)) // 底部手势条避让(0.16.0)
             .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 56, endMargin: 16 })
           }
         }
