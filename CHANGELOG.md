@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### Fixed(0.17.3 专项:CUE 末轨时长/统计灌水/进度跳变/双跳竞态 四链修复)
+
+- **CUE 末轨 durationMs 残留(上轮实测遗留疑点,根因闭环)**:CueParser 末轨 endMs=-1(文件末尾语义)原样入库,`playSong` 的 `cueEnd>cueStart` 判断失效后 fallback 到**引擎整文件时长**——实测"列表 0:16/播放 0:44"分裂、recordPlay 灌水 44.7s。修复:①`playSong` CUE 分轨(含末轨)时长兜底改 `song.durationMs`(DB 区间值);②ScanService 末轨 `cueEndMs` 回填音频实际时长(探针值),dup 更新条件加 cueEndMs 比较让旧数据重扫回填;③**SEEK_DONE hint 是文件绝对位置,CUE 分轨未减 cueStart**——seek 后进度跳出区间且切曲补记拿到污染值(recordPlay 27500),已换算;④末轨终点与引擎 EOF 重合的**双推进竞态**(cueAdvance 与 TRACK_END 各推一曲):新增 autoAdvancing 推进互斥哨兵,实测第二发被吸收(`track end ignored (auto advancing)`)。模拟器实测:CueA→CueB 衔接 12000/16000 精确、手动直点 CueB 显示 0:16、单跳推进。
+- 已知边界:个别 wav(测试语料)引擎报时长与实际数据不符(44.7s vs 28s),播放链已全兜底(EOF 推进正确),native 解析不在本轮范围。
+
 ### Fixed(0.17.2 用户实测反馈:歌单卡片延伸到屏幕最底部)
 
 - **我的页歌单卡片未延伸到屏底(0.17.0 #2 验收遗漏,用户截图指出)**:卡片在 Scroll 内按内容自适应,只有内容高+固定垫高,底边悬在屏幕中部露页面底色。修复:实测 Scroll 视口高与卡片上方内容块高(onAreaChange 双测),卡片 `constraintSize(minHeight = 视口 - 上方内容 - 组间距)` 传入 PlaylistsTab(新增 @Prop minH)——歌单少时卡片底色铺到屏幕最底缘(迷你条/页签栏悬浮其上),歌单多时自然增高照常滚动。

@@ -64,6 +64,8 @@ export class PlayerController {
   private gaplessTargetIdx: number = -1;
   private gaplessCheckTick: number = 0;   // ticker 周期校验队列是否仍指向预排目标
   private cueAdvancing: boolean = false;  // CUE 区间切换哨兵(seek 生效前 ticker 防重入)
+  private autoAdvancing: boolean = false; // 自动推进互斥:末轨 CUE 终点(cueAdvance)与引擎 EOF(TRACK_END)
+                                          // 在同一位置相遇时吸收第二发,防连跳两曲/双 recordPlay
 
   private session: avSession.AVSession | null = null;
   private ticker: number = -1;
@@ -173,8 +175,10 @@ export class PlayerController {
         const rawPos = this.engine.getPositionMs();
         this.positionMs = rawPos - cueStart;
         this.bumpPos();
-        // CUE 区间终点 → 区间衔接(同文件下一轨保引擎 seek 衔接,跨文件走普通切曲)
-        if (song !== null && song.cueEndMs > song.cueStartMs && rawPos >= song.cueEndMs) {
+        // CUE 区间终点 → 区间衔接(同文件下一轨保引擎 seek 衔接,跨文件走普通切曲)。
+        // 末轨 cue_end=文件时长时终点与引擎 EOF 重合:竞态由 autoAdvancing 哨兵吸收,不在此判别。
+        if (song !== null && song.cueEndMs > song.cueStartMs && rawPos >= song.cueEndMs &&
+          !this.autoAdvancing) {
           hilog.info(DOMAIN, TAG, 'cue range end -> next');
           this.cueAdvance();
         } else if (this.abStartMs >= 0 && this.abEndMs > this.abStartMs && this.positionMs >= this.abEndMs) {
@@ -259,8 +263,14 @@ export class PlayerController {
     this.abEndMs = -1;
     this.cueAdvancing = false;
     const cueStart = song.cueStartMs > 0 ? song.cueStartMs : 0;
-    this.durationMs = song.cueEndMs > song.cueStartMs ? song.cueEndMs - song.cueStartMs
-      : (info.durationMs > 0 ? info.durationMs : song.durationMs);
+    // CUE 分轨时长:末轨 cue_end_ms=-1(文件末尾,解析器语义)——区间时长已落在 duration_ms,
+    // 兜底必须用 song.durationMs;用引擎 info.durationMs 会拿到整文件时长(实测 CueB 列表 0:16/播放 0:44 分裂,
+    // recordPlay 灌水 44695ms)。cueEnd>cueStart 覆盖首轨(start=0,end=下轨起点)与中轨。
+    if (cueStart > 0 || song.cueEndMs > 0) {
+      this.durationMs = song.cueEndMs > cueStart ? song.cueEndMs - cueStart : song.durationMs;
+    } else {
+      this.durationMs = info.durationMs > 0 ? info.durationMs : song.durationMs;
+    }
     this.positionMs = 0;
     const effectiveResume = cueStart + resumeFromMs;
     if (effectiveResume > 0) {
@@ -387,11 +397,22 @@ export class PlayerController {
 
   private async onEngineEvent(ev: EngineEventData): Promise<void> {
     if (ev.kind === EngineEventKind.TRACK_END) {
-      hilog.info(DOMAIN, TAG, 'track end');
-      if (this.currentSong !== null) {
-        await Db.get().recordPlay(this.currentSong.id, this.durationMs);
+      // 自动推进互斥:末轨 CUE 终点(cueAdvance)与引擎 EOF 在同一位置相遇时,第二发直接忽略
+      // (实测引擎对个别 wav 报的时长偏大,EOF 可能落在 cueEnd 附近,单靠终点判据区分不可靠)
+      if (this.autoAdvancing) {
+        hilog.info(DOMAIN, TAG, 'track end ignored (auto advancing)');
+        return;
       }
-      await this.autoNext();
+      this.autoAdvancing = true;
+      hilog.info(DOMAIN, TAG, 'track end');
+      try {
+        if (this.currentSong !== null) {
+          await Db.get().recordPlay(this.currentSong.id, this.durationMs);
+        }
+        await this.autoNext();
+      } finally {
+        this.autoAdvancing = false;
+      }
     } else if (ev.kind === EngineEventKind.GAPLESS_NEXT) {
       // native 已无缝交接解码器(引擎/renderer 未动),此处仅同步曲目状态
       await this.onGaplessAdvanced();
@@ -421,7 +442,11 @@ export class PlayerController {
         }
       }
     } else if (ev.kind === EngineEventKind.SEEK_DONE) {
-      this.positionMs = ev.hint;
+      // hint 为文件绝对位置:CUE 分轨要减 cueStart 换算成区间内位置(否则 seek 后进度条跳出区间,
+      // 且 playSong 的 prevSong 补记拿到污染值——实测 recordPlay 27500)
+      const s = this.currentSong;
+      const cs = s !== null && s.cueStartMs > 0 ? s.cueStartMs : 0;
+      this.positionMs = Math.max(0, ev.hint - cs);
       this.bumpPos();
       this.syncSessionState();
     } else if (ev.kind === EngineEventKind.UNDERRUN) {
@@ -539,12 +564,14 @@ export class PlayerController {
 
   // CUE 区间终点衔接:同文件连续轨保引擎 seek 衔接(不重开);其余走普通切曲
   private cueAdvance(): void {
-    if (this.cueAdvancing) {
-      return; // seek 生效前 ticker 防重入
+    if (this.cueAdvancing || this.autoAdvancing) {
+      return; // seek 生效前 ticker 防重入;EOF 竞态由推进互斥吸收
     }
     this.cueAdvancing = true;
+    this.autoAdvancing = true;
     const done = (): void => {
       this.cueAdvancing = false;
+      this.autoAdvancing = false;
     };
     const next = this.queue.nextIndex(true);
     const cur = this.currentSong;

@@ -1016,7 +1016,10 @@ export class ScanService {
           song.bitDepth = bd;
           song.codec = codec;
           song.cueStartMs = t.startMs;
-          song.cueEndMs = t.endMs;
+          // 末轨 end=-1(文件末尾):回填音频实际时长,播放侧区间终点/时长判断才有效
+          // (-1 入库会让 playSong/ticker 的 cueEnd>cueStart 判断失效,durationMs 退化为整文件时长)
+          song.cueEndMs = t.endMs > t.startMs ? t.endMs
+            : (audioDurMs > t.startMs ? audioDurMs : -1);
           song.artPath = audioArt;
           const dup = await Db.get().querySongs('path = ? AND cue_start_ms = ?', [audioKey, t.startMs], '', 50, 0);
           if (dup.length > 1) {
@@ -1027,7 +1030,7 @@ export class ScanService {
           }
           if (dup.length > 0) {
             if (dup[0].mtime === mtime && dup[0].fileSize === fsize && dup[0].title === song.title &&
-              dup[0].durationMs === song.durationMs) {
+              dup[0].durationMs === song.durationMs && dup[0].cueEndMs === song.cueEndMs) {
               continue;
             }
             song.id = dup[0].id;
