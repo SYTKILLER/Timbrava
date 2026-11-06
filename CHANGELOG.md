@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Fixed(0.15.2 三轮实测反馈:迷你条封面闪烁/队列抽屉改标准半模态/返回键纵向滑出)
+
+- **迷你条切页签封面闪烁**:日志实锤根因——HdsTabs 切页签内部回落会重挂 miniBarBuilder,MiniPlayer 组件销毁重建(aboutToDisappear→aboutToAppear),新 Image 节点异步解码封面出空帧。修复:封面 Image 加 `syncLoad(true)`(44px 小图同步解码,重挂首帧即有图);MiniPlayer 增加生命周期 debug 日志。实测连拍 6 帧,封面区域色彩分布逐帧一致(2688 色),无空帧。
+- **播放队列改标准 bindSheet 半模态**:此前为 Stack 内 if 条件自绘抽屉(无转场,直接闪现)——改 `.bindSheet`(height 55%、无 dragBar/关闭钮,头部自带),获得标准上滑动画、蒙层、下拉关闭与 Back 响应;onDisappear 复位 showQueue。实测连拍抓到上滑中帧,Back 正常关闭。
+- **播放页返回键/系统返回改纵向滑出**:0.15.0 只修了下滑手势路径,顶栏 chevron_down 与系统 Back 仍走默认 pop 横向转场——统一走 dismissAnimated(与手势同款 220ms 纵向滑出后 pop),onBackPressed 消费返回。实测 Back 连拍:纵向滑出中帧,无横向位移。
+- 版本号 0.15.2/versionCode 15002。
+
 ### Fixed(0.15.1 二轮实测反馈:迷你条重置闪动/EQ横屏全屏/音量条入菜单/旋转钮热区)
 
 - **迷你条切页签"重置后闪恢复"根治**:上一版 900ms 定时补救只是把闪动窗口缩小,用户仍可见"重置→恢复"。改为双保险:① 用户态样式持续同步进 barFloatingStyle.miniBar 配置对象(syncCacheStyle)——HdsTabs 切页签/旋转的内部回落以配置态为准,回落即落在用户当前态(源头消除);② onBarStyleChange 增加 mode 参数判别(HdsTabsBarChangeMode)——非 USER_CLICK 的内部回落(切页签/旋转)若与用户镜像态不一致,**当场** applyMiniBarStyle 重新断言且污染值不写入镜像(无延时)。模拟器连拍实测:COLLAPSE 态点页签/横滑切页签全程 4 帧形态稳定、EXPAND 态切页签同样稳定,日志无 mismatch。

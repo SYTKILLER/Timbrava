@@ -2,8 +2,13 @@
 // 经 HdsTabs barFloatingStyle.miniBar(6.1.0(23))挂载:与页签栏同高对齐、
 // 背景材质/避让由 HdsTabs 统一管理,组件只负责内容(封面/标题/播控)。
 // 空队列(无当前曲)渲染占位行,避免 HdsTabs 迷你栏露出空壳(0.15.0)。
+// 封面 syncLoad(0.15.2):HdsTabs 切页签内部回落会重挂 builder,异步解码出空帧闪烁。
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { PlayerController } from '../service/PlayerController';
 import { formatDuration } from '../data/Model';
+
+const TAG = '[Timbrava][MiniPlayer]';
+const DOMAIN = 0x0001;
 
 @Component
 export struct MiniPlayer {
@@ -23,6 +28,7 @@ export struct MiniPlayer {
   }
 
   aboutToAppear(): void {
+    hilog.debug(DOMAIN, TAG, 'aboutToAppear (builder remount?)');
     this.refresh();
     // 播放中秒级位置刷新(增量通道,250ms 粒度由控制器 posVer 提供,这里兜底拉取)
     this.posTimer = setInterval((): void => {
@@ -33,6 +39,7 @@ export struct MiniPlayer {
   }
 
   aboutToDisappear(): void {
+    hilog.debug(DOMAIN, TAG, 'aboutToDisappear');
     if (this.posTimer >= 0) {
       clearInterval(this.posTimer);
       this.posTimer = -1;
@@ -88,6 +95,7 @@ export struct MiniPlayer {
           .height(44)
           .borderRadius(8)
           .objectFit(ImageFit.Cover)
+          .syncLoad(true) // 44px 小图同步解码:builder 重挂后首帧即有图,消除异步空帧闪烁
       } else {
         Column() {
           SymbolGlyph($r('sys.symbol.music_note_list'))

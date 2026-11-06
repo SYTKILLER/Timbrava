@@ -207,9 +207,8 @@ export struct FullPlayerDest {
           .height(40)
           .backgroundColor(Color.Transparent)
           .onClick(() => {
-            if (this.pathStack !== null) {
-              this.pathStack.pop();
-            }
+            // 0.15.2:返回键与下滑手势同款纵向滑出(此前走默认 pop 横向转场,与操作直觉矛盾)
+            this.dismissAnimated();
           })
           Text($r('app.string.now_playing'))
             .fontSize(15)
@@ -272,10 +271,16 @@ export struct FullPlayerDest {
           .onActionEnd((e: GestureEvent): void => {
             this.dragFinish(e);
           }))
+      // 播放队列(0.15.2:自绘 Stack 条目改标准 bindSheet 半模态——标准上滑动画/下拉关闭)
+      .bindSheet(this.showQueue, this.QueueDrawer(), {
+        height: '55%',
+        dragBar: false,
+        showClose: false,
+        onDisappear: (): void => {
+          this.showQueue = false;
+        }
+      })
 
-      if (this.showQueue) {
-        this.QueueDrawer()
-      }
       }
       .width('100%')
       .height('100%')
@@ -298,7 +303,9 @@ export struct FullPlayerDest {
         this.showQueue = false;
         return true;
       }
-      return false;
+      // 0.15.2:系统返回同样纵向滑出(默认 pop 横向转场已废弃)
+      this.dismissAnimated();
+      return true;
     })
   }
 
@@ -306,13 +313,15 @@ export struct FullPlayerDest {
   // 位移出屏后 pop(页面已离屏,默认转场不可见)。 dismissing 防多手势实例重复触发。
   // 0.15.0 修复:此前 pop 前先 dragY=0 复位,页面瞬间回位再叠默认 pop 转场(整体右滑)——
   // 与下滑手势直觉矛盾;现在保持离屏位移直接 pop,复位延迟到转场后。
+  // 0.15.2:返回键/系统返回也走同一纵向滑出动画(dismissAnimated),全页退出动作统一。
   private dismissing: boolean = false;
 
-  private dismissByGesture(vh: number): void {
+  private dismissAnimated(): void {
     if (this.dismissing) {
       return;
     }
     this.dismissing = true;
+    const vh = px2vp(display.getDefaultDisplaySync().height);
     this.getUIContext().animateTo({ duration: 220, curve: Curve.Friction }, (): void => {
       this.dragY = vh + 60;
     });
@@ -321,6 +330,10 @@ export struct FullPlayerDest {
         this.pathStack.pop();
       }
     }, 230);
+  }
+
+  private dismissByGesture(vh: number): void {
+    this.dismissAnimated();
   }
 
   // 下滑关闭跟手/判定(多手势实例共用:内容 Column + Swiper 两个页面容器)
@@ -796,6 +809,7 @@ export struct FullPlayerDest {
     })
   }
 
+  // 播放队列(0.15.2 改 bindSheet 承载:高度/圆角/动画由 sheet 管理,内容只管列表)
   @Builder
   QueueDrawer() {
     Column() {
@@ -909,10 +923,8 @@ export struct FullPlayerDest {
       .padding({ bottom: Math.max(this.bottomSafe, 28) + 8 })
     }
     .width('100%')
-    .height('55%')
-    .borderRadius({ topLeft: 24, topRight: 24 })
+    .height('100%')
     .backgroundColor($r('app.color.card_bg'))
-    .shadow({ radius: 32, color: '#33000000', offsetX: 0, offsetY: -6 })
   }
 
   // 桌面歌词开关:开→floatView 拉起浮窗页;失败提示(权限/设备不支持)
