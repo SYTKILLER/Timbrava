@@ -330,7 +330,7 @@
     },
     {
       "name": "dup_note",
-      "value": "「内容相同」按文件快速指纹精确判定;「疑似」按同标题+艺人时长±2s 或同体积同时长;移除只清曲库记录,不删文件"
+      "value": "「内容相同」按文件快速指纹精确判定;「疑似」按同标题+艺人时长±2s 或同体积同时长;每组默认保留最早入库的一首;移除只清曲库记录,不删文件"
     },
     {
       "name": "dup_tag_exact",
@@ -962,7 +962,7 @@
     },
     {
       "name": "rg_hint",
-      "value": "先在「响度分析」里扫描曲库,再选择应用模式"
+      "value": "先执行 ReplayGain 扫描,再选择应用模式;按专辑模式整专辑统一增益"
     },
     {
       "name": "rg_scan",
@@ -1257,16 +1257,60 @@
       "value": "沉浸"
     },
     {
-      "name": "amoled_black",
-      "value": "纯黑深色"
-    },
-    {
-      "name": "amoled_black_sub",
-      "value": "深色模式下使用纯黑页面背景，OLED 更省电更沉浸"
-    },
-    {
       "name": "total_duration",
       "value": "总时长 %s"
+    },
+    {
+      "name": "mini_bar_empty",
+      "value": "空队列 · 去曲库挑首歌"
+    },
+    {
+      "name": "view_all",
+      "value": "查看全部"
+    },
+    {
+      "name": "rg_config_title",
+      "value": "ReplayGain 配置"
+    },
+    {
+      "name": "rg_mode_row",
+      "value": "应用模式"
+    },
+    {
+      "name": "dup_tab_pending",
+      "value": "待分析曲目"
+    },
+    {
+      "name": "dup_tab_done",
+      "value": "已去重曲目"
+    },
+    {
+      "name": "dup_tab_groups",
+      "value": "重复分组"
+    },
+    {
+      "name": "dup_analyze_now",
+      "value": "立即分析"
+    },
+    {
+      "name": "dup_analyzing",
+      "value": "分析中…"
+    },
+    {
+      "name": "dup_pending_sub",
+      "value": "尚未完成 SHA-256 计算,完成后自动参与内容去重"
+    },
+    {
+      "name": "dup_done_sub",
+      "value": "内容身份已确认(哈希唯一)"
+    },
+    {
+      "name": "dup_keep_hint",
+      "value": "每组默认保留最早入库的一首"
+    },
+    {
+      "name": "dup_tracks",
+      "value": "%d 轨"
     }
   ]
 }

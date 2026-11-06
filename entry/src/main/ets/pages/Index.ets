@@ -38,6 +38,9 @@ struct Index {
   @State topSafe: number = 36;
   @State bottomSafe: number = 28;
   private hdsController: HdsTabsController = new HdsTabsController();
+  // barFloatingStyle 样式对象记忆化:每次 build 生成新对象会让 HdsTabs 重新初始化迷你栏
+  // (回落官方默认折叠态)——切页签 activeTab 变化触发重建即复现"折叠态被重置"(0.15.0 修复)
+  private floatingStyleCache: HdsTabsFloatingStyle | null = null;
 
   aboutToAppear(): void {
     AppStorage.setOrCreate('navStack', this.navStack);
@@ -84,9 +87,21 @@ struct Index {
         .vertical(false)
         .scrollable(true)
         .barOverlap(true) // 悬浮约束:页签栏叠加在内容之上,barFloatingStyle 生效前提
-        .barFloatingStyle(this.floatingStyle())
+        .barFloatingStyle(this.ensureFloatingStyle())
         .onChange((index: number) => {
           this.activeTab = index;
+          // 0.15.0 实测:HdsTabs 页签切换动画结束后会把迷你栏内部重置回 pill+圆钮形态,
+  // 且经 onBarStyleChange 把折叠镜像回写(污染用户态)——切换前先记录,重置后恢复断言
+          const keepCollapsed = BarCollapse.isCollapsed();
+          setTimeout((): void => {
+            if (PlayerController.get().currentSong === null) {
+              return;
+            }
+            BarCollapse.sync(keepCollapsed, false);
+            this.hdsController.applyMiniBarStyle(keepCollapsed ? HdsBarStyle.COLLAPSE : HdsBarStyle.EXPAND);
+            hilog.info(DOMAIN, TAG, 'reassert miniBar %{public}s after tab switch',
+              keepCollapsed ? 'COLLAPSE' : 'EXPAND');
+          }, 900);
         })
         .width('100%')
         .height('100%')
@@ -103,7 +118,11 @@ struct Index {
     .minContentWidth(360)
   }
 
-  private floatingStyle(): HdsTabsFloatingStyle {
+  // 首次构建生成并缓存;后续 rebuild 返回同一引用,避免迷你栏被重新初始化
+  private ensureFloatingStyle(): HdsTabsFloatingStyle {
+    if (this.floatingStyleCache !== null) {
+      return this.floatingStyleCache;
+    }
     const st: HdsTabsFloatingStyle = {
       barSideMargin: 16,
       barBottomMargin: 28, // 抬起高度 28vp
@@ -127,6 +146,7 @@ struct Index {
         }
       }
     };
+    this.floatingStyleCache = st;
     return st;
   }
 

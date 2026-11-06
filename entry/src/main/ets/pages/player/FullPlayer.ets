@@ -36,7 +36,7 @@ export struct FullPlayerDest {
   @State posMs: number = 0;
   @StorageProp('queueVer') @Watch('onQueueChanged') queueVer: number = 0;
   @State modeMirror: PlayMode = 'order'; // 模式键图标镜像(经 @State 切换驱动刷新)
-  @StorageProp('libVer') libVer: number = 0;
+  @StorageProp('libVer') @Watch('onLibChanged') libVer: number = 0;
   @StorageProp('themePageBg') themePageBg: string = '';
   @StorageProp('prefPlayerSkin') playerSkin: string = 'standard';
   @State seeking: boolean = false;
@@ -52,6 +52,16 @@ export struct FullPlayerDest {
   @State dragY: number = 0;          // 下滑关闭跟手位移(0.14.0)
   @State volMirror: number = 100;    // 音量条镜像(拖动中本地值,End 才落库)
   @State sheetExpand: string = '';   // 更多菜单展开区:'' | 'speed' | 'sleep'
+  // 曲目信息镜像(0.15.0 #20):playerVer 不经 @State 落地时 build 内节点零依赖不刷新,
+  // "if (playerVer < 0)"注册依赖写法条件恒假不重评——切歌标题/艺人/专辑/封面纹丝不动的根因
+  @State songTitle: string = '';
+  @State songSub: string = '';
+  @State songArt: string = '';
+  @State songSpec: string = '';
+  @State engineMirror: string = '';
+  @State favMirror: boolean = false;
+  @State hasSong: boolean = false;
+  @State qIndexMirror: number = -1;  // 队列抽屉当前序高亮镜像
   private srFor: string = '';
   private pathStack: NavPathStack | null = null;
   private swiperCtrl: SwiperController = new SwiperController();
@@ -70,10 +80,35 @@ export struct FullPlayerDest {
     this.onPlayerChanged();
   }
 
+  aboutToDisappear(): void {
+    // 0.15.0 下滑关闭:pop 前不再复位 dragY(保持离屏位,避免默认 pop 转场露馅),
+    // 此处(转场结束组件销毁前)清零,实例复用/重进都从原位开始
+    this.dragY = 0;
+    this.dismissing = false;
+  }
+
   onPlayerChanged(): void {
     this.playingMirror = PlayerController.get().isPlaying;
     this.modeMirror = QueueService.get().playMode();
+    this.refreshSongMirrors();
     this.loadCoverSr();
+  }
+
+  // 曲目信息镜像刷新(切歌/收藏变化唯一入口;0.15.0)
+  private refreshSongMirrors(): void {
+    const s = PlayerController.get().currentSong;
+    this.hasSong = s !== null;
+    this.songTitle = s !== null ? s.displayTitle() : '';
+    this.songSub = s !== null ? (s.displayArtist() + ' — ' + s.displayAlbum()) : '';
+    this.songArt = s !== null ? s.artPath : '';
+    this.songSpec = s !== null ? s.specBadge() : '';
+    this.engineMirror = PlayerController.get().engineInfo;
+    this.favMirror = s !== null && LibraryStore.get().isFavorite(s.id);
+    this.qIndexMirror = QueueService.get().currentOrderIndex;
+  }
+
+  onLibChanged(): void {
+    this.favMirror = this.hasSong && LibraryStore.get().isFavorite((PlayerController.get().currentSong as Song).id);
   }
 
   // 26-5:当前曲封面短边 <500px 时实时超分(26 设备),完成后回到本曲才上屏
@@ -102,6 +137,7 @@ export struct FullPlayerDest {
 
   onQueueChanged(): void {
     this.modeMirror = QueueService.get().playMode();
+    this.qIndexMirror = QueueService.get().currentOrderIndex;
   }
 
   onPosChanged(): void {
@@ -133,19 +169,16 @@ export struct FullPlayerDest {
     NavDestination() {
       Stack({ alignContent: Alignment.Bottom }) {
       // 沉浸皮肤背景层:当前封面高斯模糊 + 主题色蒙版(标准/极简皮肤不渲染,保持纯色底)
-      if (this.playerSkin === 'immersive' && this.song() !== null) {
+      if (this.playerSkin === 'immersive' && this.hasSong) {
         Stack() {
-          if (this.playerVer < 0) {
-            Text('') // 注册切曲刷新依赖:封面切换驱动背景重挂
-          }
           if (this.srPm !== null) {
             Image(this.srPm)
               .width('100%')
               .height('100%')
               .objectFit(ImageFit.Cover)
               .blur(120)
-          } else if ((this.song() as Song).artPath.length > 0) {
-            Image((this.song() as Song).artPath)
+          } else if (this.songArt.length > 0) {
+            Image(this.songArt)
               .width('100%')
               .height('100%')
               .objectFit(ImageFit.Cover)
@@ -154,19 +187,17 @@ export struct FullPlayerDest {
         }
         .width('100%')
         .height('100%')
-        // 主题色蒙版:保证 text token 在模糊图上对比度不随封面漂移
+        // 主题色蒙版:保证 text token 在模糊图上可读;0.87 几乎盖死模糊层(用户感知"皮肤没生效"),
+        // 降到 0.62 让封面色彩透出(0.15.0)
         Column()
           .width('100%')
           .height('100%')
           .backgroundColor(this.pageBg())
-          .opacity(0.87)
+          .opacity(0.62)
       }
       Column() {
         // 顶栏:下滑关闭 | 正在播放 | 收藏 | 更多(右上角,bindSheet)
         Row() {
-          if (this.libVer < 0) {
-            Text('') // 注册 libVer 依赖:收藏状态变化驱动顶栏/菜单红心刷新
-          }
           Button({ stateEffect: true }) {
             SymbolGlyph($r('sys.symbol.chevron_down'))
               .fontSize(24)
@@ -186,9 +217,9 @@ export struct FullPlayerDest {
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
           Button({ stateEffect: true }) {
-            SymbolGlyph(this.isFav() ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
+            SymbolGlyph(this.favMirror ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
               .fontSize(20)
-              .fontColor([this.isFav() ? $r('app.color.accent') : $r('app.color.text_primary')])
+              .fontColor([this.favMirror ? $r('app.color.accent') : $r('app.color.text_primary')])
           }
           .width(40)
           .height(40)
@@ -211,7 +242,7 @@ export struct FullPlayerDest {
         .width('100%')
         .padding({ left: 8, right: 8, top: this.topSafe })
 
-        if (this.song() !== null) {
+        if (this.hasSong) {
           this.PlayerBody()
         } else {
           Column({ space: 10 }) {
@@ -229,7 +260,7 @@ export struct FullPlayerDest {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.playerSkin === 'immersive' && this.song() !== null
+      .backgroundColor(this.playerSkin === 'immersive' && this.hasSong
         ? Color.Transparent : this.pageBg())
       // 下滑关闭手势:绑在内容 Column(实证 Stack 级 .gesture 在本页不触发,Row/Column 级正常)。
       // 跟手位移削顶 55%vh:节点拖出屏后手势失灵(KB §9.4),松手动画收尾;抽屉/菜单展开时回调内守卫。
@@ -273,6 +304,8 @@ export struct FullPlayerDest {
 
   // 下滑关闭:垂直下拉跟手,松手按位移/速度判定关闭或回弹(KB §9.4:手势对象必须 build 内构造)。
   // 位移出屏后 pop(页面已离屏,默认转场不可见)。 dismissing 防多手势实例重复触发。
+  // 0.15.0 修复:此前 pop 前先 dragY=0 复位,页面瞬间回位再叠默认 pop 转场(整体右滑)——
+  // 与下滑手势直觉矛盾;现在保持离屏位移直接 pop,复位延迟到转场后。
   private dismissing: boolean = false;
 
   private dismissByGesture(vh: number): void {
@@ -284,7 +317,6 @@ export struct FullPlayerDest {
       this.dragY = vh + 60;
     });
     setTimeout((): void => {
-      this.dragY = 0;
       if (this.pathStack !== null) {
         this.pathStack.pop();
       }
@@ -307,6 +339,8 @@ export struct FullPlayerDest {
       return;
     }
     const vh = px2vp(display.getDefaultDisplaySync().height);
+    hilog.info(DOMAIN, TAG, 'dragFinish offsetY=%{public}d vel=%{public}d vh=%{public}d',
+      Math.round(e.offsetY), Math.round(e.velocityY), Math.round(vh));
     if (e.offsetY > vh * 0.22 || e.velocityY > 900) {
       this.dismissByGesture(vh);
     } else {
@@ -325,18 +359,16 @@ export struct FullPlayerDest {
       Swiper(this.swiperCtrl) {
         // 第 1 页:大封面
         Column() {
-          if (this.playerVer < 0) {
-            Text('')
-          } else if (this.srPm !== null) {
+          if (this.srPm !== null) {
             Image(this.srPm)
-              .width(this.playerSkin === 'minimal' ? '56%' : '78%')
+              .width(this.playerSkin === 'minimal' ? '52%' : '78%')
               .aspectRatio(1)
               .borderRadius(24)
               .objectFit(ImageFit.Cover)
               .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
-          } else if ((this.song() as Song).artPath.length > 0) {
-            Image((this.song() as Song).artPath)
-              .width(this.playerSkin === 'minimal' ? '56%' : '78%')
+          } else if (this.songArt.length > 0) {
+            Image(this.songArt)
+              .width(this.playerSkin === 'minimal' ? '52%' : '78%')
               .aspectRatio(1)
               .borderRadius(24)
               .objectFit(ImageFit.Cover)
@@ -347,7 +379,7 @@ export struct FullPlayerDest {
                 .fontSize(72)
                 .fontColor([$r('app.color.accent')])
             }
-            .width(this.playerSkin === 'minimal' ? '56%' : '78%')
+            .width(this.playerSkin === 'minimal' ? '52%' : '78%')
             .aspectRatio(1)
             .borderRadius(24)
             .backgroundColor($r('app.color.badge_bg'))
@@ -405,31 +437,28 @@ export struct FullPlayerDest {
         this.pageIdx = i;
       })
 
-      // 信息 + 引擎徽章(playerVer 条件读取驱动切曲刷新)
+      // 信息 + 引擎徽章(全部走 @State 镜像:切歌经 onPlayerChanged 落镜像驱动刷新)
       Column({ space: 6 }) {
-        if (this.playerVer < 0) {
-          Text('')
-        }
-        Text((this.song() as Song).displayTitle())
+        Text(this.songTitle)
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text((this.song() as Song).displayArtist() + ' — ' + (this.song() as Song).displayAlbum())
+        Text(this.songSub)
           .fontSize(14)
           .fontColor($r('app.color.text_secondary'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Row({ space: 8 }) {
-          Text(PlayerController.get().engineInfo)
+          Text(this.engineMirror)
             .fontSize(10)
             .fontColor($r('app.color.badge_text'))
             .backgroundColor($r('app.color.badge_bg'))
             .borderRadius(6)
             .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-          if ((this.song() as Song).specBadge().length > 0) {
-            Text((this.song() as Song).specBadge())
+          if (this.songSpec.length > 0) {
+            Text(this.songSpec)
               .fontSize(10)
               .fontColor($r('app.color.badge_text'))
               .backgroundColor($r('app.color.badge_bg'))
@@ -514,9 +543,6 @@ export struct FullPlayerDest {
       .padding({ top: 2, bottom: 2 })
 
       // 控制区:播放模式(左) | 上一曲/播放暂停(动画)/下一曲 | 队列(右)
-      if (this.queueVer < 0) {
-        Text('') // 注册 queueVer 依赖:模式切换/随机重排驱动控制区刷新
-      }
       Row({ space: 8 }) {
         Button({ stateEffect: true }) {
           SymbolGlyph(this.modeIcon())
@@ -613,9 +639,9 @@ export struct FullPlayerDest {
       List({ space: 0 }) {
         // 收藏
         ListItem() {
-          this.SheetRow(this.isFav() ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'),
-            this.isFav() ? $r('app.string.str_favorited') : $r('app.string.str_favorites'),
-            this.isFav(), (): void => {
+          this.SheetRow(this.favMirror ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'),
+            this.favMirror ? $r('app.string.str_favorited') : $r('app.string.str_favorites'),
+            this.favMirror, (): void => {
               PlayerController.get().toggleFavorite();
             })
         }
@@ -764,9 +790,6 @@ export struct FullPlayerDest {
   @Builder
   QueueDrawer() {
     Column() {
-      if (this.queueVer < 0) {
-        Text('') // 注册 queueVer 依赖,队列变更驱动抽屉刷新
-      }
       Row() {
         Text($r('app.string.current_queue'))
           .fontSize(16)
@@ -844,13 +867,13 @@ export struct FullPlayerDest {
             Row({ space: 10 }) {
               Text(String(i + 1))
                 .fontSize(11)
-                .fontColor(i === QueueService.get().currentOrderIndex ? $r('app.color.accent') : $r('app.color.text_secondary'))
+                .fontColor(i === this.qIndexMirror ? $r('app.color.accent') : $r('app.color.text_secondary'))
                 .width(24)
                 .textAlign(TextAlign.Center)
               Column({ space: 2 }) {
                 Text(s.displayTitle())
                   .fontSize(14)
-                  .fontColor(i === QueueService.get().currentOrderIndex ? $r('app.color.accent') : $r('app.color.text_primary'))
+                  .fontColor(i === this.qIndexMirror ? $r('app.color.accent') : $r('app.color.text_primary'))
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                 Text(s.displayArtist())
@@ -927,11 +950,6 @@ export struct FullPlayerDest {
 
   private durMs(): number {
     return Math.max(1, PlayerController.get().durationMs);
-  }
-
-  private isFav(): boolean {
-    const s = this.song();
-    return s !== null && LibraryStore.get().isFavorite(s.id);
   }
 
   private lyricsNow(): string {

@@ -46,7 +46,6 @@ export class SettingsService {
   onlineLyrics: boolean = false; // LRCLIB 联网歌词(默认关,#38 零联网定位)
   playerSkin: string = 'standard'; // standard 大封面 | minimal 极简 | immersive 沉浸模糊(#0.14.0)
   playerVolume: number = 1.0;    // 引擎音量 0~1(0.14.0 播放页音量条)
-  amoledBlack: boolean = false;  // 深色下纯黑页面背景(AMOLED;0.14.0)
 
   private loaded: boolean = false;
 
@@ -82,7 +81,6 @@ export class SettingsService {
     this.playerSkin = skin === 'minimal' || skin === 'immersive' ? skin : 'standard';
     const vol = parseFloat(await db.getSetting('playerVolume', '1.0'));
     this.playerVolume = Number.isFinite(vol) && vol >= 0 && vol <= 1 ? vol : 1.0;
-    this.amoledBlack = (await db.getSetting('amoledBlack', '0')) === '1';
     this.loaded = true;
     this.syncTokens();
     hilog.info(DOMAIN, TAG, 'settings loaded');
@@ -103,7 +101,6 @@ export class SettingsService {
     this.token('prefOnlineLyrics', this.onlineLyrics);
     this.token('prefPlayerSkin', this.playerSkin);
     this.token('prefPlayerVolume', this.playerVolume);
-    this.token('prefAmoledBlack', this.amoledBlack);
   }
 
   private async save(key: string, value: string): Promise<void> {
@@ -184,12 +181,6 @@ export class SettingsService {
     this.playerVolume = Math.min(1.0, Math.max(0.0, v));
     this.syncTokens();
     await this.save('playerVolume', String(this.playerVolume));
-  }
-
-  async setAmoledBlack(on: boolean): Promise<void> {
-    this.amoledBlack = on;
-    this.syncTokens();
-    await this.save('amoledBlack', on ? '1' : '0');
   }
 
   async setOnlineLyrics(on: boolean): Promise<void> {

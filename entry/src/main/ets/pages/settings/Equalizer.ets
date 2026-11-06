@@ -2,7 +2,10 @@
 // 作用域(EQ 按曲目/按专辑):路由参数 EqScopeParam 携带 target(song:{id}/album:{key});
 // 无参数 = 全局编辑;有 target 时滑条曲线读写该作用域覆盖,清除后跟随全局。
 // 频点公式与 native dspPeqDefaultFreqs 一致(20Hz~16kHz 几何均分);拖动即时下发引擎。
+// 0.15.0:预设行 Select 限宽 + 存为预设/导入改 symbol 钮;支持横屏(手动切换钮,归零钮上方)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { common } from '@kit.AbilityKit';
+import { window, display } from '@kit.ArkUI';
 import { SettingsService } from '../../service/SettingsService';
 import { Db, EqPresetRow } from '../../data/Db';
 import { PlayerController } from '../../service/PlayerController';
@@ -93,10 +96,14 @@ struct EqTextDialog {
 @Component
 export struct EqualizerDest {
   @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
+  @StorageProp('bottomSafeVp') bottomSafeVp: number = 28; // 底部避让(≥28)
   @StorageProp('prefEqOn') prefEqOn: boolean = false;
   @StorageProp('prefEqPreset') prefEqPreset: string = 'flat';
   @State bands: number[] = flatBands();
   @State savedPresets: EqPresetRow[] = [];
+  // 横屏支持(0.15.0):读取设备当前方向 + 手动切换(圆钮,归零钮上方);横屏横向可见更多调音条
+  @State isLandscape: boolean = false;
+  private winRef: window.Window | null = null;
   // 作用域(EQ 按曲目/按专辑)
   private scope: EqScopeParam = new EqScopeParam('', '');
   @State hasOverride: boolean = false;
@@ -107,6 +114,70 @@ export struct EqualizerDest {
   aboutToAppear(): void {
     this.reloadBands();
     this.reloadSaved();
+    this.resolveOrientation();
+    this.watchDisplay();
+  }
+
+  aboutToDisappear(): void {
+    this.unwatchDisplay();
+    // 离页还原跟随系统(不锁定竖屏,尊重系统自动旋转设置)
+    if (this.winRef !== null) {
+      this.winRef.setPreferredOrientation(window.Orientation.UNSPECIFIED).catch((): void => {
+      });
+      this.winRef = null;
+    }
+  }
+
+  // 获取设备方向:物理屏朝向(display.Orientation)→ 判定横/竖(切换钮图标态)
+  private resolveOrientation(): void {
+    try {
+      const o = display.getDefaultDisplaySync().orientation;
+      this.isLandscape = o === display.Orientation.LANDSCAPE || o === display.Orientation.LANDSCAPE_INVERTED;
+      hilog.info(DOMAIN, TAG, 'orientation read -> %{public}s', this.isLandscape ? 'landscape' : 'portrait');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'resolveOrientation fail %{public}s', (e as Error).message);
+    }
+  }
+
+  // 手动切换横/竖屏(竖→横锁定横屏;横→竖)
+  private async toggleOrientation(): Promise<void> {
+    try {
+      if (this.winRef === null) {
+        const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+        this.winRef = await window.getLastWindow(ctx);
+      }
+      const target = this.isLandscape ? window.Orientation.PORTRAIT : window.Orientation.LANDSCAPE;
+      await this.winRef.setPreferredOrientation(target);
+      this.isLandscape = !this.isLandscape;
+      hilog.info(DOMAIN, TAG, 'orientation -> %{public}s', this.isLandscape ? 'landscape' : 'portrait');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'toggleOrientation fail %{public}s', (e as Error).message);
+    }
+  }
+
+  // 旋转落地后的实际方向同步(物理旋转/系统拒绝时兜底);模块级 display.on('change'),离页注销
+  private dispCb: ((id: number) => void) | null = null;
+
+  private watchDisplay(): void {
+    try {
+      this.dispCb = (_id: number): void => {
+        this.resolveOrientation();
+      };
+      display.on('change', this.dispCb);
+    } catch (e) {
+      this.dispCb = null;
+    }
+  }
+
+  private unwatchDisplay(): void {
+    if (this.dispCb !== null) {
+      try {
+        display.off('change', this.dispCb);
+      } catch (e) {
+        // 忽略
+      }
+      this.dispCb = null;
+    }
   }
 
   private isScoped(): boolean {
@@ -329,6 +400,7 @@ export struct EqualizerDest {
         .width('100%')
         .padding({ left: 16, right: 16, top: 12, bottom: 8 })
 
+        // 预设行:Select 按内容自适应(限宽防长自定义名吃满),存为预设/导入用 symbol 钮(0.15.0)
         Row({ space: 8 }) {
           Select(this.presetNames().map((n: string): SelectOption => {
             const opt: SelectOption = { value: isBuiltinPreset(n) ? this.builtinLabel(n) : n };
@@ -346,13 +418,16 @@ export struct EqualizerDest {
                 this.applyPreset(names[idx]);
               }
             })
-            .layoutWeight(1)
+            .constraintSize({ maxWidth: '58%' })
+
+          Blank()
 
           Button({ stateEffect: true }) {
-            Text($r('app.string.save_preset'))
-              .fontSize(12)
-              .fontColor($r('app.color.text_primary'))
+            SymbolGlyph($r('sys.symbol.save'))
+              .fontSize(17)
+              .fontColor([$r('app.color.text_primary')])
           }
+          .width(34)
           .height(34)
           .backgroundColor($r('app.color.badge_bg'))
           .borderRadius(10)
@@ -361,10 +436,11 @@ export struct EqualizerDest {
           })
 
           Button({ stateEffect: true }) {
-            Text($r('app.string.str_import'))
-              .fontSize(12)
-              .fontColor($r('app.color.text_primary'))
+            SymbolGlyph($r('sys.symbol.square_and_arrow_down'))
+              .fontSize(17)
+              .fontColor([$r('app.color.text_primary')])
           }
+          .width(34)
           .height(34)
           .backgroundColor($r('app.color.badge_bg'))
           .borderRadius(10)
@@ -438,23 +514,45 @@ export struct EqualizerDest {
         .layoutWeight(1)
         .align(Alignment.Center)
 
-        Row({ space: 12 }) {
-          Text($r('app.string.eq_hint'))
-            .fontSize(11)
-            .fontColor($r('app.color.text_secondary'))
-          Blank()
-          Button($r('app.string.reset_all'))
-            .fontSize(12)
-            .height(30)
-            .fontColor($r('app.color.text_primary'))
-            .backgroundColor($r('app.color.badge_bg'))
+        // 底部:横竖屏切换圆钮(16vp,归零钮正上方) + 提示小字/全部归零;底部避让 ≥28vp(0.15.0)
+        Column({ space: 4 }) {
+          Row() {
+            Blank()
+            Button({ stateEffect: true }) {
+              SymbolGlyph($r('sys.symbol.rotate_left'))
+                .fontSize(10)
+                .fontColor([this.isLandscape ? $r('app.color.accent') : $r('app.color.text_primary')])
+            }
+            .width(16)
+            .height(16)
+            .borderRadius(8)
+            .padding(0)
+            .backgroundColor(Color.Transparent)
             .onClick(() => {
-              this.bands = flatBands();
-              this.persistBands();
+              this.toggleOrientation();
             })
+          }
+          .width('100%')
+
+          Row({ space: 12 }) {
+            Text($r('app.string.eq_hint'))
+              .fontSize(11)
+              .fontColor($r('app.color.text_secondary'))
+            Blank()
+            Button($r('app.string.reset_all'))
+              .fontSize(12)
+              .height(30)
+              .fontColor($r('app.color.text_primary'))
+              .backgroundColor($r('app.color.badge_bg'))
+              .onClick(() => {
+                this.bands = flatBands();
+                this.persistBands();
+              })
+          }
+          .width('100%')
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 6, bottom: 20 })
+        .padding({ left: 16, right: 16, top: 6, bottom: Math.max(this.bottomSafeVp, 28) })
       }
       .width('100%')
       .height('100%')

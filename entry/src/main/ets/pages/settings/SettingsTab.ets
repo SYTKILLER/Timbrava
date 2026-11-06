@@ -3,7 +3,7 @@
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SettingsService, ThemeMode } from '../../service/SettingsService';
-import { RgScanner, RgScanState } from '../../service/RgScanner';
+import { RgScanner } from '../../service/RgScanner';
 import { BackupService } from '../../service/BackupService';
 import { LibraryStore } from '../../data/LibraryStore';
 import { AppTheme } from '../../common/Theme';
@@ -46,6 +46,9 @@ export struct PrefToggleRow {
   prefKey: string = 'lossless';
   title: ResourceStr = '';
   sub: ResourceStr = '';
+  // 行内 info 说明(0.15.0):开关左侧圆圈 i,点击弹说明——替代独立说明行
+  showInfo: boolean = false;
+  infoMsg: ResourceStr = '';
 
   private current(on: boolean): boolean {
     return on;
@@ -90,6 +93,25 @@ export struct PrefToggleRow {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
+      if (this.showInfo) {
+        Button({ stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.info_circle'))
+            .fontSize(17)
+            .fontColor([$r('app.color.text_secondary')])
+        }
+        .width(28)
+        .height(28)
+        .borderRadius(14)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.getUIContext().showAlertDialog({
+            title: this.title,
+            message: this.infoMsg,
+            confirm: { value: $r('app.string.str_ok'), action: (): void => {
+            } }
+          });
+        })
+      }
       Toggle({ type: ToggleType.Switch, isOn: this.value() })
         .selectedColor($r('app.color.accent'))
         .onChange((v: boolean): void => {
@@ -101,6 +123,7 @@ export struct PrefToggleRow {
   }
 }
 
+// 主题行(0.15.0:改 Select,与设置项组内其他行一致)
 @Component
 struct ThemeRow {
   @StorageProp('prefThemeMode') prefThemeMode: string = 'system';
@@ -115,39 +138,45 @@ struct ThemeRow {
     return $r('app.string.follow_system');
   }
 
+  private idx(): number {
+    if (this.prefThemeMode === ThemeMode.LIGHT) {
+      return 1;
+    }
+    if (this.prefThemeMode === ThemeMode.DARK) {
+      return 2;
+    }
+    return 0;
+  }
+
   build() {
-    Column({ space: 8 }) {
-      Row({ space: 10 }) {
-        SymbolGlyph($r('sys.symbol.moon'))
-          .fontSize(18)
-          .fontColor([$r('app.color.accent')])
-        Text($r('app.string.theme'))
-          .fontSize(15)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      Row({ space: 8 }) {
-        ForEach(THEME_OPTIONS, (opt: ThemeOption) => {
-          Button(this.themeLabel(opt.mode))
-            .fontSize(13)
-            .fontColor(this.prefThemeMode === opt.mode ? $r('app.color.on_accent') : $r('app.color.text_primary'))
-            .backgroundColor(this.prefThemeMode === opt.mode ? $r('app.color.accent') : $r('app.color.badge_bg'))
-            .borderRadius(10)
-            .height(34)
-            .layoutWeight(1)
-            .onClick(() => {
-              SettingsService.get().setThemeMode(opt.mode).then((): void => {
-                const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-                AppTheme.apply(ctx);
-              });
-            })
-        }, (opt: ThemeOption): string => opt.mode)
-      }
-      .width('100%')
+    Row({ space: 10 }) {
+      SymbolGlyph($r('sys.symbol.moon'))
+        .fontSize(18)
+        .fontColor([$r('app.color.accent')])
+      Text($r('app.string.theme'))
+        .fontSize(15)
+        .fontColor($r('app.color.text_primary'))
+        .layoutWeight(1)
+      Select([
+        { value: this.themeLabel(ThemeMode.SYSTEM) } as SelectOption,
+        { value: this.themeLabel(ThemeMode.LIGHT) } as SelectOption,
+        { value: this.themeLabel(ThemeMode.DARK) } as SelectOption
+      ])
+        .selected(this.idx())
+        .value(this.themeLabel(this.prefThemeMode))
+        .font({ size: 13 })
+        .fontColor($r('app.color.text_primary'))
+        .selectedOptionFont({ size: 13 })
+        .optionFont({ size: 13 })
+        .onSelect((i: number): void => {
+          const mode = i === 1 ? ThemeMode.LIGHT : i === 2 ? ThemeMode.DARK : ThemeMode.SYSTEM;
+          SettingsService.get().setThemeMode(mode).then((): void => {
+            const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+            AppTheme.apply(ctx);
+          });
+        })
     }
     .width('100%')
-    .alignItems(HorizontalAlign.Start)
     .padding({ top: 10, bottom: 10 })
   }
 }
@@ -192,14 +221,12 @@ export struct SettingsTab {
             }
           }
 
-          // 外观
+          // 外观(0.15.0:纯黑深色设置随功能一并移除)
           CardSection({ title: $r('app.string.appearance') }) {
             Column() {
               ThemeRow()
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               PlayerSkinRow()
-              Divider().color($r('app.color.divider')).margin({ left: 0 })
-              AmoledRow()
             }
           }
 
@@ -232,7 +259,8 @@ export struct SettingsTab {
           Blank().height(120)
         }
         .width('100%')
-        .padding({ left: 16, right: 16 })
+        // top 12:首组(媒体库)与页标题间距 = 组间距(0.15.0 #12)
+        .padding({ left: 16, right: 16, top: 12 })
       }
       .width('100%')
       .layoutWeight(1)
@@ -287,101 +315,54 @@ export struct SettingsTab {
   }
 }
 
-class ThemeOption {
-  mode: string;
-
-  constructor(mode: string) {
-    this.mode = mode;
-  }
-}
-
-const THEME_OPTIONS: ThemeOption[] = [
-  new ThemeOption('system'),
-  new ThemeOption('light'),
-  new ThemeOption('dark')
-];
-
-// 播放页皮肤(#53):标准(大封面)/极简/沉浸(封面高斯模糊背景,0.14.0)
+// 播放页皮肤(#53):标准(大封面)/极简/沉浸(封面高斯模糊背景)——0.15.0 改 Select
 @Component
 struct PlayerSkinRow {
   @StorageProp('prefPlayerSkin') prefPlayerSkin: string = 'standard';
 
-  build() {
-    Column({ space: 8 }) {
-      Row({ space: 10 }) {
-        SymbolGlyph($r('sys.symbol.paintpalette'))
-          .fontSize(18)
-          .fontColor([$r('app.color.accent')])
-        Text($r('app.string.player_skin'))
-          .fontSize(15)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      Row({ space: 8 }) {
-        Button($r('app.string.skin_standard'))
-          .fontSize(13)
-          .fontColor(this.prefPlayerSkin === 'standard' ? $r('app.color.on_accent') : $r('app.color.text_primary'))
-          .backgroundColor(this.prefPlayerSkin === 'standard' ? $r('app.color.accent') : $r('app.color.badge_bg'))
-          .borderRadius(10)
-          .height(34)
-          .layoutWeight(1)
-          .onClick(() => {
-            SettingsService.get().setPlayerSkin('standard');
-          })
-        Button($r('app.string.skin_minimal'))
-          .fontSize(13)
-          .fontColor(this.prefPlayerSkin === 'minimal' ? $r('app.color.on_accent') : $r('app.color.text_primary'))
-          .backgroundColor(this.prefPlayerSkin === 'minimal' ? $r('app.color.accent') : $r('app.color.badge_bg'))
-          .borderRadius(10)
-          .height(34)
-          .layoutWeight(1)
-          .onClick(() => {
-            SettingsService.get().setPlayerSkin('minimal');
-          })
-        Button($r('app.string.skin_immersive'))
-          .fontSize(13)
-          .fontColor(this.prefPlayerSkin === 'immersive' ? $r('app.color.on_accent') : $r('app.color.text_primary'))
-          .backgroundColor(this.prefPlayerSkin === 'immersive' ? $r('app.color.accent') : $r('app.color.badge_bg'))
-          .borderRadius(10)
-          .height(34)
-          .layoutWeight(1)
-          .onClick(() => {
-            SettingsService.get().setPlayerSkin('immersive');
-          })
-      }
-      .width('100%')
+  private skinLabel(s: string): ResourceStr {
+    if (s === 'minimal') {
+      return $r('app.string.skin_minimal');
     }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
-    .padding({ top: 10, bottom: 10 })
+    if (s === 'immersive') {
+      return $r('app.string.skin_immersive');
+    }
+    return $r('app.string.skin_standard');
   }
-}
 
-// AMOLED 纯黑(0.14.0):深色生效时页面背景覆盖 #000000(浅色下不生效)
-@Component
-struct AmoledRow {
-  @StorageProp('prefAmoledBlack') prefAmoledBlack: boolean = false;
+  private idx(): number {
+    if (this.prefPlayerSkin === 'minimal') {
+      return 1;
+    }
+    if (this.prefPlayerSkin === 'immersive') {
+      return 2;
+    }
+    return 0;
+  }
 
   build() {
-    Row({ space: 12 }) {
-      Column({ space: 2 }) {
-        Text($r('app.string.amoled_black'))
-          .fontSize(15)
-          .fontColor($r('app.color.text_primary'))
-        Text($r('app.string.amoled_black_sub'))
-          .fontSize(11)
-          .fontColor($r('app.color.text_secondary'))
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
-      Toggle({ type: ToggleType.Switch, isOn: this.prefAmoledBlack })
-        .selectedColor($r('app.color.accent'))
-        .onChange((v: boolean): void => {
-          SettingsService.get().setAmoledBlack(v).then((): void => {
-            const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-            AppTheme.apply(ctx);
-          });
+    Row({ space: 10 }) {
+      SymbolGlyph($r('sys.symbol.paintpalette'))
+        .fontSize(18)
+        .fontColor([$r('app.color.accent')])
+      Text($r('app.string.player_skin'))
+        .fontSize(15)
+        .fontColor($r('app.color.text_primary'))
+        .layoutWeight(1)
+      Select([
+        { value: this.skinLabel('standard') } as SelectOption,
+        { value: this.skinLabel('minimal') } as SelectOption,
+        { value: this.skinLabel('immersive') } as SelectOption
+      ])
+        .selected(this.idx())
+        .value(this.skinLabel(this.prefPlayerSkin))
+        .font({ size: 13 })
+        .fontColor($r('app.color.text_primary'))
+        .selectedOptionFont({ size: 13 })
+        .optionFont({ size: 13 })
+        .onSelect((i: number): void => {
+          const s = i === 1 ? 'minimal' : i === 2 ? 'immersive' : 'standard';
+          SettingsService.get().setPlayerSkin(s);
         })
     }
     .width('100%')
@@ -417,9 +398,9 @@ struct OnlineLyricsRow {
   }
 }
 
-// ReplayGain 应用模式行(0 关 / 1 按曲目 / 2 按专辑)
+// ReplayGain 应用模式行(0 关 / 1 按曲目 / 2 按专辑)——0.15.0 改 Select 简化 UI
 @Component
-export struct RgModeRow {
+export struct RgModeSelectRow {
   @StorageProp('prefRgMode') prefRgMode: number = 0;
 
   private label(m: number): ResourceStr {
@@ -433,50 +414,63 @@ export struct RgModeRow {
   }
 
   build() {
-    Column({ space: 8 }) {
-      Row({ space: 10 }) {
-        SymbolGlyph($r('sys.symbol.waveform'))
-          .fontSize(18)
-          .fontColor([$r('app.color.accent')])
-        Text('ReplayGain')
+    Row({ space: 10 }) {
+      SymbolGlyph($r('sys.symbol.waveform'))
+        .fontSize(18)
+        .fontColor([$r('app.color.accent')])
+      Column({ space: 2 }) {
+        Text($r('app.string.rg_mode_row'))
           .fontSize(15)
           .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
+        Text($r('app.string.rg_hint'))
+          .fontSize(11)
+          .fontColor($r('app.color.text_secondary'))
       }
-      .width('100%')
-      Text($r('app.string.rg_hint'))
-        .fontSize(11)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-      Row({ space: 8 }) {
-        ForEach([0, 1, 2], (m: number) => {
-          Button(this.label(m))
-            .fontSize(13)
-            .fontColor(this.prefRgMode === m ? $r('app.color.on_accent') : $r('app.color.text_primary'))
-            .backgroundColor(this.prefRgMode === m ? $r('app.color.accent') : $r('app.color.badge_bg'))
-            .borderRadius(10)
-            .height(34)
-            .layoutWeight(1)
-            .onClick(() => {
-              SettingsService.get().setRgMode(m);
-            })
-        }, (m: number): string => `rg_${m}`)
-      }
-      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      Select([
+        { value: this.label(0) } as SelectOption,
+        { value: this.label(1) } as SelectOption,
+        { value: this.label(2) } as SelectOption
+      ])
+        .selected(Math.min(2, Math.max(0, this.prefRgMode)))
+        .value(this.label(this.prefRgMode))
+        .font({ size: 13 })
+        .fontColor($r('app.color.text_primary'))
+        .selectedOptionFont({ size: 13 })
+        .optionFont({ size: 13 })
+        .onSelect((i: number): void => {
+          SettingsService.get().setRgMode(i);
+        })
     }
     .width('100%')
-    .alignItems(HorizontalAlign.Start)
     .padding({ top: 10, bottom: 10 })
   }
 }
 
-// 响度分析扫描区:全库扫描按钮 + 进度
+// ReplayGain 扫描区:全库扫描按钮 + 进度(0.15.0:rgScanVer 经 @Watch 落 @State 镜像)
 @Component
 export struct RgScanSection {
-  @StorageProp('rgScanVer') rgScanVer: number = 0;
+  @StorageProp('rgScanVer') @Watch('onScanVer') rgScanVer: number = 0;
+  @State running: boolean = false;
+  @State current: number = 0;
+  @State total: number = 0;
+  @State albumLabel: string = '';
+  @State done: boolean = false;
+  @State failCount: number = 0;
 
-  private st(): RgScanState {
-    return RgScanner.get().state;
+  aboutToAppear(): void {
+    this.onScanVer();
+  }
+
+  onScanVer(): void {
+    const st = RgScanner.get().state;
+    this.running = st.running;
+    this.current = st.current;
+    this.total = st.total;
+    this.albumLabel = st.albumLabel;
+    this.done = st.done;
+    this.failCount = st.failCount;
   }
 
   build() {
@@ -498,10 +492,8 @@ export struct RgScanSection {
       }
       .width('100%')
 
-      if (this.rgScanVer < 0) {
-        Text('')
-      } else if (this.st().running) {
-        Text(L($r('app.string.rg_scanning'), this.st().current, this.st().total, this.st().albumLabel.length > 0 ? ' · ' + this.st().albumLabel : ''))
+      if (this.running) {
+        Text(L($r('app.string.rg_scanning'), this.current, this.total, this.albumLabel.length > 0 ? ' · ' + this.albumLabel : ''))
           .fontSize(12)
           .fontColor($r('app.color.accent'))
           .width('100%')
@@ -514,8 +506,8 @@ export struct RgScanSection {
             RgScanner.get().cancel();
           })
       } else {
-        if (this.st().done) {
-          Text(this.st().failCount > 0 ? L($r('app.string.rg_done_fail'), this.st().failCount) : L($r('app.string.rg_done_ok')))
+        if (this.done) {
+          Text(this.failCount > 0 ? L($r('app.string.rg_done_fail'), this.failCount) : L($r('app.string.rg_done_ok')))
             .fontSize(11)
             .fontColor($r('app.color.text_secondary'))
             .width('100%')

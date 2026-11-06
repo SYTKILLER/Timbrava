@@ -1,8 +1,7 @@
-// 主题应用:跟随系统/浅色/深色 + AMOLED 纯黑开关(0.14.0)。
-// 纯黑 = 深色生效时页面背景 token 覆盖 #000000(themePageBg 已有页面消费点);浅色下不生效。
+// 主题应用:跟随系统/浅色/深色。
+// 0.15.0:AMOLED 纯黑覆盖位随功能一并移除(themePageBg 恒空串,页面回退资源色)。
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { window, display } from '@kit.ArkUI';
-import { resourceManager } from '@kit.LocalizationKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SettingsService, ThemeMode } from '../service/SettingsService';
 
@@ -36,33 +35,16 @@ export class AppTheme {
     hilog.info(DOMAIN, TAG, 'theme applied mode=%{public}s', mode);
   }
 
-  // 只重算页面背景覆盖位(AMOLED 纯黑)+ bump themeVer,不动 colorMode——
-  // 系统配置变更(onConfigurationUpdate)与 apply 共用,浅色/未开纯黑时覆盖位为空串。
+  // 只重算页面背景覆盖位 + bump themeVer,不动 colorMode——
+  // 系统配置变更(onConfigurationUpdate)与 apply 共用;纯黑功能移除后覆盖位恒空串。
   static isReapplyingColorMode(): boolean {
     return AppTheme.inSetColorMode;
   }
 
   static recomputeOverride(ctx: common.UIAbilityContext | null): void {
-    const mode = SettingsService.get().themeMode;
-    let bgOverride = '';
-    if (SettingsService.get().amoledBlack) {
-      let dark = mode === ThemeMode.DARK;
-      if (!dark && mode === ThemeMode.SYSTEM && ctx !== null) {
-        try {
-          // KB §9.1:colorMode 是 resourceManager.ColorMode(DARK=0),与 ConfigurationConstant 不互通
-          const cfg = ctx.getApplicationContext().resourceManager.getConfigurationSync();
-          dark = cfg.colorMode === resourceManager.ColorMode.DARK;
-        } catch (e) {
-          hilog.warn(DOMAIN, TAG, 'colorMode probe fail %{public}s', (e as Error).message);
-        }
-      }
-      if (dark) {
-        bgOverride = '#000000';
-      }
-    }
-    AppStorage.setOrCreate('themePageBg', bgOverride);
+    AppStorage.setOrCreate('themePageBg', '');
     AppStorage.setOrCreate('themeVer', (AppStorage.get<number>('themeVer') ?? 0) + 1);
-    hilog.info(DOMAIN, TAG, 'theme override amoledBg=%{public}s', bgOverride);
+    hilog.info(DOMAIN, TAG, 'theme override cleared');
   }
 
   // 页面安全区:沉浸式后需要避让状态栏/导航条(px → vp)

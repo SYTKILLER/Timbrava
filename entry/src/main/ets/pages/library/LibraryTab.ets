@@ -13,6 +13,8 @@ import { SongRow, SongListParam } from '../../components/SongRow';
 import { BasicDataSource } from '../../common/DataSource';
 import { ScanService } from '../../data/ScanService';
 import { Db } from '../../data/Db';
+import { PlayerController } from '../../service/PlayerController';
+import { QueueService } from '../../service/QueueService';
 import { L, Ls } from '../../common/Lang';
 import { BarCollapse } from '../../common/BarCollapse';
 
@@ -110,20 +112,8 @@ class SongRowSource extends BasicDataSource<LibRow> {
 class ArtistRowSource extends BasicDataSource<LibRow> {
 }
 
-// 曲库首页横滑卡:最近添加专辑
-class RecentAlbum {
-  key: string;
-  album: string;
-  artist: string;
-  artPath: string;
-
-  constructor(key: string, album: string, artist: string, artPath: string) {
-    this.key = key;
-    this.album = album;
-    this.artist = artist;
-    this.artPath = artPath;
-  }
-}
+// 曲库首页横滑卡:最近添加歌曲封面(0.15.0:由专辑卡改为逐曲封面,
+// 左边最新共 10 张,末尾「查看全部」占位封面跳转最近添加列表;点击封面即以最近添加队列起播)
 
 @Builder
 export function AlbumCover(artPath: string, sizeVp: number) {
@@ -160,7 +150,8 @@ export struct LibraryTab {
   @State artistCount: number = 0;
   @State genreCount: number = 0;
   @State topSafe: number = 36;
-  @State recentAlbums: RecentAlbum[] = [];
+  @State recentSongs: Song[] = [];      // 横滑卡展示:最近入库 10 首(左=最新)
+  private recentQueue: Song[] = [];     // 点击起播的「最近添加」队列(前 50,与查看全部列表一致)
   @State vpH: number = 0;   // 外层 Scroll 视口高(onAreaChange 实测)
   @State segH: number = 40; // 分段器行高(onAreaChange 实测)
   // 0.14.0 排序(持久化;索引条仅在按名称排序时显示)
@@ -401,23 +392,22 @@ export struct LibraryTab {
     return AppStorage.get<NavPathStack>('navStack') ?? null;
   }
 
-  // 最近添加专辑:按入库时间去重取前 10 张(曲库首页横滑卡)
+  // 最近添加:按入库时间倒序;展示前 10 首封面,队列取前 50(与「查看全部」smart added 一致)
   private rebuildRecent(): void {
-    const seen: Set<string> = new Set<string>();
-    const list: RecentAlbum[] = [];
-    const songs = LibraryStore.get().songs.slice().sort((a: Song, b: Song): number => b.dateAdded - a.dateAdded);
-    for (const s of songs) {
-      const key = `${s.albumArtist || s.artist}||${s.album}`;
-      if (seen.has(key) || s.dateAdded <= 0) {
-        continue;
-      }
-      seen.add(key);
-      list.push(new RecentAlbum(key, s.album, s.displayArtist(), s.artPath));
-      if (list.length >= 10) {
-        break;
-      }
+    const sorted = LibraryStore.get().songs.filter((s: Song): boolean => s.dateAdded > 0)
+      .sort((a: Song, b: Song): number => b.dateAdded - a.dateAdded);
+    this.recentQueue = sorted.slice(0, 50);
+    this.recentSongs = sorted.slice(0, 10);
+  }
+
+  // 点击最近添加封面:以「最近添加」队列表替换队列,从本曲起播
+  private playFromRecent(idx: number): void {
+    if (idx < 0 || idx >= this.recentQueue.length) {
+      return;
     }
-    this.recentAlbums = list;
+    const q = QueueService.get();
+    q.setQueueNow(this.recentQueue, idx, Ls($r('app.string.recent_added')));
+    PlayerController.get().playQueueIndex(idx);
   }
 
   private openSmart(kind: string, titleRes: Resource): void {
@@ -504,8 +494,8 @@ export struct LibraryTab {
           .width('100%')
           .padding({ left: 16, right: 16, bottom: 8 })
 
-          // 最近添加专辑横滑卡
-          if (this.recentAlbums.length > 0) {
+          // 最近添加歌曲封面横滑卡(左=最新,末尾「查看全部」;点击封面即起播最近添加队列)
+          if (this.recentSongs.length > 0) {
             Text($r('app.string.recent_added'))
               .fontSize(14)
               .fontWeight(FontWeight.Medium)
@@ -513,34 +503,52 @@ export struct LibraryTab {
               .width('100%')
               .padding({ left: 16, right: 16, bottom: 4 })
             List({ space: 10 }) {
-              ForEach(this.recentAlbums, (a: RecentAlbum) => {
+              ForEach(this.recentSongs, (s: Song, i: number) => {
                 ListItem() {
                   Column({ space: 4 }) {
-                    AlbumCover(a.artPath, 88)
-                    Text(a.album)
+                    AlbumCover(s.artPath, 88)
+                    Text(s.displayTitle())
                       .fontSize(11)
                       .fontColor($r('app.color.text_primary'))
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    Text(a.artist)
-                      .fontSize(10)
-                      .fontColor($r('app.color.text_secondary'))
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                   }
                   .width(88)
                 }
                   .onClick(() => {
-                    const parts = a.key.split('||');
-                    const stack = this.navStack();
-                    if (stack !== null) {
-                      stack.pushPathByName('SongList', SongListParam.album(parts[0], parts.length > 1 ? parts[1] : a.album));
-                    }
+                    this.playFromRecent(i);
                   })
-              }, (a: RecentAlbum): string => a.key)
+              }, (s: Song): string => `rs_${s.id}_${s.dateAdded}`)
+              // 「查看全部」占位封面 → 最近添加列表(smart added)
+              ListItem() {
+                Column({ space: 4 }) {
+                  Column({ space: 6 }) {
+                    SymbolGlyph($r('sys.symbol.arrow_right'))
+                      .fontSize(22)
+                      .fontColor([$r('app.color.text_secondary')])
+                    Text($r('app.string.view_all'))
+                      .fontSize(11)
+                      .fontColor($r('app.color.text_secondary'))
+                  }
+                  .width(88)
+                  .height(88)
+                  .borderRadius(10)
+                  .backgroundColor($r('app.color.badge_bg'))
+                  .justifyContent(FlexAlign.Center)
+                }
+                .width(88)
+              }
+                .onClick(() => {
+                  const stack = this.navStack();
+                  if (stack !== null) {
+                    stack.pushPathByName('SongList',
+                      SongListParam.smart('added', Ls($r('app.string.recent_added'))));
+                  }
+                })
             }
             .width('100%')
-            .height(130)
+            .height(118)
+            .listDirection(Axis.Horizontal) // 默认纵向被 118 高裁剪只露 1 项(用户实测);横向滑查看全部
             .padding({ left: 16, right: 16, bottom: 8 })
             .scrollBar(BarState.Off)
           }

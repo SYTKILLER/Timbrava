@@ -16,6 +16,8 @@ import timbravaCore from 'libtimbrava_core.so';
 import { fnv1a } from './tag/Bytes';
 import { L } from '../common/Lang';
 import { openTargetOf } from '../common/PathUtil';
+import { LrcLibClient } from '../service/LrcLibClient';
+import { SettingsService } from '../service/SettingsService';
 
 const TAG = '[Timbrava][Scan]';
 
@@ -57,8 +59,17 @@ export class ScanService {
     return this.scanning;
   }
 
+  isConverging(): boolean {
+    return this.converging;
+  }
+
   private bump(): void {
     AppStorage.setOrCreate('scanVer', (AppStorage.get<number>('scanVer') ?? 0) + 1);
+  }
+
+  // 身份收敛进度(逐路径):去重页「待分析」列表订阅刷新
+  private bumpHash(): void {
+    AppStorage.setOrCreate('hashVer', (AppStorage.get<number>('hashVer') ?? 0) + 1);
   }
 
   // ===== 导入歌曲(AudioViewPicker 即选即入库,无需扫描) =====
@@ -129,6 +140,8 @@ export class ScanService {
     }
     hilog.info(DOMAIN, TAG, 'picked import added=%{public}d/%{public}d deduped=%{public}d relinked=%{public}d',
       added, uris.length, this.progress.deduped, this.progress.relinked);
+    // 导入后即触发身份收敛(fp/SHA-256)+ 联网歌词静默预取(0.15.0:不等下次启动;converging 门闩幂等)
+    this.convergeIdentities();
     return added;
   }
 
@@ -280,6 +293,8 @@ export class ScanService {
       this.scanning = false;
       this.bump();
       await LibraryStore.get().reload();
+      // 重扫完成后续跑身份收敛(导入新文件/内容变更行的 hash 回填 + 歌词预取)
+      this.convergeIdentities();
     }
   }
 
@@ -685,6 +700,11 @@ export class ScanService {
           await this.waitScanQuiet();
           if (await this.convergePath(p, 'hash')) {
             done++;
+            this.bumpHash();
+            // SHA-256 落定即静默预取联网歌词(0.15.0;LRCLIB 开关开启时)
+            if (SettingsService.get().onlineLyrics) {
+              await this.prefetchLyricsForPath(p);
+            }
           } else {
             failed++;
           }
@@ -711,6 +731,31 @@ export class ScanService {
       hilog.info(DOMAIN, TAG, 'converge all stages done in %{public}dms', Date.now() - started);
     } finally {
       this.converging = false;
+      this.bumpHash(); // 终态通知(按钮态/计数复位)
+    }
+  }
+
+  // 联网歌词静默预取(0.15.0):路径下全部行(整轨+CUE 分轨)缺缓存则 LRCLIB 拉取落缓存;
+  // 正在播放的曲目由 loadLyricsAsync 自行按需加载,此处只负责预热缓存。
+  private async prefetchLyricsForPath(p: string): Promise<void> {
+    try {
+      const rows = await Db.get().querySongs('path = ?', [p], '', 100, 0);
+      for (const s of rows) {
+        const cached = await Db.get().getLyricsCache(s.id);
+        if (cached.length > 0) {
+          continue;
+        }
+        if (s.displayTitle().length === 0 || s.displayArtist().length === 0) {
+          continue;
+        }
+        const lrc = await LrcLibClient.fetch(s.displayArtist(), s.displayTitle(), s.displayAlbum(), s.durationMs);
+        if (lrc.length > 0) {
+          await Db.get().putLyricsCache(s.id, lrc);
+          hilog.info(DOMAIN, TAG, 'lyrics prefetched song=%{public}d len=%{public}d', s.id, lrc.length);
+        }
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'prefetchLyrics fail %{public}s %{public}s', p, (e as Error).message);
     }
   }
 

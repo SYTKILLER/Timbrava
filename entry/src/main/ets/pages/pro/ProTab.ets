@@ -5,7 +5,7 @@ import { Song } from '../../data/Model';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { L } from '../../common/Lang';
 import { BarCollapse } from '../../common/BarCollapse';
-import { CardSection, PrefToggleRow, RgModeRow, RgScanSection } from '../settings/SettingsTab';
+import { CardSection, PrefToggleRow, RgModeSelectRow, RgScanSection } from '../settings/SettingsTab';
 
 @Component
 export struct ProTab {
@@ -133,41 +133,37 @@ export struct ProTab {
             }
           }
 
-          // 音频引擎
+          // 音频引擎(0.15.0:系统引擎兜底说明改为无损开关左侧 info 钮,不再占独立一栏)
           CardSection({ title: $r('app.string.audio_engine') }) {
             Column() {
               PrefToggleRow({
                 prefKey: 'lossless',
                 title: $r('app.string.lossless_pref'),
-                sub: $r('app.string.lossless_sub')
+                sub: $r('app.string.lossless_sub'),
+                showInfo: true,
+                infoMsg: $r('app.string.system_fallback_sub')
               })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               this.NavItem($r('app.string.eq_entry'), $r('app.string.eq_entry_sub'), (): void => {
                 this.nav().pushPathByName('Equalizer', null);
               })
-              Divider().color($r('app.color.divider')).margin({ left: 0 })
-              RgModeRow()
-              Divider().color($r('app.color.divider')).margin({ left: 0 })
-              this.InfoItem($r('app.string.system_fallback'), $r('app.string.system_fallback_sub'))
             }
           }
 
-          // 响度分析(ReplayGain 扫描)
-          CardSection({ title: $r('app.string.loudness') }) {
+          // ReplayGain 配置(0.15.0:响度分析组更名,扫描 + 应用模式两项;模式改 Select)
+          CardSection({ title: $r('app.string.rg_config_title') }) {
             Column() {
               RgScanSection()
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              RgModeSelectRow()
             }
           }
 
-          // 专业工具
+          // 专业工具(0.15.0:重复清理入口移除,曲库设置页保留)
           CardSection({ title: $r('app.string.pro_tools') }) {
             Column() {
               this.NavItem($r('app.string.lrc_tool'), $r('app.string.lrc_tool_sub'), (): void => {
                 this.openLyricsTool();
-              })
-              Divider().color($r('app.color.divider')).margin({ left: 0 })
-              this.NavItem($r('app.string.duplicates_title'), $r('app.string.duplicates_sub'), (): void => {
-                this.nav().pushPathByName('Duplicates', null);
               })
             }
           }
@@ -216,23 +212,5 @@ export struct ProTab {
     .onClick(() => {
       onTap();
     })
-  }
-
-  @Builder
-  InfoItem(title: ResourceStr, sub: ResourceStr) {
-    Row({ space: 12 }) {
-      Column({ space: 2 }) {
-        Text(title)
-          .fontSize(15)
-          .fontColor($r('app.color.text_primary'))
-        Text(sub)
-          .fontSize(11)
-          .fontColor($r('app.color.text_secondary'))
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
-    }
-    .width('100%')
-    .padding({ top: 10, bottom: 10 })
   }
 }

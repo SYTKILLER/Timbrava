@@ -1,6 +1,7 @@
 // 迷你播放条(独立组件:@StorageProp 绑定刷新依赖,build 内重求值)
 // 经 HdsTabs barFloatingStyle.miniBar(6.1.0(23))挂载:与页签栏同高对齐、
 // 背景材质/避让由 HdsTabs 统一管理,组件只负责内容(封面/标题/播控)。
+// 空队列(无当前曲)渲染占位行,避免 HdsTabs 迷你栏露出空壳(0.15.0)。
 import { PlayerController } from '../service/PlayerController';
 import { formatDuration } from '../data/Model';
 
@@ -54,6 +55,32 @@ export struct MiniPlayer {
   }
 
   build() {
+    Column() {
+      if (!this.visible) {
+        // 空队列占位(不响应点击进播放页)
+        Row({ space: 10 }) {
+          SymbolGlyph($r('sys.symbol.music_note_list'))
+            .fontSize(18)
+            .fontColor([$r('app.color.text_secondary')])
+          Text($r('app.string.mini_bar_empty'))
+            .fontSize(13)
+            .fontColor($r('app.color.text_secondary'))
+            .maxLines(1)
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .padding({ left: 12, right: 12 })
+      } else {
+        this.MiniBarContent()
+      }
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  MiniBarContent() {
     Row({ space: 12 }) {
       if (this.art.length > 0) {
         Image(this.art)
@@ -115,7 +142,6 @@ export struct MiniPlayer {
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 4, bottom: 4 })
-    .visibility(this.visible ? Visibility.Visible : Visibility.None)
     .onClick(() => {
       const stack = this.navStack();
       if (stack !== null) {

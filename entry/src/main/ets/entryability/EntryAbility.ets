@@ -117,6 +117,54 @@ async function runDebugCommands(ctx: common.UIAbilityContext, params: Record<str
     if (get('debugRgCancel') === '1') {
       RgScanner.get().cancel();
     }
+    const cloneN = get('debugClone');
+    if (cloneN.length > 0) {
+      // 验证通道:批量复制语料为不同名文件并入库(列表滚动/横滑卡/去重页大数据验证)
+      const dir = `${ctx.filesDir}/music`;
+      const srcs = [`${dir}/Song16_441.flac`, `${dir}/Test_Tone.flac`, `${dir}/Test_Sine.mp3`, `${dir}/dbg_a.wav`];
+      let src = '';
+      for (const s of srcs) {
+        try {
+          if (fs.accessSync(s)) {
+            src = s;
+            break;
+          }
+        } catch (e) {
+          // continue
+        }
+      }
+      if (src.length > 0) {
+        const n = parseInt(cloneN, 10);
+        // 清理历史 .wav 克隆(扩展名与源不匹配致 parse fail 的旧批次)
+        for (let i = 1; i <= 50; i++) {
+          try {
+            fs.unlinkSync(`${dir}/Clone_${String(i).padStart(2, '0')}.wav`);
+          } catch (e) {
+            break; // 不存在即停止
+          }
+        }
+        for (let i = 1; i <= n && src.length > 0; i++) {
+          const dst = `${dir}/Clone_${String(i).padStart(2, '0')}.flac`;
+          try {
+            fs.copyFileSync(src, dst);
+            // 尾部写独特样本:同源克隆各自内容不同,绕开内容查重(本通道用于滚动/列表大数据验证)
+            const f = fs.openSync(dst, fs.OpenMode.READ_WRITE);
+            const st = fs.statSync(dst);
+            const ab = new ArrayBuffer(1024);
+            const dv = new DataView(ab);
+            for (let k = 0; k < 512; k++) {
+              dv.setInt16(k * 2, Math.round(20000 * Math.sin(2 * Math.PI * (300 + i * 40) * k / 44100)), true);
+            }
+            fs.writeSync(f.fd, ab, { offset: Math.max(0, st.size - 1024), length: 1024 });
+            fs.closeSync(f);
+          } catch (e) {
+            hilog.warn(DBG_DOMAIN, DBG_TAG, 'clone %{public}d fail %{public}s', i, (e as Error).message);
+          }
+        }
+        hilog.info(DBG_DOMAIN, DBG_TAG, 'clone done n=%{public}d', n);
+      }
+      await ScanService.get().rescan();
+    }
     if (get('debugDup') === '1') {
       // 造重复语料:同内容跨路径文件 + 重扫(0.12.0 hash 查重验证:期望 deduped 跳过)
       const dir = `${ctx.filesDir}/music`;
@@ -220,6 +268,7 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate('scanVer', 0);
     AppStorage.setOrCreate('themeVer', 0);
     AppStorage.setOrCreate('rgScanVer', 0);
+    AppStorage.setOrCreate('hashVer', 0);
     AppStorage.setOrCreate('prefThemeMode', 'system');
     AppStorage.setOrCreate('themePageBg', '');
     PlayerController.get().init(this.context).then(async (): Promise<void> => {
