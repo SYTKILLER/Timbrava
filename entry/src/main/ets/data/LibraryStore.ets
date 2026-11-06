@@ -101,6 +101,7 @@ export class LibraryStore {
         album.key = aKey;
         album.name = s.displayAlbum();
         album.artist = s.displayArtist();
+        album.groupArtist = s.albumArtist; // 分组键原值:详情过滤/点击传参用它,用首曲 artist 会在 album_artist≠artist 时查出空列表
         album.artPath = s.artPath;
         album.year = s.year;
         albumMap.set(aKey, album);

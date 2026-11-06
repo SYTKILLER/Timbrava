@@ -905,6 +905,8 @@ export class Db {
          ON CONFLICT(song_id) DO UPDATE SET count = count + 1, total_ms = total_ms + ?, last_played = ?`,
         [songId, msPlayed, now, msPlayed, now]);
       await st.executeSql('UPDATE songs SET last_played = ? WHERE id = ?', [now, songId]);
+      // 统计变化广播:我的页统计卡经 @StorageProp('statsVer') 即时刷新(此前落库无信号,统计几乎不更新)
+      AppStorage.setOrCreate('statsVer', (AppStorage.get<number>('statsVer') ?? 0) + 1);
       hilog.info(DOMAIN, TAG, 'recordPlay song=%{public}d ms=%{public}d', songId, msPlayed);
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'recordPlay fail %{public}s', (e as Error).message);

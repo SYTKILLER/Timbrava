@@ -1,4 +1,5 @@
-// 音乐库页:顶部页签(TabSegmentButtonV2 + Swiper):歌曲/专辑/艺人/流派。
+// 音乐库页:顶部页签(TabSegmentButtonV2 + Swiper):歌曲/专辑/艺人/歌单(0.17.0:流派→歌单,实测流派标签长期为空)。
+// 顶部智能列表 stack(我的收藏/播放历史/最常播放/最近添加):点击切换下方封面横滑行(0.17.0)。
 // 0.14.0:分区排序菜单(持久化 app_settings)+ 歌曲/艺人分区字母索引条
 // (i18n.Transliterator Any-Latin 汉字转拼音首字母,设备不支持时非拉丁退化 '#')。
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -8,15 +9,17 @@ import { i18n } from '@kit.LocalizationKit';
 import { TabSegmentButtonV2, SegmentButtonV2Items, SegmentButtonV2Item } from '@kit.ArkUI';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { LibraryStore, DEFAULT_ORDER } from '../../data/LibraryStore';
-import { Song, Album, Artist, Genre } from '../../data/Model';
+import { Song, Album, Artist } from '../../data/Model';
 import { SongRow, SongListParam } from '../../components/SongRow';
 import { BasicDataSource } from '../../common/DataSource';
 import { ScanService } from '../../data/ScanService';
 import { Db } from '../../data/Db';
+import { PlaylistRepo } from '../../data/PlaylistRepo';
 import { PlayerController } from '../../service/PlayerController';
 import { QueueService } from '../../service/QueueService';
 import { L, Ls } from '../../common/Lang';
 import { BarCollapse } from '../../common/BarCollapse';
+import { PlaylistsTab } from '../playlist/PlaylistsTab';
 
 const TAG = '[Timbrava][Library]';
 const DOMAIN = 0x0001;
@@ -27,8 +30,6 @@ const LETTERS: string[] = [
 ];
 
 class AlbumSource extends BasicDataSource<Album> {
-}
-class GenreSource extends BasicDataSource<Genre> {
 }
 
 // 拼音首字母:Transliterator 模块级单例(getInstance 较重,首用探测;Any-Latin 不支持退化 '#')
@@ -148,10 +149,14 @@ export struct LibraryTab {
   @State songCount: number = 0;
   @State albumCount: number = 0;
   @State artistCount: number = 0;
-  @State genreCount: number = 0;
+  // 智能列表 stack(0.17.0):我的收藏/播放历史/最常播放/最近添加,切换下方封面横滑行
+  @State smartIdx: number = 0;
+  @State favSongs: Song[] = [];    // 收藏(按收藏时间倒序)
+  @State hisSongs: Song[] = [];    // 播放历史(最近播放去重)
+  @State mostSongs: Song[] = [];   // 最常播放
   @State topSafe: number = 36;
-  @State recentSongs: Song[] = [];      // 横滑卡展示:最近入库 10 首(左=最新)
-  private recentQueue: Song[] = [];     // 点击起播的「最近添加」队列(前 50,与查看全部列表一致)
+  @State addedSongs: Song[] = [];       // 横滑卡展示:最近入库 10 首(左=最新)
+  private addedQueue: Song[] = [];      // 点击起播的「最近添加」队列(前 50,与查看全部列表一致)
   @State vpH: number = 0;   // 外层 Scroll 视口高(onAreaChange 实测)
   @State segH: number = 40; // 分段器行高(onAreaChange 实测)
   // 0.14.0 排序(持久化;索引条仅在按名称排序时显示)
@@ -161,7 +166,6 @@ export struct LibraryTab {
   @State songSel: number = 0;   // 歌曲分区索引条选中字母
   @State artistSel: number = 0; // 艺人分区索引条选中字母
   private albumSrc: AlbumSource = new AlbumSource();
-  private genreSrc: GenreSource = new GenreSource();
   private songRows: SongRowSource = new SongRowSource();
   private artistRows: ArtistRowSource = new ArtistRowSource();
   private songIdCache: number[] = []; // SongRow listIds 快照(当前排序下的歌曲序)
@@ -225,11 +229,30 @@ export struct LibraryTab {
     this.albumCount = lib.albums.length;
     this.rebuildArtistRows(lib.artists);
     this.artistCount = lib.artists.length;
-    this.genreSrc.setData(lib.genres);
-    this.genreCount = lib.genres.length;
     hilog.debug(DOMAIN, TAG, 'refresh songs=%{public}d albums=%{public}d sort=%{public}s/%{public}s/%{public}s',
       songs.length, lib.albums.length, this.sortSongs, this.sortAlbums, this.sortArtists);
     this.rebuildRecent();
+    this.rebuildSmartLists();
+  }
+
+  // 智能列表数据:收藏(内存)/播放历史+最常播放(异步查询);libVer 变更即重算
+  private rebuildSmartLists(): void {
+    const lib = LibraryStore.get();
+    // 收藏:getFavoriteIds 按收藏时间倒序,Set 保序遍历
+    const favs: Song[] = [];
+    lib.favoriteIds.forEach((id: number): void => {
+      const s = lib.song(id);
+      if (s !== null) {
+        favs.push(s);
+      }
+    });
+    this.favSongs = favs;
+    PlaylistRepo.get().getSmartSongs('recent').then((list: Song[]): void => {
+      this.hisSongs = list;
+    });
+    PlaylistRepo.get().getSmartSongs('most').then((list: Song[]): void => {
+      this.mostSongs = list;
+    });
   }
 
   private sortSongList(list: Song[]): Song[] {
@@ -396,32 +419,74 @@ export struct LibraryTab {
   private rebuildRecent(): void {
     const sorted = LibraryStore.get().songs.filter((s: Song): boolean => s.dateAdded > 0)
       .sort((a: Song, b: Song): number => b.dateAdded - a.dateAdded);
-    this.recentQueue = sorted.slice(0, 50);
-    this.recentSongs = sorted.slice(0, 10);
+    this.addedQueue = sorted.slice(0, 50);
+    this.addedSongs = sorted.slice(0, 10);
   }
 
-  // 点击最近添加封面:以「最近添加」队列表替换队列,从本曲起播
-  private playFromRecent(idx: number): void {
-    if (idx < 0 || idx >= this.recentQueue.length) {
+  // 智能列表当前选中项(我的收藏/播放历史/最常播放/最近添加)
+  private smartList(): Song[] {
+    if (this.smartIdx === 0) {
+      return this.favSongs;
+    }
+    if (this.smartIdx === 1) {
+      return this.hisSongs;
+    }
+    if (this.smartIdx === 2) {
+      return this.mostSongs;
+    }
+    return this.addedSongs;
+  }
+
+  // 点击封面:以对应智能列表为队列起播(队列取前 50,与查看全部一致)
+  private playFromSmart(idx: number): void {
+    const list = this.smartList();
+    if (idx < 0 || idx >= list.length) {
       return;
     }
     const q = QueueService.get();
-    q.setQueueNow(this.recentQueue, idx, Ls($r('app.string.recent_added')));
+    q.setQueueNow(list.slice(0, 50), idx, this.smartTitleStr());
     PlayerController.get().playQueueIndex(idx);
   }
 
-  private openSmart(kind: string, titleRes: Resource): void {
+  private smartTitleStr(): string {
+    if (this.smartIdx === 0) {
+      return Ls($r('app.string.my_favs'));
+    }
+    if (this.smartIdx === 1) {
+      return Ls($r('app.string.play_history'));
+    }
+    if (this.smartIdx === 2) {
+      return Ls($r('app.string.smart_most'));
+    }
+    return Ls($r('app.string.recent_added'));
+  }
+
+  // 「查看全部」:跳对应列表页
+  private openSmartAll(): void {
     const stack = this.navStack();
-    if (stack !== null) {
-      stack.pushPathByName('SongList', SongListParam.smart(kind, L(titleRes)));
+    if (stack === null) {
+      return;
+    }
+    if (this.smartIdx === 0) {
+      stack.pushPathByName('SongList', SongListParam.favorites());
+    } else if (this.smartIdx === 1) {
+      stack.pushPathByName('SongList', SongListParam.smart('recent', Ls($r('app.string.play_history'))));
+    } else if (this.smartIdx === 2) {
+      stack.pushPathByName('SongList', SongListParam.smart('most', Ls($r('app.string.smart_most'))));
+    } else {
+      stack.pushPathByName('SongList', SongListParam.smart('added', Ls($r('app.string.recent_added'))));
     }
   }
 
-  private openFavorites(): void {
-    const stack = this.navStack();
-    if (stack !== null) {
-      stack.pushPathByName('SongList', SongListParam.favorites());
+  // 播放全部(0.17.0 #11):清空队列后将曲库全部歌曲(当前排序)加入播放队列并从首曲起播
+  private playAllSongs(): void {
+    const songs = this.sortSongList(LibraryStore.get().songs);
+    if (songs.length === 0) {
+      return;
     }
+    const q = QueueService.get();
+    q.setQueueNow(songs, 0, Ls($r('app.string.tab_library')));
+    PlayerController.get().playQueueIndex(0);
   }
 
   build() {
@@ -445,8 +510,8 @@ export struct LibraryTab {
                 .fontSize(20)
                 .fontColor([$r('app.color.text_primary')])
             }
-            .width(36)
-            .height(36)
+            .width(40)
+            .height(40)
             .backgroundColor(Color.Transparent)
             .onClick(() => {
               const stack = AppStorage.get<NavPathStack>('navStack');
@@ -458,99 +523,21 @@ export struct LibraryTab {
           .width('100%')
           .padding({ left: 16, right: 16, top: this.topSafe + 8, bottom: 4 })
 
-          // 智能列表入口(最近播放/最常播放/收藏)
-          Row({ space: 8 }) {
-            Button($r('app.string.smart_recent'))
-              .fontSize(12)
-              .fontColor($r('app.color.text_primary'))
-              .backgroundColor($r('app.color.badge_bg'))
-              .borderRadius(14)
-              .height(30)
-              .layoutWeight(1)
-              .onClick(() => {
-                this.openSmart('recent', $r('app.string.smart_recent'));
-              })
-            Button($r('app.string.smart_most'))
-              .fontSize(12)
-              .fontColor($r('app.color.text_primary'))
-              .backgroundColor($r('app.color.badge_bg'))
-              .borderRadius(14)
-              .height(30)
-              .layoutWeight(1)
-              .onClick(() => {
-                this.openSmart('most', $r('app.string.smart_most'));
-              })
-            Button($r('app.string.str_favorites'))
-              .fontSize(12)
-              .fontColor($r('app.color.text_primary'))
-              .backgroundColor($r('app.color.badge_bg'))
-              .borderRadius(14)
-              .height(30)
-              .layoutWeight(1)
-              .onClick(() => {
-                this.openFavorites();
-              })
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, bottom: 8 })
-
-          // 最近添加歌曲封面横滑卡(左=最新,末尾「查看全部」;点击封面即起播最近添加队列)
-          if (this.recentSongs.length > 0) {
-            Text($r('app.string.recent_added'))
-              .fontSize(14)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .width('100%')
-              .padding({ left: 16, right: 16, bottom: 4 })
-            List({ space: 10 }) {
-              ForEach(this.recentSongs, (s: Song, i: number) => {
-                ListItem() {
-                  Column({ space: 4 }) {
-                    AlbumCover(s.artPath, 88)
-                    Text(s.displayTitle())
-                      .fontSize(11)
-                      .fontColor($r('app.color.text_primary'))
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  }
-                  .width(88)
+          // 智能列表 stack(0.17.0):我的收藏/播放历史/最常播放/最近添加,下方封面横滑行随选中切换
+          if (this.songCount > 0) {
+            Row({ space: 8 }) {
+              TabSegmentButtonV2({
+                items: SMART_ITEMS,
+                selectedIndex: this.smartIdx,
+                $selectedIndex: (i: number): void => {
+                  this.smartIdx = i;
                 }
-                  .onClick(() => {
-                    this.playFromRecent(i);
-                  })
-              }, (s: Song): string => `rs_${s.id}_${s.dateAdded}`)
-              // 「查看全部」占位封面 → 最近添加列表(smart added)
-              ListItem() {
-                Column({ space: 4 }) {
-                  Column({ space: 6 }) {
-                    SymbolGlyph($r('sys.symbol.arrow_right'))
-                      .fontSize(22)
-                      .fontColor([$r('app.color.text_secondary')])
-                    Text($r('app.string.view_all'))
-                      .fontSize(11)
-                      .fontColor($r('app.color.text_secondary'))
-                  }
-                  .width(88)
-                  .height(88)
-                  .borderRadius(10)
-                  .backgroundColor($r('app.color.badge_bg'))
-                  .justifyContent(FlexAlign.Center)
-                }
-                .width(88)
-              }
-                .onClick(() => {
-                  const stack = this.navStack();
-                  if (stack !== null) {
-                    stack.pushPathByName('SongList',
-                      SongListParam.smart('added', Ls($r('app.string.recent_added'))));
-                  }
-                })
+              })
             }
             .width('100%')
-            .height(118)
-            .listDirection(Axis.Horizontal) // 默认纵向被 118 高裁剪只露 1 项(用户实测);横向滑查看全部
             .padding({ left: 16, right: 16, bottom: 8 })
-            .scrollBar(BarState.Off)
+
+            this.SmartCoverRow()
           }
 
           // 收起后分段器停在状态栏下方:页头与分段器之间垫 topSafe 空档(随内容滚走)
@@ -572,9 +559,9 @@ export struct LibraryTab {
                 .fontSize(16)
                 .fontColor([$r('app.color.text_primary')])
             }
-            .width(36)
-            .height(36)
-            .borderRadius(18)
+            .width(40)
+            .height(40)
+            .borderRadius(20)
             .backgroundColor($r('app.color.badge_bg'))
             .bindMenu(this.sortMenu)
           }
@@ -589,7 +576,7 @@ export struct LibraryTab {
             this.SongsPage()
             this.AlbumsPage()
             this.ArtistsPage()
-            this.GenresPage()
+            PlaylistsTab({ mode: 'page' })
           }
           .index(this.segmentIndex)
           .onChange((i: number): void => {
@@ -617,6 +604,65 @@ export struct LibraryTab {
         this.refreshAll();
       }
     })
+  }
+
+  // 智能列表封面横滑行:随 smartIdx 切换数据源;末尾「查看全部」占位封面跳对应列表
+  @Builder
+  SmartCoverRow() {
+    if (this.smartList().length === 0) {
+      Text($r('app.string.list_empty'))
+        .fontSize(12)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .padding({ top: 10, bottom: 16 })
+    } else {
+      List({ space: 10 }) {
+        ForEach(this.smartList(), (s: Song, i: number) => {
+          ListItem() {
+            Column({ space: 4 }) {
+              AlbumCover(s.artPath, 88)
+              Text(s.displayTitle())
+                .fontSize(11)
+                .fontColor($r('app.color.text_primary'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+            }
+            .width(88)
+          }
+            .onClick(() => {
+              this.playFromSmart(i);
+            })
+        }, (s: Song): string => `sm_${this.smartIdx}_${s.id}`)
+        // 「查看全部」占位封面 → 对应列表页
+        ListItem() {
+          Column({ space: 4 }) {
+            Column({ space: 6 }) {
+              SymbolGlyph($r('sys.symbol.arrow_right'))
+                .fontSize(22)
+                .fontColor([$r('app.color.text_secondary')])
+              Text($r('app.string.view_all'))
+                .fontSize(11)
+                .fontColor($r('app.color.text_secondary'))
+            }
+            .width(88)
+            .height(88)
+            .borderRadius(10)
+            .backgroundColor($r('app.color.badge_bg'))
+            .justifyContent(FlexAlign.Center)
+          }
+          .width(88)
+        }
+          .onClick(() => {
+            this.openSmartAll();
+          })
+      }
+      .width('100%')
+      .height(118)
+      .listDirection(Axis.Horizontal) // 默认纵向被 118 高裁剪只露 1 项(用户实测);横向滑查看全部
+      .padding({ left: 16, right: 16, bottom: 8 })
+      .scrollBar(BarState.Off)
+    }
   }
 
   // 排序菜单:按当前分区出选项(Menu 子组件仅允许 MenuItem;选中态靠列表重排自证)
@@ -709,7 +755,24 @@ export struct LibraryTab {
       }
       .width('100%')
     } else {
-      Stack({ alignContent: Alignment.End }) {
+      Column() {
+        // 播放全部(0.17.0 #11):stack 下方左侧;清空队列后将曲库全部歌曲加入播放队列并起播
+        Row() {
+          Button(L($r('app.string.play_all_n'), this.songCount))
+            .fontSize(13)
+            .fontColor($r('app.color.text_primary'))
+            .backgroundColor($r('app.color.badge_bg'))
+            .height(40)
+            .borderRadius(20)
+            .padding({ left: 16, right: 16 })
+            .onClick(() => {
+              this.playAllSongs();
+            })
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, bottom: 4 })
+
+        Stack({ alignContent: Alignment.End }) {
         List({ space: 0, scroller: this.songsScroller }) {
           LazyForEach(this.songRows, (r: LibRow) => {
             ListItem() {
@@ -769,6 +832,9 @@ export struct LibraryTab {
               this.jumpToLetter(this.songRows, this.songsScroller, idx);
             })
         }
+        }
+        .width('100%')
+        .layoutWeight(1)
       }
       .width('100%')
       .height('100%')
@@ -790,7 +856,7 @@ export struct LibraryTab {
                 .fontColor($r('app.color.text_primary'))
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(a.artist)
+              Text(a.groupArtist.length > 0 ? a.groupArtist : a.artist)
                 .fontSize(11)
                 .fontColor($r('app.color.text_secondary'))
                 .maxLines(1)
@@ -801,7 +867,9 @@ export struct LibraryTab {
             .onClick(() => {
               const stack = this.navStack();
               if (stack !== null) {
-                stack.pushPathByName('SongList', SongListParam.album(a.artist, a.name));
+                // 传分组键原值(album_artist):与详情页过滤键一致——传首曲 artist 会在
+                // album_artist≠artist(合辑等)时查出空列表,即"空专辑"(0.17.0 #1)
+                stack.pushPathByName('SongList', SongListParam.album(a.groupArtist, a.name));
               }
             })
           }
@@ -916,57 +984,21 @@ export struct LibraryTab {
       .height('100%')
     }
   }
-
-  @Builder
-  GenresPage() {
-    if (this.genreCount === 0) {
-      this.EmptyHint($r('app.string.genres_empty'))
-    } else {
-      List({ space: 2 }) {
-        LazyForEach(this.genreSrc, (g: Genre) => {
-          ListItem() {
-            Row() {
-              Text(g.name)
-                .fontSize(15)
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-              Text(L($r('app.string.count_songs'), g.songCount))
-                .fontSize(11)
-                .fontColor($r('app.color.text_secondary'))
-              SymbolGlyph($r('sys.symbol.chevron_right'))
-                .fontSize(14)
-                .fontColor([$r('app.color.text_secondary')])
-            }
-            .width('100%')
-            .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-            .onClick(() => {
-              const stack = this.navStack();
-              if (stack !== null) {
-                stack.pushPathByName('SongList', SongListParam.genre(g.name));
-              }
-            })
-          }
-        }, (g: Genre): string => g.name)
-      }
-      .width('100%')
-      .height('100%')
-      .contentEndOffset(this.bottomSafeVp + 140) // 视口全出血渲染到屏底,仅滚动终点避让
-      .scrollBar(BarState.Auto)
-      .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST })
-      .edgeEffect(EdgeEffect.None) // 内容不足一屏时防 Spring 回弹负 offset 误触迷你条展开
-      .onWillScroll((offset: number): void => {
-        BarCollapse.feed(offset);
-      })
-      .onScrollStop((): void => {
-        BarCollapse.settle();
-      })
-    }
-  }
 }
 
+// 分区:歌曲/专辑/艺人/歌单(0.17.0:流派→歌单——实测流派标签长期为空,歌单更有价值)
 const SEG_ITEMS: SegmentButtonV2Items = new SegmentButtonV2Items([
   new SegmentButtonV2Item({ text: $r('app.string.str_songs') }),
   new SegmentButtonV2Item({ text: $r('app.string.str_albums') }),
   new SegmentButtonV2Item({ text: $r('app.string.str_artists') }),
-  new SegmentButtonV2Item({ text: $r('app.string.str_genres') })
+  new SegmentButtonV2Item({ text: $r('app.string.str_playlists') })
 ]);
+
+// 顶部智能列表 stack:顺序按用户约定(我的收藏/播放历史/最常播放/最近添加)
+const SMART_ITEMS: SegmentButtonV2Items = new SegmentButtonV2Items([
+  new SegmentButtonV2Item({ text: $r('app.string.my_favs') }),
+  new SegmentButtonV2Item({ text: $r('app.string.play_history') }),
+  new SegmentButtonV2Item({ text: $r('app.string.smart_most') }),
+  new SegmentButtonV2Item({ text: $r('app.string.recent_added') })
+]);
+

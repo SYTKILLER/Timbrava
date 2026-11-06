@@ -184,7 +184,8 @@ export struct DuplicatesDest {
         if (kind === 'pending' && this.pendingRows.length > 0) {
           Button(this.convergingMirror ? $r('app.string.dup_analyzing') : $r('app.string.dup_analyze_now'))
             .fontSize(11)
-            .height(26)
+            .height(36)
+            .responseRegion({ x: 0, y: -2, width: '100%', height: 40 }) // 最小可点目标 40vp(0.17.0)
             .fontColor(this.convergingMirror ? $r('app.color.text_secondary') : $r('app.color.on_accent'))
             .backgroundColor($r('app.color.badge_bg'))
             .enabled(!this.convergingMirror)
@@ -326,7 +327,8 @@ export struct DuplicatesDest {
                   if (si > 0) {
                     Button($r('app.string.str_remove'))
                       .fontSize(11)
-                      .height(26)
+                      .height(36)
+                      .responseRegion({ x: 0, y: -2, width: '100%', height: 40 }) // 最小可点目标 40vp(0.17.0)
                       .fontColor($r('app.color.text_primary'))
                       .backgroundColor($r('app.color.badge_bg'))
                       .onClick(() => {

@@ -1323,6 +1323,38 @@
     {
       "name": "lrc_import_failed",
       "value": "导入失败:文件为空或不可读"
+    },
+    {
+      "name": "my_favs",
+      "value": "我的收藏"
+    },
+    {
+      "name": "play_history",
+      "value": "播放历史"
+    },
+    {
+      "name": "str_new_playlist",
+      "value": "新建歌单"
+    },
+    {
+      "name": "lib_manage",
+      "value": "曲库管理"
+    },
+    {
+      "name": "add_songs_sub",
+      "value": "从本机选择音频文件导入"
+    },
+    {
+      "name": "rescan_now",
+      "value": "重新扫描"
+    },
+    {
+      "name": "rescan_sub",
+      "value": "重新读取已登记目录,同步媒体库增删改"
+    },
+    {
+      "name": "rescan_started",
+      "value": "已开始重新扫描"
     }
   ]
 }

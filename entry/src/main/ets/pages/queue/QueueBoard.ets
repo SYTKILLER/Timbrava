@@ -117,7 +117,7 @@ export struct QueueBoardDest {
                   if (!b.isActive) {
                     Button($r('app.string.str_switch'))
                       .fontSize(12)
-                      .height(30)
+                      .height(40)
                       .fontColor($r('app.color.on_accent'))
                       .backgroundColor($r('app.color.accent'))
                       .onClick(() => {
@@ -125,11 +125,11 @@ export struct QueueBoardDest {
                       })
                     Button({ stateEffect: true }) {
                       SymbolGlyph($r('sys.symbol.trash'))
-                        .fontSize(14)
+                        .fontSize(16)
                         .fontColor([$r('app.color.text_secondary')])
                     }
-                    .width(32)
-                    .height(32)
+                    .width(40)
+                    .height(40)
                     .backgroundColor(Color.Transparent)
                     .onClick(() => {
                       QueueService.get().deleteQueue(b.id);

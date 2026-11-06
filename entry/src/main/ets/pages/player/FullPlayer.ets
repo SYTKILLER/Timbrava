@@ -171,6 +171,11 @@ export struct FullPlayerDest {
       // 沉浸皮肤背景层:当前封面高斯模糊 + 主题色蒙版(标准/极简皮肤不渲染,保持纯色底)
       if (this.playerSkin === 'immersive' && this.hasSong) {
         Stack() {
+          // 基底垫色:无封面曲(既无超分又无原图)时保证皮肤层不透明(NavDestination 已透明化,见下)
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor(this.pageBg())
           if (this.srPm !== null) {
             Image(this.srPm)
               .width('100%')
@@ -227,7 +232,8 @@ export struct FullPlayerDest {
             PlayerController.get().toggleFavorite();
           })
           Button({ stateEffect: true }) {
-            SymbolGlyph($r('sys.symbol.more'))
+            // 四点钮(0.17.0):华为应用"展开更多选项"语义;原 more(方块)改 dot_grid_2x2
+            SymbolGlyph($r('sys.symbol.dot_grid_2x2'))
               .fontSize(20)
               .fontColor([$r('app.color.text_primary')])
           }
@@ -240,7 +246,6 @@ export struct FullPlayerDest {
         }
         .width('100%')
         .padding({ left: 8, right: 8, top: this.topSafe })
-
         if (this.hasSong) {
           this.PlayerBody()
         } else {
@@ -263,7 +268,7 @@ export struct FullPlayerDest {
         ? Color.Transparent : this.pageBg())
       // 下滑关闭手势:绑在内容 Column(实证 Stack 级 .gesture 在本页不触发,Row/Column 级正常)。
       // 跟手位移削顶 55%vh:节点拖出屏后手势失灵(KB §9.4),松手动画收尾;抽屉/菜单展开时回调内守卫。
-      .translate({ y: this.dragY })
+      // 注意 translate 挂在内层 Stack(含皮肤背景层整体下沉);挂本 Column 会让背景层滞留原地。
       .gesture(PanGesture({ fingers: 1, direction: PanDirection.Vertical, distance: 8 })
           .onActionUpdate((e: GestureEvent): void => {
             this.dragUpdate(e);
@@ -271,9 +276,10 @@ export struct FullPlayerDest {
           .onActionEnd((e: GestureEvent): void => {
             this.dragFinish(e);
           }))
-      // 播放队列(0.15.2:自绘 Stack 条目改标准 bindSheet 半模态——标准上滑动画/下拉关闭)
+      // 播放队列(0.15.2:自绘 Stack 条目改标准 bindSheet 半模态——标准上滑动画/下拉关闭;
+      // 0.17.0 多档高度:默认中档,上滑展开大档)
       .bindSheet(this.showQueue, this.QueueDrawer(), {
-        height: '55%',
+        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
         dragBar: false,
         showClose: false,
         onDisappear: (): void => {
@@ -285,9 +291,11 @@ export struct FullPlayerDest {
       .width('100%')
       .height('100%')
       .backgroundColor(Color.Transparent)
+      // 下滑位移挂整层:皮肤背景 + 内容一起跟手/下沉(NavDestination 已透明,露出下层页面)
+      .translate({ y: this.dragY })
       .bindSheet(this.showMoreSheet, this.MoreSheet(), {
         height: 500,
-        showClose: true,
+        showClose: false,
         dragBar: true,
         onDisappear: (): void => {
           this.showMoreSheet = false;
@@ -295,6 +303,9 @@ export struct FullPlayerDest {
       })
     }
     .hideTitleBar(true)
+    // 关键:NavDestination 默认底色不透明——内容下沉后露出"空背景",pop 默认横向转场再把它整体滑走
+    // (0.16 实测"先下滑消失→空背景侧滑消失"双重动画)。透明化后:跟手阶段直见下层页,pop 转场全程不可见。
+    .backgroundColor(Color.Transparent)
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
     })
@@ -418,9 +429,10 @@ export struct FullPlayerDest {
             .layoutWeight(1)
           Button(this.editLabel())
             .fontSize(11)
-            .height(26)
+            .height(36)
             .fontColor($r('app.color.text_secondary'))
             .backgroundColor($r('app.color.badge_bg'))
+            .responseRegion({ x: 0, y: -2, width: '100%', height: 40 }) // 最小可点目标 40vp(0.17.0)
             .onClick(() => {
               const song = PlayerController.get().currentSong;
               const stack = this.pathStack;
@@ -619,14 +631,31 @@ export struct FullPlayerDest {
   @Builder
   MoreSheet() {
     Column() {
-      Text($r('app.string.more_menu'))
-        .fontSize(16)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .padding({ left: 20, top: 12, bottom: 8 })
+      // 自绘头部(0.17.0):系统 showClose 几何不可控——关闭钮与标题中心对齐、下方预留 8vp,全由本行决定
+      Row({ space: 8 }) {
+        Button({ stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(18)
+            .fontColor([$r('app.color.text_primary')])
+        }
+        .width(48)
+        .height(48)
+        .borderRadius(24)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.showMoreSheet = false;
+        })
+        Text($r('app.string.more_menu'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ left: 8, right: 16, top: 8 })
       List({ space: 0 }) {
         // 音量(0.15.1:自播放页主体收入此菜单;引擎流音量,无损=OHAudio 渲染流/系统=AVPlayer)
+        // top 16 = 原行距 8 + 关闭钮下方预留 8vp(0.17.0)
         ListItem() {
           Row({ space: 12 }) {
             SymbolGlyph($r('sys.symbol.speaker_wave_2'))
@@ -657,7 +686,7 @@ export struct FullPlayerDest {
               .textAlign(TextAlign.End)
           }
           .width('100%')
-          .padding({ left: 20, right: 16, top: 8, bottom: 8 })
+          .padding({ left: 20, right: 16, top: 16, bottom: 8 })
         }
         // 收藏
         ListItem() {
@@ -704,8 +733,10 @@ export struct FullPlayerDest {
                   .fontColor(this.speedNow() === v ? $r('app.color.on_accent') : $r('app.color.text_primary'))
                   .backgroundColor(this.speedNow() === v ? $r('app.color.accent') : $r('app.color.badge_bg'))
                   .borderRadius(14)
-                  .height(28)
+                  .height(36)
                   .margin({ right: 8, bottom: 8, left: 4 })
+                  // 最小可点目标 40vp:视觉 36,热区纵向外扩(0.17.0)
+                  .responseRegion({ x: 0, y: -2, width: '100%', height: 40 })
                   .onClick(() => {
                     PlayerController.get().setSpeed(v);
                     this.sheetExpand = '';
@@ -746,8 +777,10 @@ export struct FullPlayerDest {
                   .fontColor(this.sleepChipActive(n) ? $r('app.color.on_accent') : $r('app.color.text_primary'))
                   .backgroundColor(this.sleepChipActive(n) ? $r('app.color.accent') : $r('app.color.badge_bg'))
                   .borderRadius(14)
-                  .height(28)
+                  .height(36)
                   .margin({ right: 8, bottom: 8, left: 4 })
+                  // 最小可点目标 40vp:视觉 36,热区纵向外扩(0.17.0)
+                  .responseRegion({ x: 0, y: -2, width: '100%', height: 40 })
                   .onClick(() => {
                     PlayerController.get().setSleepTimer(n);
                     this.sheetExpand = '';
@@ -819,14 +852,15 @@ export struct FullPlayerDest {
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
-        // 多队列管理(原队列页签入口迁移至此)
+          .padding({ left: 8 })
+        // 多队列管理(原队列页签入口迁移至此);热区 40vp(0.17.0 最小可点目标)
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.square_stack_3d'))
-            .fontSize(16)
+            .fontSize(18)
             .fontColor([$r('app.color.text_primary')])
         }
-        .width(32)
-        .height(32)
+        .width(40)
+        .height(40)
         .backgroundColor(Color.Transparent)
         .onClick(() => {
           this.showQueue = false;
@@ -835,11 +869,11 @@ export struct FullPlayerDest {
         // 循环模式 + 播完停止 + 推进边界(原队列页签菜单迁移)
         Button({ stateEffect: true }) {
           SymbolGlyph(this.modeIcon())
-            .fontSize(16)
+            .fontSize(18)
             .fontColor([this.modeAccent() ? $r('app.color.accent') : $r('app.color.text_primary')])
         }
-        .width(32)
-        .height(32)
+        .width(40)
+        .height(40)
         .backgroundColor(Color.Transparent)
         .onClick(() => {
           QueueService.get().cyclePlayMode();
@@ -847,11 +881,11 @@ export struct FullPlayerDest {
         // 睡眠定时器(原队列页签入口迁移;0.14.0 起档位选择在更多菜单弹层内)
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.timer'))
-            .fontSize(16)
+            .fontSize(18)
             .fontColor([PlayerController.get().sleepRemainMin() > 0 ? $r('app.color.accent') : $r('app.color.text_primary')])
         }
-        .width(32)
-        .height(32)
+        .width(40)
+        .height(40)
         .backgroundColor(Color.Transparent)
         .onClick(() => {
           this.showQueue = false;
@@ -859,29 +893,29 @@ export struct FullPlayerDest {
         })
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.trash'))
-            .fontSize(16)
+            .fontSize(18)
             .fontColor([$r('app.color.text_secondary')])
         }
-        .width(32)
-        .height(32)
+        .width(40)
+        .height(40)
         .backgroundColor(Color.Transparent)
         .onClick(() => {
           QueueService.get().clear();
         })
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.xmark'))
-            .fontSize(16)
+            .fontSize(18)
             .fontColor([$r('app.color.text_secondary')])
         }
-        .width(32)
-        .height(32)
+        .width(40)
+        .height(40)
         .backgroundColor(Color.Transparent)
         .onClick(() => {
           this.showQueue = false;
         })
       }
       .width('100%')
-      .padding({ left: 16, right: 12, top: 12, bottom: 4 })
+      .padding({ left: 8, right: 8, top: 12, bottom: 4 })
 
       List({ space: 0 }) {
         ForEach(this.queueItems(), (s: Song, i: number) => {

@@ -65,8 +65,8 @@ export struct AboutDest {
             .fontSize(13)
             .fontColor(this.checking ? $r('app.color.text_secondary') : $r('app.color.text_primary'))
             .backgroundColor($r('app.color.badge_bg'))
-            .height(34)
-            .borderRadius(17)
+            .height(40)
+            .borderRadius(20)
             .enabled(!this.checking)
             .onClick(() => {
               this.checkUpdate();

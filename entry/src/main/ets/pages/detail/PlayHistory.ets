@@ -120,13 +120,15 @@ export struct PlayHistoryDest {
     Row() {
       Button({ type: ButtonType.Circle, stateEffect: true }) {
         SymbolGlyph($r('sys.symbol.trash'))
-          .fontSize(10)
+          .fontSize(14)
           .fontColor([Color.White])
       }
-      .width(16)
-      .height(16)
-      .borderRadius(8)
+      .width(36)
+      .height(36)
+      .borderRadius(18)
       .backgroundColor($r('app.color.danger'))
+      // 最小可点目标 40vp:视觉 36,热区外扩(0.17.0)
+      .responseRegion({ x: -2, y: -2, width: 40, height: 40 })
       .padding(0)
       // V2(26 行为变更):视觉 16 保留,热区扩到 40vp ≥32vp 最小热区
       .responseRegion({ x: -12, y: -12, width: 40, height: 40 })
@@ -200,8 +202,8 @@ export struct PlayHistoryDest {
                         .fontSize(16)
                         .fontColor([$r('app.color.accent')])
                     }
-                    .width(34)
-                    .height(34)
+                    .width(40)
+                    .height(40)
                     .backgroundColor($r('app.color.badge_bg'))
                     .onClick(() => {
                       this.playFrom(0, this.recent.map((r: HistoryRow): Song => r.song), row.song.id);
@@ -261,8 +263,8 @@ export struct PlayHistoryDest {
                         .fontSize(16)
                         .fontColor([$r('app.color.accent')])
                     }
-                    .width(34)
-                    .height(34)
+                    .width(40)
+                    .height(40)
                     .backgroundColor($r('app.color.badge_bg'))
                     .onClick(() => {
                       this.playFrom(1, this.most.map((r: MostRow): Song => r.song), row.song.id);

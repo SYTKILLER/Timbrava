@@ -1,5 +1,7 @@
-// 歌单页(预留为库页第六分区):新建(行内输入)/歌单列表/长按菜单(导出 M3U、删除)。
-// P1 待接入:点击歌单 → SongList 路由需新增 playlist 模式,当前弹 Toast 提示。
+// 歌单(0.17.0 双形态):
+// - mode 'page':曲库"歌单"分区内容(满高滚动列表,无页头,语境由分区页签提供);
+// - mode 'card':"我的"页卡片容器——延伸到屏幕最底部,左上角"+"新建(弹窗输入歌单名)。
+// 通用:点击歌单 → SongList(playlist 模式,页内"添加歌曲");长按菜单(导出 M3U/删除)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SongListParam } from '../../components/SongRow';
 import { common } from '@kit.AbilityKit';
@@ -8,6 +10,7 @@ import { PlaylistRepo, PlaylistInfo } from '../../data/PlaylistRepo';
 import { M3UEntry, buildM3U } from '../../data/m3u/M3U';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { L } from '../../common/Lang';
+import { BarCollapse } from '../../common/BarCollapse';
 
 const TAG = '[Timbrava][Playlists]';
 const DOMAIN = 0x0001;
@@ -18,15 +21,84 @@ function safeFileName(name: string): string {
   return cleaned.length > 0 ? cleaned : 'playlist';
 }
 
+// 新建歌单弹窗(0.17.0:替代常驻行内输入框,由"+"按钮唤起)
+@CustomDialog
+struct NewPlaylistDialog {
+  controller?: CustomDialogController;
+  onConfirm: (name: string) => void = (_n: string): void => {
+  };
+  @State name: string = '';
+
+  build() {
+    Column({ space: 14 }) {
+      Text($r('app.string.str_new_playlist'))
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+      TextInput({ text: this.name, placeholder: $r('app.string.new_pl_name') })
+        .height(44)
+        .fontSize(14)
+        .width('100%')
+        .borderRadius(10)
+        .backgroundColor($r('app.color.badge_bg'))
+        .fontColor($r('app.color.text_primary'))
+        .placeholderColor($r('app.color.text_secondary'))
+        .maxLines(1)
+        .enterKeyType(EnterKeyType.Done)
+        .onChange((v: string): void => {
+          this.name = v;
+        })
+        .onSubmit((): void => {
+          this.tryConfirm();
+        })
+      Row({ space: 12 }) {
+        Button($r('app.string.str_cancel'))
+          .fontSize(14)
+          .height(40)
+          .layoutWeight(1)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.badge_bg'))
+          .onClick(() => {
+            this.controller?.close();
+          })
+        Button($r('app.string.str_ok'))
+          .fontSize(14)
+          .height(40)
+          .layoutWeight(1)
+          .fontColor($r('app.color.on_accent'))
+          .backgroundColor($r('app.color.accent'))
+          .onClick(() => {
+            this.tryConfirm();
+          })
+      }
+      .width('100%')
+    }
+    .padding(20)
+    .borderRadius(16)
+    .backgroundColor($r('app.color.card_bg'))
+    .width('86%')
+  }
+
+  private tryConfirm(): void {
+    const t = this.name.trim();
+    if (t.length === 0) {
+      return;
+    }
+    this.onConfirm(t);
+    this.controller?.close();
+  }
+}
+
 @Component
 export struct PlaylistsTab {
   @StorageProp('libVer') @Watch('onLibChanged') libVer: number = 0;
   @StorageProp('themePageBg') themePageBg: string = '';
   @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
-  @State topSafe: number = 36;
   @State playlists: PlaylistInfo[] = [];
-  @State newName: string = '';
-  @Prop embed: boolean = false; // 嵌入"我的"页时:隐藏页头、自适应高度
+  @Prop mode: string = 'page'; // 'page' 曲库分区(满高) | 'card' 我的页卡片(延伸到底)
+  @State topSafe: number = 36;
+  private newCtrl: CustomDialogController | null = null;
 
   aboutToAppear(): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -61,22 +133,38 @@ export struct PlaylistsTab {
     return this.themePageBg.length > 0 ? this.themePageBg : $r('app.color.page_bg');
   }
 
+  private cardBg(): ResourceColor {
+    return $r('app.color.card_bg');
+  }
+
   private toast(msg: ResourceStr): void {
     this.getUIContext().getPromptAction().showToast({ message: msg, duration: 2000 });
   }
 
-  private async createPlaylist(): Promise<void> {
-    const name = this.newName.trim();
-    if (name.length === 0) {
+  // "+"新建歌单:弹窗输入歌单名
+  private openCreateDialog(): void {
+    this.newCtrl = new CustomDialogController({
+      builder: NewPlaylistDialog({
+        onConfirm: (name: string): void => {
+          this.createPlaylist(name);
+        }
+      }),
+      autoCancel: true,
+      customStyle: true
+    });
+    this.newCtrl.open();
+  }
+
+  private async createPlaylist(name: string): Promise<void> {
+    if (name.trim().length === 0) {
       this.toast($r('app.string.pl_name_required'));
       return;
     }
-    const id = await PlaylistRepo.get().createPlaylist(name);
+    const id = await PlaylistRepo.get().createPlaylist(name.trim());
     if (id < 0) {
       this.toast($r('app.string.pl_name_exists'));
       return;
     }
-    this.newName = '';
     this.reload();
   }
 
@@ -155,15 +243,17 @@ export struct PlaylistsTab {
   }
 
   build() {
-    if (this.embed) {
+    if (this.mode === 'card') {
+      // "我的"页卡片:延伸到屏幕最底部(内部垫过迷你条高度的收尾空档),圆角只留顶部
       Column() {
-        this.RootContent()
+        this.CardContent()
       }
       .width('100%')
-      .backgroundColor(this.pageBg())
+      .borderRadius({ topLeft: 16, topRight: 16 })
+      .backgroundColor(this.cardBg())
     } else {
       Column() {
-        this.RootContent()
+        this.PageContent()
       }
       .width('100%')
       .height('100%')
@@ -171,82 +261,101 @@ export struct PlaylistsTab {
     }
   }
 
+  // ===== 曲库分区形态:满高列表 =====
   @Builder
-  RootContent() {
-    Column() {
-      if (!this.embed) {
-        Row() {
-          Text($r('app.string.str_playlists'))
-            .fontSize(22)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: this.topSafe + 8, bottom: 8 })
-      }
-
-      // 新建歌单:行内输入 + 确定
-      Row({ space: 8 }) {
-        TextInput({ text: this.newName, placeholder: $r('app.string.new_pl_name') })
-          .height(38)
-          .layoutWeight(1)
+  PageContent() {
+    if (this.playlists.length === 0) {
+      Column({ space: 8 }) {
+        SymbolGlyph($r('sys.symbol.music_note_list'))
+          .fontSize(42)
+          .fontColor([$r('app.color.text_secondary')])
+        Text($r('app.string.no_playlists'))
           .fontSize(14)
-          .borderRadius(10)
-          .backgroundColor($r('app.color.card_bg'))
-          .fontColor($r('app.color.text_primary'))
-          .placeholderColor($r('app.color.text_secondary'))
-          .maxLines(1)
-          .enterKeyType(EnterKeyType.Done)
-          .onChange((v: string) => {
-            this.newName = v;
-          })
-          .onSubmit(() => {
-            this.createPlaylist();
-          })
-        Button($r('app.string.str_ok'))
-          .fontSize(14)
-          .fontColor($r('app.color.on_accent'))
-          .backgroundColor($r('app.color.accent'))
-          .height(38)
-          .borderRadius(10)
-          .onClick(() => {
-            this.createPlaylist();
-          })
+          .fontColor($r('app.color.text_secondary'))
+        Text($r('app.string.pl_create_hint'))
+          .fontSize(12)
+          .fontColor($r('app.color.text_secondary'))
       }
       .width('100%')
-      .padding({ left: 16, right: 16, bottom: 8 })
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+    } else {
+      List({ space: 0 }) {
+        ForEach(this.playlists, (pl: PlaylistInfo) => {
+          ListItem() {
+            this.PlaylistRow(pl)
+          }
+        }, (pl: PlaylistInfo): string => `${pl.id}_${pl.name}_${pl.songCount}`)
+      }
+      .width('100%')
+      .height('100%')
+      .scrollBar(BarState.Auto)
+      .padding({ top: 4 })
+      .contentEndOffset(this.bottomSafeVp + 140) // 视口全出血渲染到屏底,仅滚动终点避让(padding 会内缩视口裁行)
+      .nestedScroll({ scrollForward: NestedScrollMode.PARENT_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST })
+      .edgeEffect(EdgeEffect.None)
+      .onWillScroll((offset: number): void => {
+        BarCollapse.feed(offset);
+      })
+      .onScrollStop((): void => {
+        BarCollapse.settle();
+      })
+    }
+  }
 
-      if (this.playlists.length === 0) {
-        Column({ space: 8 }) {
-          SymbolGlyph($r('sys.symbol.music_note_list'))
-            .fontSize(42)
-            .fontColor([$r('app.color.text_secondary')])
-          Text($r('app.string.no_playlists'))
-            .fontSize(14)
-            .fontColor($r('app.color.text_secondary'))
-          Text($r('app.string.pl_create_hint'))
-            .fontSize(12)
-            .fontColor($r('app.color.text_secondary'))
-        }
-        .width('100%')
-        .padding({ top: 80 })
-      } else {
-        List({ space: 0 }) {
-          ForEach(this.playlists, (pl: PlaylistInfo) => {
-            ListItem() {
-              this.PlaylistRow(pl)
-            }
-          }, (pl: PlaylistInfo): string => `${pl.id}_${pl.name}_${pl.songCount}`)
-        }
-        .width('100%')
-        .layoutWeight(this.embed ? 0 : 1)
-        .scrollBar(BarState.Auto)
-        .padding({ bottom: this.embed ? 8 : this.bottomSafeVp + 140 })
+  // ===== 我的页卡片形态:左上角"+"新建 + 歌单行,延伸到屏幕最底部 =====
+  @Builder
+  CardContent() {
+    Row({ space: 8 }) {
+      Button({ stateEffect: true }) {
+        SymbolGlyph($r('sys.symbol.plus'))
+          .fontSize(20)
+          .fontColor([$r('app.color.on_accent')])
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(20)
+      .backgroundColor($r('app.color.accent'))
+      .onClick(() => {
+        this.openCreateDialog();
+      })
+      Text($r('app.string.str_playlists'))
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+        .layoutWeight(1)
+      if (this.playlists.length > 0) {
+        Text(String(this.playlists.length))
+          .fontSize(12)
+          .fontColor($r('app.color.text_secondary'))
       }
     }
     .width('100%')
-    .backgroundColor(this.pageBg())
+    .padding({ left: 12, right: 16, top: 12, bottom: 4 })
+
+    if (this.playlists.length === 0) {
+      Column({ space: 6 }) {
+        Text($r('app.string.no_playlists'))
+          .fontSize(13)
+          .fontColor($r('app.color.text_secondary'))
+        Text($r('app.string.pl_create_hint'))
+          .fontSize(11)
+          .fontColor($r('app.color.text_secondary'))
+      }
+      .width('100%')
+      .padding({ top: 20, bottom: 24 })
+      .alignItems(HorizontalAlign.Center)
+    } else {
+      Column() {
+        ForEach(this.playlists, (pl: PlaylistInfo) => {
+          this.PlaylistRow(pl)
+        }, (pl: PlaylistInfo): string => `${pl.id}_${pl.name}_${pl.songCount}`)
+      }
+      .width('100%')
+    }
+
+    // 延伸到屏幕最底部:垫过迷你条/导航条的收尾空档(滚动到底时卡片底边贴屏)
+    Blank().height(this.bottomSafeVp + 140)
   }
 
   @Builder

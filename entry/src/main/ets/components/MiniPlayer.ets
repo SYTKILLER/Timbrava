@@ -141,8 +141,8 @@ export struct MiniPlayer {
           .fontSize(20)
           .fontColor([$r('app.color.text_primary')])
       }
-      .width(36)
-      .height(36)
+      .width(40)
+      .height(40)
       .backgroundColor(Color.Transparent)
       .onClick(() => {
         PlayerController.get().playNext();

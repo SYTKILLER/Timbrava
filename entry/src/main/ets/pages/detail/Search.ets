@@ -251,6 +251,8 @@ export struct SearchDest {
               .width(28)
               .height(28)
               .backgroundColor(Color.Transparent)
+              // 最小可点目标 40vp:视觉 28,热区外扩(0.17.0)
+              .responseRegion({ x: -6, y: -6, width: 40, height: 40 })
               .onClick(() => {
                 this.removeHistory(i);
               })
@@ -280,7 +282,8 @@ export struct SearchDest {
         .fontColor(this.resultTab === 0 ? $r('app.color.on_accent') : $r('app.color.text_primary'))
         .backgroundColor(this.resultTab === 0 ? $r('app.color.accent') : $r('app.color.badge_bg'))
         .borderRadius(14)
-        .height(28)
+        .height(36)
+        .responseRegion({ x: 0, y: -2, width: '100%', height: 40 }) // 最小可点目标 40vp(0.17.0)
         .onClick(() => {
           this.resultTab = 0;
         })
@@ -289,7 +292,8 @@ export struct SearchDest {
         .fontColor(this.resultTab === 1 ? $r('app.color.on_accent') : $r('app.color.text_primary'))
         .backgroundColor(this.resultTab === 1 ? $r('app.color.accent') : $r('app.color.badge_bg'))
         .borderRadius(14)
-        .height(28)
+        .height(36)
+        .responseRegion({ x: 0, y: -2, width: '100%', height: 40 }) // 最小可点目标 40vp(0.17.0)
         .onClick(() => {
           this.resultTab = 1;
         })
@@ -298,7 +302,8 @@ export struct SearchDest {
         .fontColor(this.resultTab === 2 ? $r('app.color.on_accent') : $r('app.color.text_primary'))
         .backgroundColor(this.resultTab === 2 ? $r('app.color.accent') : $r('app.color.badge_bg'))
         .borderRadius(14)
-        .height(28)
+        .height(36)
+        .responseRegion({ x: 0, y: -2, width: '100%', height: 40 }) // 最小可点目标 40vp(0.17.0)
         .onClick(() => {
           this.resultTab = 2;
         })

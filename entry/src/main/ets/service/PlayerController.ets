@@ -796,6 +796,10 @@ export class PlayerController {
     const fav = !LibraryStore.get().isFavorite(songId);
     LibraryStore.get().setFavorite(songId, fav).then((): void => {
       hilog.info(DOMAIN, TAG, 'favorite song=%{public}d -> %{public}s', songId, fav ? 'on' : 'off');
+      // 收藏落库后即时回报 AVSession(状态栏/控制中心红心同步);切到该曲时才生效
+      if (this.currentSong !== null && this.currentSong.id === songId) {
+        this.syncSessionState();
+      }
     });
   }
 
@@ -899,7 +903,9 @@ export class PlayerController {
     const state: avSession.AVPlaybackState = {
       state: this.isPlaying ? avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_PAUSE,
       position: pos,
-      speed: this.speed
+      speed: this.speed,
+      // 收藏态上报:控制中心/状态栏媒体卡片的红心按钮依此渲染与置灰;漏报则收藏按钮不可操作
+      isFavorite: this.currentSong !== null && LibraryStore.get().isFavorite(this.currentSong.id)
     };
     s.setAVPlaybackState(state).catch((e: Error): void => {
       hilog.warn(DOMAIN, TAG, 'setAVPlaybackState fail %{public}s', e.message);

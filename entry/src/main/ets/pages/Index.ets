@@ -10,6 +10,7 @@ import { AppTheme, SafeAreaResult } from '../common/Theme';
 import { BarCollapse } from '../common/BarCollapse';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { LibraryTab } from './library/LibraryTab';
+import { LibraryManageDest } from './library/LibraryManage';
 import { ProTab } from './pro/ProTab';
 import { MineTab } from './mine/MineTab';
 import { SettingsDest } from './settings/SettingsTab';
@@ -241,6 +242,8 @@ struct Index {
       TagEditorDest()
     } else if (name === 'Duplicates') {
       DuplicatesDest()
+    } else if (name === 'LibraryManage') {
+      LibraryManageDest()
     } else if (name === 'Settings') {
       SettingsDest()
     }

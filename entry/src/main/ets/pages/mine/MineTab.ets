@@ -1,4 +1,6 @@
-// 我的页:曲库统计 + 智能列表入口 + 歌单 + 添加歌曲 + 通用入口(设置/关于)。设置降级为二级路由页。
+// 我的页(0.17.0):统计四宫格 + 智能列表入口 + 添加歌曲|曲库管理并列 + 歌单卡片(延伸到屏幕底部)。
+// 变更:设置入口收进右上角四点钮(华为"更多选项"语义),通用区移除(关于已在设置页内);
+// 统计计数改走 @State + statsVer 广播(此前 build 直读且刷新只更新总时长,几乎不更新)。
 import { common } from '@kit.AbilityKit';
 import { picker } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -19,12 +21,21 @@ const DOMAIN = 0x0001;
 @Component
 export struct MineTab {
   @StorageProp('libVer') @Watch('onLibChanged') libVer: number = 0;
+  @StorageProp('statsVer') @Watch('onStatsChanged') statsVer: number = 0;
   @StorageProp('themePageBg') themePageBg: string = '';
   @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State topSafe: number = 36;
+  // 统计必须落 @State(0.17.0 #3):@Builder 参数/直读非可观察,不落 @State 则导入/播放后纹丝不动
+  @State songCount: number = 0;
+  @State albumCount: number = 0;
+  @State artistCount: number = 0;
   @State totalMs: number = 0;
 
   onLibChanged(): void {
+    this.refresh();
+  }
+
+  onStatsChanged(): void {
     this.refresh();
   }
 
@@ -37,6 +48,10 @@ export struct MineTab {
   }
 
   private refresh(): void {
+    const lib = LibraryStore.get();
+    this.songCount = lib.songs.length;
+    this.albumCount = lib.albums.length;
+    this.artistCount = lib.artists.length;
     Db.get().getPlayStatsTotal().then((ms: number): void => {
       this.totalMs = ms;
     });
@@ -80,20 +95,35 @@ export struct MineTab {
 
   build() {
     Column() {
-      Text($r('app.string.tab_mine'))
-        .fontSize(22)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .padding({ left: 16, right: 16, top: this.topSafe + 8, bottom: 8 })
+      Row({ space: 8 }) {
+        Text($r('app.string.tab_mine'))
+          .fontSize(22)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+        // 四点钮(0.17.0 #6):华为应用"展开更多选项"语义,直达设置页;尺寸对齐标准返回钮热区
+        Button({ stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.dot_grid_2x2'))
+            .fontSize(20)
+            .fontColor([$r('app.color.text_primary')])
+        }
+        .width(40)
+        .height(40)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.nav().pushPathByName('Settings', null);
+        })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: this.topSafe + 8, bottom: 8 })
 
       Scroll() {
         Column({ space: 12 }) {
           // 曲库统计四宫格
           Row({ space: 8 }) {
-            this.Stat(LibraryStore.get().songs.length.toString(), $r('app.string.str_songs'))
-            this.Stat(LibraryStore.get().albums.length.toString(), $r('app.string.str_albums'))
-            this.Stat(LibraryStore.get().artists.length.toString(), $r('app.string.str_artists'))
+            this.Stat(this.songCount.toString(), $r('app.string.str_songs'))
+            this.Stat(this.albumCount.toString(), $r('app.string.str_albums'))
+            this.Stat(this.artistCount.toString(), $r('app.string.str_artists'))
             this.Stat(this.totalLabel(), $r('app.string.mine_stats_total'))
           }
           .width('100%')
@@ -105,8 +135,8 @@ export struct MineTab {
               .fontSize(12)
               .fontColor($r('app.color.text_primary'))
               .backgroundColor($r('app.color.badge_bg'))
-              .borderRadius(14)
-              .height(32)
+              .borderRadius(20)
+              .height(40)
               .layoutWeight(1)
               .onClick(() => {
                 this.nav().pushPathByName('PlayHistory', new PlayHistoryParam(0));
@@ -115,8 +145,8 @@ export struct MineTab {
               .fontSize(12)
               .fontColor($r('app.color.text_primary'))
               .backgroundColor($r('app.color.badge_bg'))
-              .borderRadius(14)
-              .height(32)
+              .borderRadius(20)
+              .height(40)
               .layoutWeight(1)
               .onClick(() => {
                 this.nav().pushPathByName('PlayHistory', new PlayHistoryParam(1));
@@ -125,8 +155,8 @@ export struct MineTab {
               .fontSize(12)
               .fontColor($r('app.color.text_primary'))
               .backgroundColor($r('app.color.badge_bg'))
-              .borderRadius(14)
-              .height(32)
+              .borderRadius(20)
+              .height(40)
               .layoutWeight(1)
               .onClick(() => {
                 this.openFavorites();
@@ -135,54 +165,34 @@ export struct MineTab {
           .width('100%')
           .padding({ left: 16, right: 16 })
 
-          // 音乐库(添加歌曲:即选即入库)
+          // 音乐库:添加歌曲 | 曲库管理(等宽并列,0.17.0 #5)
           Column({ space: 4 }) {
             Text($r('app.string.mine_library'))
               .fontSize(12)
               .fontColor($r('app.color.text_secondary'))
               .width('100%')
               .padding({ left: 4, top: 4 })
-            Column() {
-              this.NavItem($r('app.string.add_songs'), '', (): void => {
+            Row() {
+              this.NavItemBtn($r('app.string.add_songs'), (): void => {
                 this.addSongs();
               })
+              Divider()
+                .vertical(true)
+                .height(24)
+                .color($r('app.color.divider'))
+              this.NavItemBtn($r('app.string.lib_manage'), (): void => {
+                this.nav().pushPathByName('LibraryManage', null);
+              })
             }
             .width('100%')
-            .padding(12)
-            .borderRadius(16)
-            .backgroundColor($r('app.color.card_bg'))
+            .padding({ left: 4, right: 4, top: 4, bottom: 4 })
           }
           .width('100%')
           .padding({ left: 16, right: 16 })
 
-          // 歌单(嵌入模式:无页头,自适应高度)
-          PlaylistsTab({ embed: true })
-
-          // 通用
-          Column({ space: 4 }) {
-            Text($r('app.string.mine_general'))
-              .fontSize(12)
-              .fontColor($r('app.color.text_secondary'))
-              .width('100%')
-              .padding({ left: 4, top: 4 })
-            Column() {
-              this.NavItem($r('app.string.str_settings'), '', (): void => {
-                this.nav().pushPathByName('Settings', null);
-              })
-              Divider().color($r('app.color.divider')).margin({ left: 0 })
-              this.NavItem($r('app.string.str_about'), '', (): void => {
-                this.nav().pushPathByName('About', null);
-              })
-            }
-            .width('100%')
-            .padding(12)
-            .borderRadius(16)
-            .backgroundColor($r('app.color.card_bg'))
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16 })
-
-          Blank().height(this.bottomSafeVp + 140)
+          // 歌单卡片(0.17.0 #2):左上角"+"新建,容器延伸到屏幕最底部
+          PlaylistsTab({ mode: 'card' })
+            .padding({ left: 16, right: 16 })
         }
         .width('100%')
         .padding({ left: 0, right: 0 })
@@ -222,27 +232,18 @@ export struct MineTab {
     .backgroundColor($r('app.color.card_bg'))
   }
 
+  // 卡内等宽入口钮(添加歌曲 / 曲库管理)
   @Builder
-  NavItem(title: ResourceStr, sub: string, onTap: () => void) {
-    Row({ space: 12 }) {
-      Column({ space: 2 }) {
-        Text(title)
-          .fontSize(15)
-          .fontColor($r('app.color.text_primary'))
-        if (sub.length > 0) {
-          Text(sub)
-            .fontSize(11)
-            .fontColor($r('app.color.text_secondary'))
-        }
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(14)
-        .fontColor([$r('app.color.text_secondary')])
+  NavItemBtn(title: ResourceStr, onTap: () => void) {
+    Row() {
+      Text(title)
+        .fontSize(15)
+        .fontColor($r('app.color.text_primary'))
     }
-    .width('100%')
-    .padding({ top: 10, bottom: 10 })
+    .layoutWeight(1)
+    .height(40)
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(12)
     .onClick(() => {
       onTap();
     })

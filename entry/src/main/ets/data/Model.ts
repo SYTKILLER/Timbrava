@@ -106,6 +106,7 @@ export class Album {
   key: string = '';
   name: string = '未知专辑';
   artist: string = '';
+  groupArtist: string = ''; // 分组键原值(songs.album_artist 原文,可能为空串);详情页过滤必须用它,勿用首曲 artist
   artPath: string = '';
   year: number = 0;
   songIds: number[] = [];

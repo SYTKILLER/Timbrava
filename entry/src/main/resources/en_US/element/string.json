@@ -1323,6 +1323,38 @@
     {
       "name": "lrc_import_failed",
       "value": "Import failed: empty or unreadable file"
+    },
+    {
+      "name": "my_favs",
+      "value": "My Favorites"
+    },
+    {
+      "name": "play_history",
+      "value": "Play History"
+    },
+    {
+      "name": "str_new_playlist",
+      "value": "New Playlist"
+    },
+    {
+      "name": "lib_manage",
+      "value": "Library Tools"
+    },
+    {
+      "name": "add_songs_sub",
+      "value": "Import audio files from this device"
+    },
+    {
+      "name": "rescan_now",
+      "value": "Rescan Now"
+    },
+    {
+      "name": "rescan_sub",
+      "value": "Reread registered folders and sync library changes"
+    },
+    {
+      "name": "rescan_started",
+      "value": "Rescan started"
     }
   ]
 }

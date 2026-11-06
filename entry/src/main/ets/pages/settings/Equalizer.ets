@@ -366,9 +366,10 @@ export struct EqualizerDest {
             if (this.hasOverride) {
               Button($r('app.string.eq_follow_global'))
                 .fontSize(11)
-                .height(26)
+                .height(36)
                 .fontColor($r('app.color.text_primary'))
                 .backgroundColor($r('app.color.badge_bg'))
+                .responseRegion({ x: 0, y: -2, width: '100%', height: 40 }) // 最小可点目标 40vp(0.17.0)
                 .onClick(() => {
                   this.clearOverride();
                 })
@@ -426,26 +427,26 @@ export struct EqualizerDest {
 
           Button({ stateEffect: true }) {
             SymbolGlyph($r('sys.symbol.save'))
-              .fontSize(17)
+              .fontSize(18)
               .fontColor([$r('app.color.text_primary')])
           }
-          .width(34)
-          .height(34)
+          .width(40)
+          .height(40)
           .backgroundColor($r('app.color.badge_bg'))
-          .borderRadius(10)
+          .borderRadius(12)
           .onClick(() => {
             this.openSaveDialog();
           })
 
           Button({ stateEffect: true }) {
             SymbolGlyph($r('sys.symbol.square_and_arrow_down'))
-              .fontSize(17)
+              .fontSize(18)
               .fontColor([$r('app.color.text_primary')])
           }
-          .width(34)
-          .height(34)
+          .width(40)
+          .height(40)
           .backgroundColor($r('app.color.badge_bg'))
-          .borderRadius(10)
+          .borderRadius(12)
           .onClick(() => {
             this.openImportDialog();
           })
@@ -453,11 +454,11 @@ export struct EqualizerDest {
           if (this.savedPresets.length > 0) {
             Button({ stateEffect: true }) {
               SymbolGlyph($r('sys.symbol.trash'))
-                .fontSize(15)
+                .fontSize(16)
                 .fontColor([$r('app.color.text_secondary')])
             }
-            .width(34)
-            .height(34)
+            .width(40)
+            .height(40)
             .backgroundColor(Color.Transparent)
             .bindMenu(this.deleteMenu())
           }
@@ -522,15 +523,13 @@ export struct EqualizerDest {
             Blank()
             Button({ stateEffect: true }) {
               SymbolGlyph($r('sys.symbol.rotate_left'))
-                .fontSize(10)
+                .fontSize(18)
                 .fontColor([this.isLandscape ? $r('app.color.accent') : $r('app.color.text_primary')])
             }
-            .width(16)
-            .height(16)
-            .borderRadius(8)
-            .padding(0)
+            .width(40)
+            .height(40)
+            .borderRadius(20)
             .backgroundColor(Color.Transparent)
-            .responseRegion({ x: -12, y: -12, width: 40, height: 40 }) // 视觉 16vp,热区扩到 40vp(最小可点目标)
             .onClick(() => {
               this.toggleOrientation();
             })
@@ -544,7 +543,7 @@ export struct EqualizerDest {
             Blank()
             Button($r('app.string.reset_all'))
               .fontSize(12)
-              .height(30)
+              .height(40)
               .fontColor($r('app.color.text_primary'))
               .backgroundColor($r('app.color.badge_bg'))
               .onClick(() => {

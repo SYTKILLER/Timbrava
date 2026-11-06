@@ -19,9 +19,15 @@ const DOMAIN = 0x0001;
 export struct SongListDest {
   @StorageProp('libVer') @Watch('onLibChanged') libVer: number = 0;
   @StorageProp('topSafeVp') topSafeVp: number = 36; // 全屏沉浸后手动避让状态栏
+  @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State songs: Song[] = [];
   @State title: ResourceStr = '';
   @State param: SongListParam = new SongListParam();
+  // 添加歌曲半模态(歌单模式;0.17.0):可选范围 = 已入库全部歌曲
+  @State showAddSheet: boolean = false;
+  @State addSearch: string = '';
+  @State memberIds: number[] = []; // 歌单现有曲目 id(勾选态)
+  private addChain: Promise<void> = Promise.resolve(); // 串行化追加:并发 max(position) 会撞 UNIQUE 冲突
   private pathStack: NavPathStack | null = null;
 
   private async resolveSongs(p: SongListParam): Promise<Song[]> {
@@ -74,9 +80,46 @@ export struct SongListDest {
   private reload(): void {
     this.resolveSongs(this.param).then((songs: Song[]): void => {
       this.songs = songs;
+      if (this.param.mode === 'playlist') {
+        this.memberIds = songs.map((s: Song): number => s.id);
+      }
       hilog.debug(DOMAIN, TAG, 'reload %{public}s -> %{public}d songs', this.param.mode, songs.length);
     });
     hilog.debug(DOMAIN, TAG, 'reload %{public}s -> %{public}d songs', this.param.mode, this.songs.length);
+  }
+
+  // ===== 添加歌曲半模态(歌单模式;0.17.0) =====
+
+  private openAddSheet(): void {
+    this.memberIds = this.songs.map((s: Song): number => s.id);
+    this.addSearch = '';
+    this.showAddSheet = true;
+  }
+
+  // 候选 = 已入库全部歌曲(搜索过滤;上限 200 防全量长列表)
+  private addCandidates(): Song[] {
+    const kw = this.addSearch.trim().toLowerCase();
+    let all = LibraryStore.get().songs;
+    if (kw.length > 0) {
+      all = all.filter((s: Song): boolean =>
+        s.displayTitle().toLowerCase().indexOf(kw) >= 0 ||
+        s.displayArtist().toLowerCase().indexOf(kw) >= 0 ||
+        s.displayAlbum().toLowerCase().indexOf(kw) >= 0);
+    }
+    return all.slice(0, 200);
+  }
+
+  private addSongToPlaylist(s: Song): void {
+    if (this.memberIds.indexOf(s.id) >= 0) {
+      return;
+    }
+    const plId = parseInt(this.param.key, 10);
+    if (Number.isNaN(plId)) {
+      return;
+    }
+    // 串行追加:每次 addSongs 独立取 max(position),并发会写入同位互相顶掉
+    this.memberIds = this.memberIds.concat([s.id]); // 即时反馈;libVer 广播随后 reload 对账
+    this.addChain = this.addChain.then((): Promise<void> => PlaylistRepo.get().addSongs(plId, [s.id]));
   }
 
   private saveAsPlaylist(): void {
@@ -213,8 +256,8 @@ export struct SongListDest {
           .fontSize(13)
           .fontColor($r('app.color.on_accent'))
           .backgroundColor($r('app.color.accent'))
-          .height(36)
-          .borderRadius(18)
+          .height(40)
+          .borderRadius(20)
           .layoutWeight(1)
           .onClick(() => {
             this.playAll(false);
@@ -223,8 +266,8 @@ export struct SongListDest {
           .fontSize(13)
           .fontColor($r('app.color.text_primary'))
           .backgroundColor($r('app.color.badge_bg'))
-          .height(36)
-          .borderRadius(18)
+          .height(40)
+          .borderRadius(20)
           .layoutWeight(1)
           .onClick(() => {
             this.playAll(true);
@@ -268,6 +311,86 @@ export struct SongListDest {
     }
   }
 
+  // 添加歌曲半模态内容:搜索 + 全库曲目逐曲加入(已入列表勾选态)
+  @Builder
+  AddSongsSheet() {
+    Column() {
+      Row({ space: 8 }) {
+        Button({ stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(18)
+            .fontColor([$r('app.color.text_primary')])
+        }
+        .width(48)
+        .height(48)
+        .borderRadius(24)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.showAddSheet = false;
+        })
+        Text($r('app.string.add_songs'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ left: 8, right: 16, top: 8 })
+
+      TextInput({ text: this.addSearch, placeholder: $r('app.string.search_hint') })
+        .height(40)
+        .fontSize(14)
+        .borderRadius(10)
+        .backgroundColor($r('app.color.badge_bg'))
+        .fontColor($r('app.color.text_primary'))
+        .placeholderColor($r('app.color.text_secondary'))
+        .margin({ left: 16, right: 16, top: 4, bottom: 4 })
+        .maxLines(1)
+        .onChange((v: string): void => {
+          this.addSearch = v;
+        })
+
+      List({ space: 0 }) {
+        ForEach(this.addCandidates(), (s: Song) => {
+          ListItem() {
+            Row({ space: 12 }) {
+              Column({ space: 2 }) {
+                Text(s.displayTitle())
+                  .fontSize(14)
+                  .fontColor($r('app.color.text_primary'))
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(s.displayArtist())
+                  .fontSize(11)
+                  .fontColor($r('app.color.text_secondary'))
+                  .maxLines(1)
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              SymbolGlyph(this.memberIds.indexOf(s.id) >= 0
+                ? $r('sys.symbol.checkmark_circle_fill') : $r('sys.symbol.plus_circle'))
+                .fontSize(22)
+                .fontColor([this.memberIds.indexOf(s.id) >= 0 ? $r('app.color.accent') : $r('app.color.text_secondary')])
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 9, bottom: 9 })
+            .onClick(() => {
+              this.addSongToPlaylist(s);
+            })
+          }
+        }, (s: Song): string => `ac_${s.id}_${this.memberIds.indexOf(s.id) >= 0 ? 1 : 0}`)
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Auto)
+
+      Blank().height(Math.max(this.bottomSafeVp, 28) + 8)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor($r('app.color.card_bg'))
+  }
+
   build() {
     NavDestination() {
       Column() {
@@ -281,23 +404,36 @@ export struct SongListDest {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Button({ stateEffect: true }) {
             SymbolGlyph($r('sys.symbol.waveform'))
-              .fontSize(16)
+              .fontSize(18)
               .fontColor([$r('app.color.text_primary')])
           }
-          .width(34)
-          .height(34)
+          .width(40)
+          .height(40)
           .backgroundColor(Color.Transparent)
           .bindMenu(this.listMenu)
 
-          Button($r('app.string.save_as_pl'))
-            .fontSize(13)
-            .fontColor($r('app.color.text_primary'))
-            .backgroundColor($r('app.color.badge_bg'))
-            .height(34)
-            .borderRadius(17)
-            .onClick(() => {
-              this.saveAsPlaylist();
-            })
+          if (this.param.mode === 'playlist') {
+            // 歌单模式:此处是"添加歌曲"入口(存为歌单仅面向专辑/艺人等聚合列表,两类页面语义不互通)
+            Button($r('app.string.add_songs'))
+              .fontSize(13)
+              .fontColor($r('app.color.on_accent'))
+              .backgroundColor($r('app.color.accent'))
+              .height(40)
+              .borderRadius(20)
+              .onClick(() => {
+                this.openAddSheet();
+              })
+          } else {
+            Button($r('app.string.save_as_pl'))
+              .fontSize(13)
+              .fontColor($r('app.color.text_primary'))
+              .backgroundColor($r('app.color.badge_bg'))
+              .height(40)
+              .borderRadius(20)
+              .onClick(() => {
+                this.saveAsPlaylist();
+              })
+          }
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 12, bottom: 8 })
@@ -333,6 +469,15 @@ export struct SongListDest {
       .width('100%')
       .height('100%')
       .backgroundColor($r('app.color.page_bg'))
+      // 添加歌曲半模态(歌单模式):两档高度,默认中档
+      .bindSheet(this.showAddSheet, this.AddSongsSheet(), {
+        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+        dragBar: false,
+        showClose: false,
+        onDisappear: (): void => {
+          this.showAddSheet = false;
+        }
+      })
     }
     .padding({ top: this.topSafeVp })
     .title(this.title)

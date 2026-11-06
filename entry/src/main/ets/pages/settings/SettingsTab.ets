@@ -103,6 +103,8 @@ export struct PrefToggleRow {
         .height(28)
         .borderRadius(14)
         .backgroundColor(Color.Transparent)
+        // 最小可点目标 40vp:视觉 28,热区外扩(0.17.0)
+        .responseRegion({ x: -6, y: -6, width: 40, height: 40 })
         .onClick(() => {
           this.getUIContext().showAlertDialog({
             title: this.title,
@@ -499,7 +501,7 @@ export struct RgScanSection {
           .width('100%')
         Button($r('app.string.cancel_scan'))
           .fontSize(12)
-          .height(32)
+          .height(40)
           .fontColor($r('app.color.text_primary'))
           .backgroundColor($r('app.color.badge_bg'))
           .onClick(() => {
@@ -514,7 +516,7 @@ export struct RgScanSection {
         }
         Button($r('app.string.scan_library'))
           .fontSize(13)
-          .height(36)
+          .height(40)
           .fontColor($r('app.color.on_accent'))
           .backgroundColor($r('app.color.accent'))
           .onClick(() => {

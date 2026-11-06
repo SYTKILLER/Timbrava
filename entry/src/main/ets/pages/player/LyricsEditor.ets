@@ -311,8 +311,8 @@ export struct LyricsEditorDest {
                         .fontSize(15)
                         .fontColor([$r('app.color.text_secondary')])
                     }
-                    .width(32)
-                    .height(32)
+                    .width(40)
+                    .height(40)
                     .backgroundColor(Color.Transparent)
                     .onClick(() => {
                       this.clearLine(i);
@@ -320,7 +320,8 @@ export struct LyricsEditorDest {
                   }
                   Button($r('app.string.str_mark'))
                     .fontSize(11)
-                    .height(28)
+                    .height(36)
+                    .responseRegion({ x: 0, y: -2, width: '100%', height: 40 }) // 最小可点目标 40vp(0.17.0)
                     .fontColor($r('app.color.on_accent'))
                     .backgroundColor($r('app.color.accent'))
                     .onClick(() => {
@@ -345,7 +346,7 @@ export struct LyricsEditorDest {
           Blank()
           Button($r('app.string.import_lrc'))
             .fontSize(12)
-            .height(36)
+            .height(40)
             .fontColor($r('app.color.text_primary'))
             .backgroundColor($r('app.color.badge_bg'))
             .onClick(() => {
@@ -353,7 +354,7 @@ export struct LyricsEditorDest {
             })
           Button($r('app.string.export_lrc'))
             .fontSize(12)
-            .height(36)
+            .height(40)
             .fontColor($r('app.color.text_primary'))
             .backgroundColor($r('app.color.badge_bg'))
             .onClick(() => {
@@ -361,7 +362,7 @@ export struct LyricsEditorDest {
             })
           Button($r('app.string.save_lyrics'))
             .fontSize(12)
-            .height(36)
+            .height(40)
             .fontColor($r('app.color.on_accent'))
             .backgroundColor($r('app.color.accent'))
             .onClick(() => {
