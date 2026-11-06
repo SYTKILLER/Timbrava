@@ -1,6 +1,7 @@
 // 应用根:Navigation + 底部 HdsTabs(音乐库/队列/设置)+ 迷你播放条(悬浮)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { HdsTabs, HdsTabsFloatingStyle, hdsMaterial, HdsBarLayoutMode, HdsTabsController, HdsBarStyle } from '@kit.UIDesignKit';
+import { HdsTabs, HdsTabsFloatingStyle, hdsMaterial, HdsBarLayoutMode, HdsTabsController, HdsBarStyle,
+  HdsTabsBarChangeMode } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../service/PlayerController';
@@ -35,6 +36,7 @@ struct Index {
   @StorageProp('posVer') posVer: number = 0;
   @StorageProp('themeVer') themeVer: number = 0;
   @State activeTab: number = 0;
+  @StorageProp('eqFullscreen') eqFullscreen: boolean = false; // EQ 页在栈顶时强制 Stack(横屏不分栏)
   @State topSafe: number = 36;
   @State bottomSafe: number = 28;
   private hdsController: HdsTabsController = new HdsTabsController();
@@ -57,6 +59,7 @@ struct Index {
       }
       hilog.info(DOMAIN, TAG, 'applyMiniBarStyle %{public}s', collapsed ? 'COLLAPSE' : 'EXPAND');
       this.hdsController.applyMiniBarStyle(collapsed ? HdsBarStyle.COLLAPSE : HdsBarStyle.EXPAND);
+      this.syncCacheStyle(collapsed ? HdsBarStyle.COLLAPSE : HdsBarStyle.EXPAND);
     });
   }
 
@@ -90,18 +93,9 @@ struct Index {
         .barFloatingStyle(this.ensureFloatingStyle())
         .onChange((index: number) => {
           this.activeTab = index;
-          // 0.15.0 实测:HdsTabs 页签切换动画结束后会把迷你栏内部重置回 pill+圆钮形态,
-  // 且经 onBarStyleChange 把折叠镜像回写(污染用户态)——切换前先记录,重置后恢复断言
-          const keepCollapsed = BarCollapse.isCollapsed();
-          setTimeout((): void => {
-            if (PlayerController.get().currentSong === null) {
-              return;
-            }
-            BarCollapse.sync(keepCollapsed, false);
-            this.hdsController.applyMiniBarStyle(keepCollapsed ? HdsBarStyle.COLLAPSE : HdsBarStyle.EXPAND);
-            hilog.info(DOMAIN, TAG, 'reassert miniBar %{public}s after tab switch',
-              keepCollapsed ? 'COLLAPSE' : 'EXPAND');
-          }, 900);
+          // 0.15.1:HdsTabs 切页签会内部把迷你栏回落到配置态(mode=NORMAL)——
+          // 用户态已持续同步进配置对象(syncCacheStyle),回落即无感;
+          // 若回落态与用户镜像不一致,onBarStyleChange 内当场重新断言(不再延时补救)
         })
         .width('100%')
         .height('100%')
@@ -112,8 +106,9 @@ struct Index {
     }
     .navDestination(this.pagesMap)
     .hideTitleBar(true)
-    // 分栏(#54):宽屏(≥600vp)自动 Split(库列表 + 右侧详情),手机保持 Stack
-    .mode(NavigationMode.Auto)
+    // 分栏(#54):宽屏(≥600vp)自动 Split(库列表 + 右侧详情),手机保持 Stack;
+    // EQ 页在栈顶时强制 Stack——横屏分栏会把下层页面露在左侧,EQ 须全屏(0.15.1)
+    .mode(this.eqFullscreen ? NavigationMode.Stack : NavigationMode.Auto)
     .navBarWidth('46%')
     .minContentWidth(360)
   }
@@ -138,16 +133,40 @@ struct Index {
           this.miniBarBuilder();
         },
         barLayoutMode: HdsBarLayoutMode.VERTICAL,
-        // 初始展开(官方默认折叠);滚动折叠由 BarCollapse 驱动 applyMiniBarStyle
-        miniBarStyle: HdsBarStyle.EXPAND,
-        onBarStyleChange: (style: HdsBarStyle): void => {
-          // 折叠态镜像回写(含 USER_CLICK 点击折叠条原生展开),仅同步不通知,避免 apply 回环
+        // 初始展开(官方默认折叠);当前态经 syncCacheStyle 同步到本配置对象——
+        // HdsTabs 内部回落以配置态为准,用户折叠中切页签回落即折叠(无感)
+        miniBarStyle: BarCollapse.isCollapsed() ? HdsBarStyle.COLLAPSE : HdsBarStyle.EXPAND,
+        onBarStyleChange: (style: HdsBarStyle, _tabStyle: HdsBarStyle, _miniW: number, _tabW: number,
+          mode: HdsTabsBarChangeMode): void => {
+          // 折叠态镜像回写(含 USER_CLICK 点击折叠条原生展开),仅同步不通知,避免 apply 回环。
+          // 0.15.1:切页签/旋转时 HdsTabs 内部把迷你栏回落到配置态(mode=NORMAL,非用户点击)——
+          // 当场按用户镜像态重新断言(消除"重置后闪恢复"),污染值不写入镜像
+          if (mode !== HdsTabsBarChangeMode.USER_CLICK && this.hasSong() &&
+            (style === HdsBarStyle.COLLAPSE) !== BarCollapse.isCollapsed()) {
+            const want = BarCollapse.isCollapsed() ? HdsBarStyle.COLLAPSE : HdsBarStyle.EXPAND;
+            hilog.info(DOMAIN, TAG, 'internal reset %{public}s -> reassert %{public}s',
+              style === HdsBarStyle.COLLAPSE ? 'COLLAPSE' : 'EXPAND',
+              want === HdsBarStyle.COLLAPSE ? 'COLLAPSE' : 'EXPAND');
+            this.hdsController.applyMiniBarStyle(want);
+            this.syncCacheStyle(want);
+            return;
+          }
           BarCollapse.sync(style === HdsBarStyle.COLLAPSE, false);
+          this.syncCacheStyle(style);
         }
       }
     };
     this.floatingStyleCache = st;
     return st;
+  }
+
+  // 用户态样式写入缓存配置对象:HdsTabs 内部回落(切页签/旋转)以配置态为准,
+  // 同步后回落即落在用户当前态,从源头消除"重置→恢复"闪动
+  private syncCacheStyle(style: HdsBarStyle): void {
+    if (this.floatingStyleCache !== null && this.floatingStyleCache.miniBar !== null &&
+      this.floatingStyleCache.miniBar !== undefined) {
+      this.floatingStyleCache.miniBar.miniBarStyle = style;
+    }
   }
 
   @Builder

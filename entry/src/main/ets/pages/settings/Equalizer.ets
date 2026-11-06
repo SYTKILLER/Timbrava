@@ -126,6 +126,8 @@ export struct EqualizerDest {
       });
       this.winRef = null;
     }
+    // 恢复 Navigation 分栏判定(进入时强制 Stack 见 onReady)
+    AppStorage.setOrCreate('eqFullscreen', false);
   }
 
   // 获取设备方向:物理屏朝向(display.Orientation)→ 判定横/竖(切换钮图标态)
@@ -528,6 +530,7 @@ export struct EqualizerDest {
             .borderRadius(8)
             .padding(0)
             .backgroundColor(Color.Transparent)
+            .responseRegion({ x: -12, y: -12, width: 40, height: 40 }) // 视觉 16vp,热区扩到 40vp(最小可点目标)
             .onClick(() => {
               this.toggleOrientation();
             })
@@ -563,6 +566,8 @@ export struct EqualizerDest {
       : this.isScoped() ? $r('app.string.eq_scope_song') : $r('app.string.equalizer'))
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
+      // EQ 页全屏:强制 Navigation Stack(横屏宽屏时 Auto 分栏会把下层页面露在左侧,0.15.1)
+      AppStorage.setOrCreate('eqFullscreen', true);
       const p = ctx.pathInfo.param as EqScopeParam;
       if (p !== null && p !== undefined && p instanceof EqScopeParam && p.target.length > 0) {
         this.scope = p;

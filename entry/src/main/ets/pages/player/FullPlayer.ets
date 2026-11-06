@@ -236,7 +236,7 @@ export struct FullPlayerDest {
           .height(40)
           .backgroundColor(Color.Transparent)
           .onClick(() => {
-            this.showMoreSheet = true;
+            this.openMoreSheet();
           })
         }
         .width('100%')
@@ -510,39 +510,8 @@ export struct FullPlayerDest {
       .width('100%')
       .padding({ top: 4 })
 
-      // 音量条(0.14.0):引擎流音量(无损=OHAudio 渲染流;系统=AVPlayer),拖动 End 落库
-      Row({ space: 10 }) {
-        SymbolGlyph($r('sys.symbol.speaker_wave_2'))
-          .fontSize(16)
-          .fontColor([$r('app.color.text_secondary')])
-        Slider({
-          value: this.volMirror,
-          min: 0,
-          max: 100,
-          step: 1,
-          style: SliderStyle.OutSet
-        })
-          .selectedColor($r('app.color.accent'))
-          .trackColor($r('app.color.divider'))
-          .blockColor($r('app.color.accent'))
-          .layoutWeight(1)
-          .height(34)
-          .onChange((value: number, mode: SliderChangeMode) => {
-            this.volMirror = Math.round(value);
-            if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-              PlayerController.get().setVolume(value / 100);
-            }
-          })
-        Text(`${Math.round(this.volMirror)}%`)
-          .fontSize(10)
-          .fontColor($r('app.color.text_secondary'))
-          .width(30)
-          .textAlign(TextAlign.End)
-      }
-      .width('88%')
-      .padding({ top: 2, bottom: 2 })
-
       // 控制区:播放模式(左) | 上一曲/播放暂停(动画)/下一曲 | 队列(右)
+      // 音量条 0.15.1 起收入「更多」菜单(用户约定)
       Row({ space: 8 }) {
         Button({ stateEffect: true }) {
           SymbolGlyph(this.modeIcon())
@@ -627,6 +596,13 @@ export struct FullPlayerDest {
 
   // ===== 右上角"更多"bindSheet 菜单 =====
 
+  // 打开菜单:音量镜像对齐当前引擎值(0.15.1 音量条迁入菜单)
+  private openMoreSheet(expand: string = ''): void {
+    this.volMirror = Math.round(PlayerController.get().volume * 100);
+    this.sheetExpand = expand;
+    this.showMoreSheet = true;
+  }
+
   @Builder
   MoreSheet() {
     Column() {
@@ -637,6 +613,39 @@ export struct FullPlayerDest {
         .width('100%')
         .padding({ left: 20, top: 12, bottom: 8 })
       List({ space: 0 }) {
+        // 音量(0.15.1:自播放页主体收入此菜单;引擎流音量,无损=OHAudio 渲染流/系统=AVPlayer)
+        ListItem() {
+          Row({ space: 12 }) {
+            SymbolGlyph($r('sys.symbol.speaker_wave_2'))
+              .fontSize(18)
+              .fontColor([this.volMirror <= 0 ? $r('app.color.text_secondary') : $r('app.color.text_primary')])
+            Slider({
+              value: this.volMirror,
+              min: 0,
+              max: 100,
+              step: 1,
+              style: SliderStyle.OutSet
+            })
+              .selectedColor($r('app.color.accent'))
+              .trackColor($r('app.color.divider'))
+              .blockColor($r('app.color.accent'))
+              .layoutWeight(1)
+              .height(34)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.volMirror = Math.round(value);
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  PlayerController.get().setVolume(value / 100);
+                }
+              })
+            Text(`${Math.round(this.volMirror)}%`)
+              .fontSize(11)
+              .fontColor($r('app.color.text_secondary'))
+              .width(34)
+              .textAlign(TextAlign.End)
+          }
+          .width('100%')
+          .padding({ left: 20, right: 16, top: 8, bottom: 8 })
+        }
         // 收藏
         ListItem() {
           this.SheetRow(this.favMirror ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'),
@@ -832,8 +841,7 @@ export struct FullPlayerDest {
         .backgroundColor(Color.Transparent)
         .onClick(() => {
           this.showQueue = false;
-          this.sheetExpand = 'sleep';
-          this.showMoreSheet = true;
+          this.openMoreSheet('sleep');
         })
         Button({ stateEffect: true }) {
           SymbolGlyph($r('sys.symbol.trash'))

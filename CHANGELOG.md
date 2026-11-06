@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### Fixed(0.15.1 二轮实测反馈:迷你条重置闪动/EQ横屏全屏/音量条入菜单/旋转钮热区)
+
+- **迷你条切页签"重置后闪恢复"根治**:上一版 900ms 定时补救只是把闪动窗口缩小,用户仍可见"重置→恢复"。改为双保险:① 用户态样式持续同步进 barFloatingStyle.miniBar 配置对象(syncCacheStyle)——HdsTabs 切页签/旋转的内部回落以配置态为准,回落即落在用户当前态(源头消除);② onBarStyleChange 增加 mode 参数判别(HdsTabsBarChangeMode)——非 USER_CLICK 的内部回落(切页签/旋转)若与用户镜像态不一致,**当场** applyMiniBarStyle 重新断言且污染值不写入镜像(无延时)。模拟器连拍实测:COLLAPSE 态点页签/横滑切页签全程 4 帧形态稳定、EXPAND 态切页签同样稳定,日志无 mismatch。
+- **EQ 横屏全屏**:此前横屏时 NavigationMode.Auto 分栏(≥600vp)把下层页面露在左侧、EQ 只占右半屏——EQ 页 onReady 强制 Navigation Stack(AppStorage token eqFullscreen → Index .mode 响应式切换),离页恢复 Auto;横屏实测 EQ 全屏,一屏可见 24+ 调音条。
+- **播放页音量条收进「更多」菜单**(用户约定):主体移除音量 Row,菜单首行新增音量行(喇叭 icon + Slider + 百分比);openMoreSheet 统一入口打开时镜像对齐当前引擎值;实测点击滑条落库(volume -> 52)。
+- **EQ 旋转钮热区**:视觉保持 16vp(单位确证:实测渲染 56×56px = 16vp × 密度 3.5,非 px),responseRegion 热区扩到 40vp(鸿蒙最小可点目标);实测点击视觉边界外 54px 仍命中切换。
+- 版本号 0.15.1/versionCode 15001。
+
 ### Changed(0.15.0 实测反馈批量修复:迷你条/播放页/EQ/设置/去重/歌词预取)
 
 - **迷你条折叠态跨页签保持**:HdsTabs 页签切换动画结束后会内部把迷你栏重置回 pill+圆钮形态并经 onBarStyleChange 回写镜像(污染用户态)——onChange 先记录切换前折叠态,900ms 后恢复断言(applyMiniBarStyle)+ 镜像还原;barFloatingStyle 样式对象记忆化(此前每次 rebuild 生成新对象触发迷你栏重初始化)。模拟器实测:折叠态切页签保持,日志 reassert→sync collapsed=1 闭环。
