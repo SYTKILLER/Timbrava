@@ -3,8 +3,8 @@
 // 折叠态镜像由 HdsTabs onBarStyleChange 回写(覆盖 USER_CLICK 原生展开),不回环通知。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
-const COLLAPSE_THRESHOLD = 24; // 向列表尾部浏览累积位移阈值(vp),约半行列表高
-const EXPAND_THRESHOLD = 12;   // 向列表头部回滚累积位移阈值(vp)
+const COLLAPSE_THRESHOLD = 24; // 向列表头部回滚累积位移阈值(vp),约半行列表高(0.14.1:反方向折叠)
+const EXPAND_THRESHOLD = 12;   // 向列表尾部浏览累积位移阈值(vp)(0.14.1:正向浏览展开)
 
 const TAG = '[Timbrava][BarCollapse]';
 const DOMAIN = 0x0001;
@@ -35,7 +35,8 @@ export class BarCollapse {
     }
   }
 
-  // onDidScroll 每帧偏移:正值=向列表尾部浏览(内容上移),负值=向头部回滚
+  // onDidScroll 每帧偏移:正值=向列表尾部浏览(内容上移),负值=向头部回滚。
+  // 0.14.1 语义反转(用户约定):回滚(负值累积)→折叠;正向浏览(正值累积)→展开。
   static feed(deltaY: number): void {
     if (deltaY === 0) {
       return;
@@ -46,9 +47,9 @@ export class BarCollapse {
       BarCollapse.acc = 0;
     }
     BarCollapse.acc += deltaY;
-    if (!BarCollapse.collapsed && BarCollapse.acc >= COLLAPSE_THRESHOLD) {
+    if (!BarCollapse.collapsed && BarCollapse.acc <= -COLLAPSE_THRESHOLD) {
       BarCollapse.sync(true, true);
-    } else if (BarCollapse.collapsed && BarCollapse.acc <= -EXPAND_THRESHOLD) {
+    } else if (BarCollapse.collapsed && BarCollapse.acc >= EXPAND_THRESHOLD) {
       BarCollapse.sync(false, true);
     }
   }
