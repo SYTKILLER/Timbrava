@@ -50,6 +50,9 @@ export struct FullPlayerDest {
   @State bottomSafe: number = 28;
   @State srPm: image.PixelMap | null = null; // 26-5 超分封面(小封面实时超分,失败/不支持=null 原图)
   @State dragY: number = 0;          // 下滑关闭跟手位移(0.14.0)
+  // pop 自定义转场位移(Index.playerNavTransition 经 animateTo 驱动 0→视口高;
+  // 与 dragY 相加为整层 translate——转场期间系统保持前后页同帧可见,纵向滑出直见下层页面)
+  @StorageProp('playerExitY') exitY: number = 0;
   @State volMirror: number = 100;    // 音量条镜像(拖动中本地值,End 才落库)
   @State sheetExpand: string = '';   // 更多菜单展开区:'' | 'speed' | 'sleep'
   // 曲目信息镜像(0.15.0 #20):playerVer 不经 @State 落地时 build 内节点零依赖不刷新,
@@ -76,6 +79,7 @@ export struct FullPlayerDest {
     this.playingMirror = PlayerController.get().isPlaying;
     this.modeMirror = QueueService.get().playMode();
     this.volMirror = Math.round(PlayerController.get().volume * 100);
+    AppStorage.setOrCreate('playerExitY', 0); // 上次 pop 残留清零(新实例从原位开始)
     // 页面可能晚于播放打开:@Watch 不会补发,主动拉一次(歌词由控制器中心化加载)
     this.onPlayerChanged();
   }
@@ -85,6 +89,8 @@ export struct FullPlayerDest {
     // 此处(转场结束组件销毁前)清零,实例复用/重进都从原位开始
     this.dragY = 0;
     this.dismissing = false;
+    AppStorage.setOrCreate('playerExitY', 0);
+    AppStorage.setOrCreate('playerExitFrom', 0);
   }
 
   onPlayerChanged(): void {
@@ -291,8 +297,9 @@ export struct FullPlayerDest {
       .width('100%')
       .height('100%')
       .backgroundColor(Color.Transparent)
-      // 下滑位移挂整层:皮肤背景 + 内容一起跟手/下沉(NavDestination 已透明,露出下层页面)
-      .translate({ y: this.dragY })
+      // 下滑位移挂整层:皮肤背景 + 内容一起跟手/下沉(NavDestination 已透明)
+      // dragY=手势跟手段;exitY=pop 自定义转场段(纵向),相加保证手势→转场视觉连续
+      .translate({ y: this.dragY + this.exitY })
       .bindSheet(this.showMoreSheet, this.MoreSheet(), {
         height: 500,
         showClose: false,
@@ -325,6 +332,8 @@ export struct FullPlayerDest {
   // 0.15.0 修复:此前 pop 前先 dragY=0 复位,页面瞬间回位再叠默认 pop 转场(整体右滑)——
   // 与下滑手势直觉矛盾;现在保持离屏位移直接 pop,复位延迟到转场后。
   // 0.15.2:返回键/系统返回也走同一纵向滑出动画(dismissAnimated),全页退出动作统一。
+  // 0.17.0:pop 动画改由 Navigation.customNavContentTransition 接管(Index.playerNavTransition)——
+  // 默认 pop 的横向转场(下层页面横入,实测 f4 帧)彻底移除;本方法只负责把起始位移交给转场后立即 pop。
   private dismissing: boolean = false;
 
   private dismissAnimated(): void {
@@ -332,15 +341,10 @@ export struct FullPlayerDest {
       return;
     }
     this.dismissing = true;
-    const vh = px2vp(display.getDefaultDisplaySync().height);
-    this.getUIContext().animateTo({ duration: 220, curve: Curve.Friction }, (): void => {
-      this.dragY = vh + 60;
-    });
-    setTimeout((): void => {
-      if (this.pathStack !== null) {
-        this.pathStack.pop();
-      }
-    }, 230);
+    AppStorage.setOrCreate('playerExitFrom', this.dragY); // 手势已有位移:转场从当前位置继续滑出
+    if (this.pathStack !== null) {
+      this.pathStack.pop();
+    }
   }
 
   private dismissByGesture(vh: number): void {

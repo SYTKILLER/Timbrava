@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### Added/Fixed(0.17.1 模拟器实测回归:统计双坑修复 + 播放页返回转场根治)
+
+- **实测补刀:累计播放恒 0:00 双根因修复(0.17.0 实测暴露)**:①`getPlayStatsTotal` 用 `RdbPredicates.query(columns)` 传聚合表达式 `'SUM(total_ms) AS total'`——columns 只收列名,表达式被静默忽略恒返 0(无任何报错),改 `querySql` + 按列类型读取(INTEGER/REAL 防呆);②统计四宫格抽的 `Stat` @Builder 按值传参是快照(KB §8.2),异步查询落地后 UI 不刷新,内联直读 @State。实测:累计播放 138:00 正常显示。
+- **播放页返回动画二次修复(实测 f 帧暴露)**:0.17.0 的 NavDestination 透明化只消掉了上层"空背景",实测连拍 f4 帧——**下层页面仍走默认 pop 横向转场滑入**,且非转场期下层页面被系统隐藏(手动 translate 只能露白底)。改 `Navigation.customNavContentTransition`:仅 FullPlayer 的 pop 返回自定义转场,经 `playerExitY`(AppStorage→@StorageProp)驱动整层 translate 纵向滑出,其余页面返回 undefined 走系统默认。转场期间系统保持前后页同帧可见——实测中帧:播放页纵向下滑、下层页面原地完整渲染,无横向位移、无白底,双重动画彻底消除。
+
 ### Added/Fixed(0.17.0 实测反馈 14 项批量:曲库/歌单/我的页改版 + 播放页返回动画/收藏/热区修复)
 
 - **空专辑修复(#1)**:专辑分组键是 `album_artist`,但专辑卡点击传的是首曲 `displayArtist()`——凡 album_artist≠曲目艺术家(合辑/带专辑艺术家标签),点进详情过滤为空,即"空专辑"。Album 新增 `groupArtist`(分组键原值),网格点击改传 `groupArtist`,展示名同样回退分组值。

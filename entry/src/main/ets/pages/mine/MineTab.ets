@@ -119,12 +119,64 @@ export struct MineTab {
 
       Scroll() {
         Column({ space: 12 }) {
-          // 曲库统计四宫格
+          // 曲库统计四宫格(0.17.0 内联:Stat 抽 @Builder 按值传参是快照,totalMs 异步落地后不刷新——KB §8.2)
           Row({ space: 8 }) {
-            this.Stat(this.songCount.toString(), $r('app.string.str_songs'))
-            this.Stat(this.albumCount.toString(), $r('app.string.str_albums'))
-            this.Stat(this.artistCount.toString(), $r('app.string.str_artists'))
-            this.Stat(this.totalLabel(), $r('app.string.mine_stats_total'))
+            Column() {
+              Text(this.songCount.toString())
+                .fontSize(16)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.accent'))
+              Text($r('app.string.str_songs'))
+                .fontSize(10)
+                .fontColor($r('app.color.text_secondary'))
+                .margin({ top: 2 })
+            }
+            .layoutWeight(1)
+            .padding({ top: 10, bottom: 10 })
+            .borderRadius(14)
+            .backgroundColor($r('app.color.card_bg'))
+            Column() {
+              Text(this.albumCount.toString())
+                .fontSize(16)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.accent'))
+              Text($r('app.string.str_albums'))
+                .fontSize(10)
+                .fontColor($r('app.color.text_secondary'))
+                .margin({ top: 2 })
+            }
+            .layoutWeight(1)
+            .padding({ top: 10, bottom: 10 })
+            .borderRadius(14)
+            .backgroundColor($r('app.color.card_bg'))
+            Column() {
+              Text(this.artistCount.toString())
+                .fontSize(16)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.accent'))
+              Text($r('app.string.str_artists'))
+                .fontSize(10)
+                .fontColor($r('app.color.text_secondary'))
+                .margin({ top: 2 })
+            }
+            .layoutWeight(1)
+            .padding({ top: 10, bottom: 10 })
+            .borderRadius(14)
+            .backgroundColor($r('app.color.card_bg'))
+            Column() {
+              Text(this.totalLabel())
+                .fontSize(16)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.accent'))
+              Text($r('app.string.mine_stats_total'))
+                .fontSize(10)
+                .fontColor($r('app.color.text_secondary'))
+                .margin({ top: 2 })
+            }
+            .layoutWeight(1)
+            .padding({ top: 10, bottom: 10 })
+            .borderRadius(14)
+            .backgroundColor($r('app.color.card_bg'))
           }
           .width('100%')
           .padding({ left: 16, right: 16 })
@@ -212,24 +264,6 @@ export struct MineTab {
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageBg())
-  }
-
-  @Builder
-  Stat(value: string, label: ResourceStr) {
-    Column() {
-      Text(value)
-        .fontSize(16)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.accent'))
-      Text(label)
-        .fontSize(10)
-        .fontColor($r('app.color.text_secondary'))
-        .margin({ top: 2 })
-    }
-    .layoutWeight(1)
-    .padding({ top: 10, bottom: 10 })
-    .borderRadius(14)
-    .backgroundColor($r('app.color.card_bg'))
   }
 
   // 卡内等宽入口钮(添加歌曲 / 曲库管理)

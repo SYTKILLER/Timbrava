@@ -2,7 +2,7 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { HdsTabs, HdsTabsFloatingStyle, hdsMaterial, HdsBarLayoutMode, HdsTabsController, HdsBarStyle,
   HdsTabsBarChangeMode } from '@kit.UIDesignKit';
-import { SymbolGlyphModifier } from '@kit.ArkUI';
+import { SymbolGlyphModifier, display } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../service/PlayerController';
 import { SongRow } from '../components/SongRow';
@@ -107,6 +107,10 @@ struct Index {
     }
     .navDestination(this.pagesMap)
     .hideTitleBar(true)
+    // 播放页 pop 自定义转场(0.17.0 #4 全量修复):默认 pop 是系统级横向转场——即使上层页已透明/滑出,
+    // 下层页面仍会横向滑入(实测 f4 帧),且非转场期下层页面被系统隐藏,手动 translate 只能露出白底。
+    // 自定义转场期间系统保持前后页面同时可见:播放页纵向滑出、下层页面原地静止,双重动画与露白一并消除。
+    .customNavContentTransition(this.playerNavTransition)
     // 分栏(#54):宽屏(≥600vp)自动 Split(库列表 + 右侧详情),手机保持 Stack;
     // EQ 页在栈顶时强制 Stack——横屏分栏会把下层页面露在左侧,EQ 须全屏(0.15.1)
     .mode(this.eqFullscreen ? NavigationMode.Stack : NavigationMode.Auto)
@@ -174,6 +178,31 @@ struct Index {
   miniBarBuilder() {
     MiniPlayer()
   }
+
+  // 播放页 pop 转场:playerExitY(0→视口高)经 @StorageProp 驱动 FullPlayer 整层 translate 纵向滑出;
+  // playerExitFrom 为手势下滑已有的位移(从当前位置继续滑出,视觉连续)。其余页面返回 undefined 走系统默认。
+  private playerNavTransition = (from: NavContentInfo, to: NavContentInfo,
+    operation: NavigationOperation): NavigationAnimatedTransition | undefined => {
+    if (operation === NavigationOperation.POP && from.name === 'FullPlayer') {
+      return {
+        timeout: 600,
+        transition: (proxy: NavigationTransitionProxy): void => {
+          const fromVp = AppStorage.get<number>('playerExitFrom') ?? 0;
+          const vh = px2vp(display.getDefaultDisplaySync().height);
+          this.getUIContext().animateTo({
+            duration: 240,
+            curve: Curve.Friction,
+            onFinish: (): void => {
+              proxy.finishTransition();
+            }
+          }, (): void => {
+            AppStorage.setOrCreate('playerExitY', vh + 60 - fromVp);
+          });
+        }
+      };
+    }
+    return undefined;
+  };
 
   @Builder
   tabIcon(res: Resource, label: ResourceStr, idx: number) {

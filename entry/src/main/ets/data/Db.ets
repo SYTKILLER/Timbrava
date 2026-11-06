@@ -913,17 +913,26 @@ export class Db {
     }
   }
 
-  // 累计播放时长(ms):play_count.total_ms 求和,无记录返回 0
+  // 累计播放时长(ms):play_count.total_ms 求和,无记录返回 0。
+  // 注意必须 querySql:RdbPredicates.query 的 columns 只收列名,聚合表达式 'SUM(...) AS x' 会被静默忽略恒返 0;
+  // SUM 列类型按实际读取(INTEGER→getLong / REAL→getDouble),跨 OHOS 版本类型漂移防呆。
   async getPlayStatsTotal(): Promise<number> {
     const st = this.storeOrThrow();
     try {
-      const pred = new relationalStore.RdbPredicates('play_count');
-      const rs = await st.query(pred, ['SUM(total_ms) AS total']);
+      const rs = await st.querySql('SELECT COALESCE(SUM(total_ms), 0) AS total FROM play_count');
+      let v = 0;
       if (rs.goToFirstRow()) {
         const idx = rs.getColumnIndex('total');
-        return rs.isColumnNull(idx) ? 0 : rs.getLong(idx);
+        const t = rs.getColumnTypeSync(idx);
+        if (t === relationalStore.ColumnType.REAL) {
+          v = Math.round(rs.getDouble(idx));
+        } else if (t !== relationalStore.ColumnType.NULL) {
+          v = rs.getLong(idx);
+        }
+        hilog.info(DOMAIN, TAG, 'statsTotal raw=%{public}d colType=%{public}d', v, t as number);
       }
-      return 0;
+      rs.close();
+      return v;
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'getPlayStatsTotal fail %{public}s', (e as Error).message);
       return 0;
