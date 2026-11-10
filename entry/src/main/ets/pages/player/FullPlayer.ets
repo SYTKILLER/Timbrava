@@ -18,6 +18,7 @@ import { Song, RepeatMode, formatDuration } from '../../data/Model';
 import { LyricsPanel } from '../../components/LyricsPanel';
 import { CoverSuperRes } from '../../service/CoverSuperRes';
 import { DesktopLyricsService } from '../../service/DesktopLyricsService';
+import { WaveformService } from '../../service/WaveformService';
 import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][FullPlayer]';
@@ -157,6 +158,12 @@ export struct FullPlayerDest {
   @State favMirror: boolean = false;
   @State hasSong: boolean = false;
   @State qIndexMirror: number = -1;  // 队列抽屉当前序高亮镜像
+  @State waveData: Float32Array | null = null; // 波形包络(0.19.0;null=隐藏波形条)
+  @State waveFor: number = -1;
+  private waveCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
+  private waveReady: boolean = false;
+  private waveAccent: string = '#FF7A5C';
+  private waveRest: string = '#66888888';
   private srFor: string = '';
   private pathStack: NavPathStack | null = null;
   private swiperCtrl: SwiperController = new SwiperController();
@@ -172,6 +179,7 @@ export struct FullPlayerDest {
     this.modeMirror = QueueService.get().playMode();
     this.volMirror = Math.round(PlayerController.get().volume * 100);
     AppStorage.setOrCreate('playerExitY', 0); // 上次 pop 残留清零(新实例从原位开始)
+    this.cacheWaveColors();
     // 页面可能晚于播放打开:@Watch 不会补发,主动拉一次(歌词由控制器中心化加载)
     this.onPlayerChanged();
   }
@@ -190,6 +198,7 @@ export struct FullPlayerDest {
     this.modeMirror = QueueService.get().playMode();
     this.refreshSongMirrors();
     this.loadCoverSr();
+    this.loadWaveform();
   }
 
   // 曲目信息镜像刷新(切歌/收藏变化唯一入口;0.15.0)
@@ -207,6 +216,60 @@ export struct FullPlayerDest {
 
   onLibChanged(): void {
     this.favMirror = this.hasSong && LibraryStore.get().isFavorite((PlayerController.get().currentSong as Song).id);
+  }
+
+  // ===== 波形进度条(0.19.0) =====
+
+  // 切歌即拉取包络:缓存命中即时,未命中后台整曲解码(仅 flac/wav,完成且仍是本曲才上屏)
+  private loadWaveform(): void {
+    const s = this.song();
+    if (s === null || !WaveformService.get().supported(s.codec)) {
+      this.waveData = null;
+      this.waveFor = -1;
+      return;
+    }
+    const id = s.id;
+    WaveformService.get().getFor(s).then((d: Float32Array | null): void => {
+      const cur = this.song();
+      if (cur !== null && cur.id === id && d !== null) {
+        this.waveData = d;
+        this.waveFor = id;
+        this.drawWave();
+      }
+    });
+  }
+
+  private drawWave(): void {
+    const d = this.waveData;
+    if (!this.waveReady || d === null) {
+      return;
+    }
+    const w = this.waveCtx.width;
+    const h = this.waveCtx.height;
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+    const n = d.length;
+    const frac = this.durMs() > 1 ? Math.min(1, this.posMs / this.durMs()) : 0;
+    this.waveCtx.clearRect(0, 0, w, h);
+    const barW = w / n;
+    const usable = h - 4;
+    for (let i = 0; i < n; i++) {
+      const bh = Math.max(2, d[i] * usable);
+      const played = (i + 0.5) / n <= frac;
+      this.waveCtx.fillStyle = played ? this.waveAccent : this.waveRest;
+      this.waveCtx.fillRect(i * barW, (h - bh) / 2, Math.max(1, barW - 1), bh);
+    }
+  }
+
+  private cacheWaveColors(): void {
+    try {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const accent = ctx.resourceManager.getColorSync($r('app.color.accent'));
+      this.waveAccent = `#${(accent >>> 0).toString(16).padStart(8, '0')}`;
+    } catch (e) {
+      // 取色失败用兜底色
+    }
   }
 
   // 26-5:当前曲封面短边 <500px 时实时超分(26 设备),完成后回到本曲才上屏
@@ -241,6 +304,7 @@ export struct FullPlayerDest {
   onPosChanged(): void {
     // KB 三规则:posVer 必须经 @Watch 落到 @State 才驱动进度文本/滑条(KB 红线:声明不读=零依赖)
     this.posMs = Math.round(PlayerController.get().positionMs);
+    this.drawWave(); // 波形条已播进度着色(250ms 粒度,与滑条同步)
   }
 
   private song(): Song | null {
@@ -600,8 +664,25 @@ export struct FullPlayerDest {
           .padding({ left: 28, right: 28, top: 6, bottom: 2 })
       }
 
-      // 进度条
-      Column({ space: 4 }) {        Slider({
+      // 进度条(0.19.0:有包络数据时波形条前置,点击波形即 seek)
+      Column({ space: 4 }) {
+        if (this.waveData !== null && this.waveFor >= 0) {
+          Canvas(this.waveCtx)
+            .width('88%')
+            .height(44)
+            .onReady((): void => {
+              this.waveReady = true;
+              this.drawWave();
+            })
+            .onClick((e: ClickEvent) => {
+              const w = this.waveCtx.width;
+              if (w > 0) {
+                const frac = Math.min(1, Math.max(0, e.x / w));
+                PlayerController.get().seekTo(Math.round(frac * this.durMs()));
+              }
+            })
+        }
+        Slider({
           value: this.sliderValue(),
           min: 0,
           max: Math.max(1, this.durMs()),

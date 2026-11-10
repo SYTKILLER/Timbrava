@@ -49,6 +49,7 @@ export class SettingsService {
   vizEnabled: boolean = true;    // 频谱可视化(0.18.0;仅播放页打开+无损引擎+播放中轮询,其余时刻零开销)
   balancePct: number = 0;        // 声道平衡 -100~100(0.18.0;负偏左/正偏右,仅无损引擎)
   monoMode: boolean = false;     // 单声道合并(0.18.0;仅无损引擎)
+  resumePerTrack: boolean = false; // 每曲进度记忆(0.19.0;有声书/播客场景,默认关)
 
   private loaded: boolean = false;
 
@@ -88,6 +89,7 @@ export class SettingsService {
     const bal = parseFloat(await db.getSetting('balancePct', '0'));
     this.balancePct = Number.isFinite(bal) && bal >= -100 && bal <= 100 ? bal : 0;
     this.monoMode = (await db.getSetting('monoMode', '0')) === '1';
+    this.resumePerTrack = (await db.getSetting('resumePerTrack', '0')) === '1';
     this.loaded = true;
     this.syncTokens();
     hilog.info(DOMAIN, TAG, 'settings loaded');
@@ -111,6 +113,7 @@ export class SettingsService {
     this.token('prefVizEnabled', this.vizEnabled);
     this.token('prefBalancePct', this.balancePct);
     this.token('prefMonoMode', this.monoMode);
+    this.token('prefResumeTrack', this.resumePerTrack);
   }
 
   private async save(key: string, value: string): Promise<void> {
@@ -222,5 +225,13 @@ export class SettingsService {
     this.resumeAfterInterrupt = on;
     this.syncTokens();
     await this.save('resumeAfterInterrupt', on ? '1' : '0');
+  }
+
+  // 每曲进度记忆(0.19.0):开=每曲暂停/切曲记位,再播续从记住处;自然播完清点
+  async setResumePerTrack(on: boolean): Promise<void> {
+    this.resumePerTrack = on;
+    this.syncTokens();
+    await this.save('resumePerTrack', on ? '1' : '0');
+    hilog.info(DOMAIN, TAG, 'resume per track -> %{public}s', String(on));
   }
 }

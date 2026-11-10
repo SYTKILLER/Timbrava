@@ -51,6 +51,9 @@ public:
     // ReplayGain 扫描(同步,重活;由 napi 异步工作线程调用,勿在 JS 线程调):
     // 整曲解码测 95 分位块 RMS 与峰值。与播放引擎互不干扰(独立解码器实例)。
     bool analyzeTrack(int fd, float *outRmsDb, float *outPeak, int64_t *outDurationMs, std::string *errMsg);
+    // 波形包络(0.19.0,同步,重活;napi 异步工作线程调用):整曲解码取 buckets 个
+    // 峰值桶(每桶内最大绝对样本),全局归一化到 [0,1]。flac/wav,独立解码器实例。
+    bool analyzeEnvelope(int fd, int buckets, std::vector<float> &out, std::string *errMsg);
     void pollEvents(std::vector<std::string> &out);
     void shutdown();
 

@@ -1571,6 +1571,50 @@
     {
       "name": "sm_s_added",
       "value": "Recently added"
+    },
+    {
+      "name": "resume_track",
+      "value": "Resume per track"
+    },
+    {
+      "name": "resume_track_sub",
+      "value": "Remember position on pause and track switch; finished tracks start over"
+    },
+    {
+      "name": "chart_tab",
+      "value": "Charts"
+    },
+    {
+      "name": "chart_total",
+      "value": "Total time"
+    },
+    {
+      "name": "chart_plays",
+      "value": "Plays"
+    },
+    {
+      "name": "chart_active",
+      "value": "Active days"
+    },
+    {
+      "name": "chart_days",
+      "value": "%s days"
+    },
+    {
+      "name": "chart_heatmap",
+      "value": "Listening heatmap (12 weeks)"
+    },
+    {
+      "name": "chart_heat_light",
+      "value": "Less"
+    },
+    {
+      "name": "chart_heat_heavy",
+      "value": "More"
+    },
+    {
+      "name": "chart_daily",
+      "value": "Daily time (14 days)"
     }
   ]
 }

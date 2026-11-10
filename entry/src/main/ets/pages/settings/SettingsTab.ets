@@ -43,6 +43,7 @@ export struct PrefToggleRow {
   @StorageProp('prefPauseHeadphone') prefPauseHeadphone: boolean = true;
   @StorageProp('prefPauseBt') prefPauseBt: boolean = true;
   @StorageProp('prefResumeInterrupt') prefResumeInterrupt: boolean = true;
+  @StorageProp('prefResumeTrack') prefResumeTrack: boolean = false;
   prefKey: string = 'lossless';
   title: ResourceStr = '';
   sub: ResourceStr = '';
@@ -64,6 +65,9 @@ export struct PrefToggleRow {
     if (this.prefKey === 'bt') {
       return this.prefPauseBt;
     }
+    if (this.prefKey === 'resumeTrack') {
+      return this.prefResumeTrack;
+    }
     return this.prefResumeInterrupt;
   }
 
@@ -75,6 +79,8 @@ export struct PrefToggleRow {
       s.setPauseOnHeadphoneOff(v);
     } else if (this.prefKey === 'bt') {
       s.setPauseOnBtOff(v);
+    } else if (this.prefKey === 'resumeTrack') {
+      s.setResumePerTrack(v);
     } else {
       s.setResumeAfterInterrupt(v);
     }
@@ -218,6 +224,9 @@ export struct SettingsTab {
               PrefToggleRow({ prefKey: 'bt', title: $r('app.string.pause_bt'), sub: $r('app.string.pause_bt_sub') })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               PrefToggleRow({ prefKey: 'resume', title: $r('app.string.auto_resume'), sub: $r('app.string.auto_resume_sub') })
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              PrefToggleRow({ prefKey: 'resumeTrack', title: $r('app.string.resume_track'),
+                sub: $r('app.string.resume_track_sub') })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               OnlineLyricsRow()
             }

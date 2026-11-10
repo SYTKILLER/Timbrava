@@ -1571,6 +1571,50 @@
     {
       "name": "sm_s_added",
       "value": "最近添加"
+    },
+    {
+      "name": "resume_track",
+      "value": "每曲进度记忆"
+    },
+    {
+      "name": "resume_track_sub",
+      "value": "暂停与切曲记位,再播续从记住处;自然播完从头"
+    },
+    {
+      "name": "chart_tab",
+      "value": "图表"
+    },
+    {
+      "name": "chart_total",
+      "value": "累计时长"
+    },
+    {
+      "name": "chart_plays",
+      "value": "播放次数"
+    },
+    {
+      "name": "chart_active",
+      "value": "活跃天数"
+    },
+    {
+      "name": "chart_days",
+      "value": "%s 天"
+    },
+    {
+      "name": "chart_heatmap",
+      "value": "听歌热图(近 12 周)"
+    },
+    {
+      "name": "chart_heat_light",
+      "value": "少"
+    },
+    {
+      "name": "chart_heat_heavy",
+      "value": "多"
+    },
+    {
+      "name": "chart_daily",
+      "value": "近 14 天每日时长"
     }
   ]
 }

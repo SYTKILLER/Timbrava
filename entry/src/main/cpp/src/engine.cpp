@@ -664,6 +664,81 @@ bool Engine::analyzeTrack(int fd, float *outRmsDb, float *outPeak, int64_t *outD
     return true;
 }
 
+// 波形包络(0.19.0):独立解码器整曲读一遍,按桶取峰值,全局归一化。
+// 与 analyzeTrack 同构:flac/wav;DSD 整曲解码代价过高,不纳入(波形条仅 PCM 无损)。
+bool Engine::analyzeEnvelope(int fd, int buckets, std::vector<float> &out, std::string *errMsg)
+{
+    if (errMsg == nullptr) {
+        return false;
+    }
+    if (buckets <= 0 || buckets > 4096) {
+        buckets = 400;
+    }
+    std::unique_ptr<IDecoder> dec;
+    auto flac = std::make_unique<FlacDecoder>();
+    if (flac->openFile(fd, TrackInfo{})) {
+        dec = std::move(flac);
+    } else {
+        auto wav = std::make_unique<WavDecoder>();
+        if (wav->openFile(fd, TrackInfo{})) {
+            dec = std::move(wav);
+        } else {
+            *errMsg = "unsupported codec for envelope (flac/wav only)";
+            return false;
+        }
+    }
+    const TrackInfo info = dec->info();
+    const int ch = info.channels > 0 ? info.channels : 2;
+    const OutputFormat fmt = dec->outFormat();
+    const int bps = fmt == OutputFormat::U8 ? 1 : fmt == OutputFormat::S16LE ? 2 : 4;
+
+    out.assign(static_cast<size_t>(buckets), 0.0f);
+    std::vector<uint8_t> buf(256 * 1024);
+    int64_t frameIdx = 0;
+    const double invTotal = info.totalFrames > 0 ? static_cast<double>(buckets) / static_cast<double>(info.totalFrames) : 0.0;
+    std::vector<float> fbuf;
+    for (;;) {
+        const int64_t maxFrames = static_cast<int64_t>(buf.size()) / (static_cast<int64_t>(bps) * ch);
+        const int64_t got = dec->readFrames(buf.data(), maxFrames, buf.size());
+        if (got <= 0) {
+            break;
+        }
+        fbuf.resize(static_cast<size_t>(got) * ch);
+        timbrava::convertToInterleavedF32(buf.data(), static_cast<size_t>(got) * ch * bps, fmt, fbuf.data());
+        for (int64_t f = 0; f < got; f++) {
+            const int64_t bi = static_cast<int64_t>(static_cast<double>(frameIdx + f) * invTotal);
+            size_t b = (bi >= 0 && bi < buckets) ? static_cast<size_t>(bi) : static_cast<size_t>(buckets - 1);
+            const float *frame = fbuf.data() + static_cast<size_t>(f) * ch;
+            float peak = 0.0f;
+            for (int c = 0; c < ch; c++) {
+                const float a = frame[c] < 0.0f ? -frame[c] : frame[c];
+                if (a > peak) {
+                    peak = a;
+                }
+            }
+            if (peak > out[b]) {
+                out[b] = peak;
+            }
+        }
+        frameIdx += got;
+    }
+    // 全局归一化到 [0,1]
+    float gmax = 0.0f;
+    for (const float v : out) {
+        if (v > gmax) {
+            gmax = v;
+        }
+    }
+    if (gmax > 1e-6f) {
+        for (float &v : out) {
+            v /= gmax;
+        }
+    }
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "envelope done frames=%{public}lld buckets=%{public}d",
+                 static_cast<long long>(frameIdx), buckets);
+    return true;
+}
+
 void Engine::setVolume(float vol)
 {
     volume_ = std::max(0.0f, std::min(1.0f, vol));

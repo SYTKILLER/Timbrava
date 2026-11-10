@@ -157,6 +157,7 @@ export class PlayerController {
         if (remainMs <= 0) {
           this.sleepAtMs = 0;
           if (this.isPlaying) {
+            this.saveTrackPosOf(this.currentSong !== null ? this.currentSong.id : -1, this.positionMs);
             this.engine?.pause();
             this.isPlaying = false;
             this.syncSessionState();
@@ -272,6 +273,14 @@ export class PlayerController {
       this.durationMs = info.durationMs > 0 ? info.durationMs : song.durationMs;
     }
     this.positionMs = 0;
+    // 每曲进度记忆(0.19.0):开档且无显式续播点时,从记住处续播(CUE 分轨不做,区间语义另计)
+    if (resumeFromMs === 0 && SettingsService.get().resumePerTrack && !(song.cueEndMs > song.cueStartMs)) {
+      const saved = await Db.get().getTrackPos(song.id);
+      if (saved > 5000 && (song.durationMs <= 0 || saved < song.durationMs - 5000)) {
+        resumeFromMs = saved;
+        hilog.info(DOMAIN, TAG, 'resume per track song=%{public}d at %{public}dms', song.id, saved);
+      }
+    }
     const effectiveResume = cueStart + resumeFromMs;
     if (effectiveResume > 0) {
       target.seek(effectiveResume);
@@ -287,6 +296,9 @@ export class PlayerController {
     this.isPlaying = true;
     if (prevSong !== null && previousPlayedMs > 10000 && prevSong.id !== song.id) {
       await Db.get().recordPlay(prevSong.id, previousPlayedMs);
+    }
+    if (prevSong !== null && prevSong.id !== song.id) {
+      this.saveTrackPosOf(prevSong.id, previousPlayedMs); // 切曲前记上一曲进度(0.19.0)
     }
     this.ensureBgTask();
     this.syncSessionNowPlaying();
@@ -409,6 +421,7 @@ export class PlayerController {
       try {
         if (this.currentSong !== null) {
           await Db.get().recordPlay(this.currentSong.id, this.durationMs);
+          Db.get().clearTrackPos(this.currentSong.id); // 自然播完:清进度记忆(再播从头)
         }
         await this.autoNext();
       } finally {
@@ -522,6 +535,7 @@ export class PlayerController {
     const prev = this.currentSong;
     if (prev !== null) {
       await Db.get().recordPlay(prev.id, this.durationMs);
+      Db.get().clearTrackPos(prev.id); // gapless 播完交接:上一曲清进度记忆
     }
     const nextIdx = this.gaplessTargetIdx >= 0 ? this.gaplessTargetIdx : this.queue.nextIndex(true);
     this.gaplessTargetIdx = -1;
@@ -580,6 +594,7 @@ export class PlayerController {
     if (cur !== null && nextSong !== null && nextSong.path === cur.path &&
       this.engineKind === EngineKind.LOSSLESS && this.engine !== null) {
       // 区间 gapless:同一解码文件内 seek 到下一轨起点,renderer 连续
+      Db.get().clearTrackPos(cur.id); // CUE 区间播完:清进度记忆
       Db.get().recordPlay(cur.id, cur.cueEndMs - cur.cueStartMs).then((): void => {
         this.queue.jumpTo(next);
         this.currentSong = nextSong;
@@ -618,6 +633,7 @@ export class PlayerController {
       return;
     }
     if (this.isPlaying) {
+      this.saveTrackPosOf(this.currentSong !== null ? this.currentSong.id : -1, this.positionMs);
       this.engine.pause();
       this.isPlaying = false;
     } else {
@@ -837,6 +853,23 @@ export class PlayerController {
     return this.losslessEngine.analyzeFd(fd);
   }
 
+  // 波形包络通道(0.19.0 波形进度条;flac/wav;fd 在 promise 完成前保持有效)
+  async envelopeFor(fd: number, buckets: number): Promise<Float32Array | null> {
+    const r = await this.losslessEngine.envelopeFd(fd, buckets);
+    return r.ok ? r.data : null;
+  }
+
+  // ===== 每曲进度记忆(0.19.0,设置 resumePerTrack) =====
+  // 写点:暂停/切曲/断连/睡眠到点(>5s 才记);清点:自然播完(再播从头)。
+  private saveTrackPosOf(songId: number, posMs: number): void {
+    if (songId <= 0 || !SettingsService.get().resumePerTrack || posMs < 5000) {
+      return;
+    }
+    Db.get().saveTrackPos(songId, Math.round(posMs)).then((): void => {
+      hilog.debug(DOMAIN, TAG, 'track pos saved song=%{public}d pos=%{public}d', songId, Math.round(posMs));
+    });
+  }
+
   // 扫描完成后即时重应用 DSP(正在播放曲目用新增益)
   reapplyCurrentDsp(): void {
     this.applyDspToEngine();
@@ -1006,6 +1039,7 @@ export class PlayerController {
     if (hint === 2 || hint === 3) {
       if (this.isPlaying) {
         this.pausedByInterrupt = true;
+        this.saveTrackPosOf(this.currentSong !== null ? this.currentSong.id : -1, this.positionMs);
         this.engine?.pause();
         this.isPlaying = false;
         this.syncSessionState();
@@ -1052,6 +1086,7 @@ export class PlayerController {
           }
           const settings = SettingsService.get();
           if ((isBt && settings.pauseOnBtOff) || (!isBt && settings.pauseOnHeadphoneOff)) {
+            this.saveTrackPosOf(this.currentSong !== null ? this.currentSong.id : -1, this.positionMs);
             this.engine?.pause();
             this.isPlaying = false;
             this.syncSessionState();

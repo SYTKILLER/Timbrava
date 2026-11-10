@@ -402,6 +402,78 @@ static napi_value JAnalyzeFd(napi_env env, napi_callback_info info)
     return promise;
 }
 
+// ---------------- 波形包络(napi 异步工作,Promise 返回 Float32Array) ----------------
+// fd 契约与 analyzeFd 一致:调用方保持 fd 打开至 Promise 完成。
+
+struct EnvelopeCarrier {
+    int fd = -1;
+    int buckets = 400;
+    bool ok = false;
+    std::string errMsg;
+    std::vector<float> data;
+    napi_deferred deferred = nullptr;
+    napi_async_work work = nullptr;
+};
+
+static void ExecuteEnvelope(napi_env env, void *data)
+{
+    EnvelopeCarrier *c = static_cast<EnvelopeCarrier *>(data);
+    c->ok = timbrava::Engine::instance().analyzeEnvelope(c->fd, c->buckets, c->data, &c->errMsg);
+}
+
+static void CompleteEnvelope(napi_env env, napi_status status, void *data)
+{
+    EnvelopeCarrier *c = static_cast<EnvelopeCarrier *>(data);
+    napi_value result = nullptr;
+    napi_create_object(env, &result);
+    napi_value v;
+    napi_get_boolean(env, c->ok, &v);
+    napi_set_named_property(env, result, "ok", v);
+    if (c->ok && !c->data.empty()) {
+        const size_t n = c->data.size();
+        void *abData = nullptr;
+        napi_value ab = nullptr;
+        if (napi_create_arraybuffer(env, n * sizeof(float), &abData, &ab) == napi_ok &&
+            abData != nullptr && ab != nullptr) {
+            memcpy(abData, c->data.data(), n * sizeof(float));
+            napi_value ta = nullptr;
+            if (napi_create_typedarray(env, napi_float32_array, static_cast<size_t>(n), ab, 0, &ta) == napi_ok &&
+                ta != nullptr) {
+                napi_set_named_property(env, result, "data", ta);
+            }
+        }
+    } else if (!c->ok) {
+        napi_create_string_utf8(env, c->errMsg.c_str(), NAPI_AUTO_LENGTH, &v);
+        napi_set_named_property(env, result, "msg", v);
+    }
+    napi_resolve_deferred(env, c->deferred, result);
+    napi_delete_async_work(env, c->work);
+    delete c;
+}
+
+static napi_value JEnvelopeFd(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    EnvelopeCarrier *c = new EnvelopeCarrier();
+    if (argc >= 1) {
+        napi_get_value_int32(env, args[0], &c->fd);
+    }
+    if (argc >= 2) {
+        double b = 400;
+        napi_get_value_double(env, args[1], &b);
+        c->buckets = static_cast<int>(b);
+    }
+    napi_value promise;
+    napi_create_promise(env, &c->deferred, &promise);
+    napi_value name;
+    napi_create_string_utf8(env, "timbravaEnvelope", NAPI_AUTO_LENGTH, &name);
+    napi_create_async_work(env, nullptr, name, ExecuteEnvelope, CompleteEnvelope, c, &c->work);
+    napi_queue_async_work(env, c->work);
+    return promise;
+}
+
 // 调试/验证通道:应用对自己沙箱目录授权(宿主 shell uid 需穿越写入语料)
 static napi_value JChmodPath(napi_env env, napi_callback_info info)
 {
@@ -781,6 +853,7 @@ static napi_value Init(napi_env env, napi_value exports)
         {"vizSetEnabled", nullptr, JVizSetEnabled, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"vizPoll", nullptr, JVizPoll, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"analyzeFd", nullptr, JAnalyzeFd, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"envelopeFd", nullptr, JEnvelopeFd, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"writeFlacTags", nullptr, JWriteFlacTags, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"hashFd", nullptr, JHashFd, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"fingerprintFd", nullptr, JFingerprintFd, nullptr, nullptr, nullptr, napi_default, nullptr},

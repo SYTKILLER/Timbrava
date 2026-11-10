@@ -65,6 +65,12 @@ const SQL_CREATE: string[] = [
   // EQ 作用域覆盖(M3 批次):target = 'song:{id}' | 'album:{albumArtist}\u0001{album}'(与 LibraryStore 分组键一致)
   `CREATE TABLE IF NOT EXISTS eq_assign(
     target TEXT PRIMARY KEY, bands TEXT NOT NULL DEFAULT '[]')`,
+  // 每曲进度记忆(0.19.0,有声书/播客场景;resumePerTrack 开关启用)
+  `CREATE TABLE IF NOT EXISTS track_pos(
+    song_id INTEGER PRIMARY KEY, pos_ms INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
+  // 波形包络缓存(0.19.0 波形进度条;native 解码整曲取峰值桶,BLOB = Float32Array 字节)
+  `CREATE TABLE IF NOT EXISTS waveform_cache(
+    song_id INTEGER PRIMARY KEY, buckets INTEGER DEFAULT 0, data BLOB)`,
   `CREATE TABLE IF NOT EXISTS app_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)`
 ];
 
@@ -96,6 +102,13 @@ export class MostRow {
   count: number = 0;
   totalMs: number = 0;
   lastPlayed: number = 0;
+}
+
+// 按日播放聚合(0.19.0 统计图表;day = epoch 整日序号)
+export class DayAgg {
+  day: number = 0;
+  ms: number = 0;
+  plays: number = 0;
 }
 
 export class Db {
@@ -1005,6 +1018,103 @@ export class Db {
     const pred = new relationalStore.RdbPredicates('play_count');
     pred.equalTo('song_id', songId);
     await st.delete(pred);
+  }
+
+  // 按日播放聚合(0.19.0 统计图表:热图/每日曲线;history epoch ms 整除分组)
+  async listPlayAggByDay(days: number): Promise<DayAgg[]> {
+    const st = this.storeOrThrow();
+    const out: DayAgg[] = [];
+    try {
+      const since = Date.now() - days * 86400000;
+      const rs = await st.querySql(
+        'SELECT played_at/86400000 AS day, SUM(ms_played) AS ms, COUNT(*) AS n FROM history ' +
+        'WHERE played_at >= ? GROUP BY day ORDER BY day', [since]);
+      while (rs.goToNextRow()) {
+        const row = new DayAgg();
+        row.day = rs.getLong(rs.getColumnIndex('day'));
+        const msIdx = rs.getColumnIndex('ms');
+        if (rs.getColumnTypeSync(msIdx) === relationalStore.ColumnType.REAL) {
+          row.ms = Math.round(rs.getDouble(msIdx));
+        } else if (rs.getColumnTypeSync(msIdx) !== relationalStore.ColumnType.NULL) {
+          row.ms = rs.getLong(msIdx);
+        }
+        row.plays = rs.getLong(rs.getColumnIndex('n'));
+        out.push(row);
+      }
+      rs.close();
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'listPlayAggByDay fail %{public}s', (e as Error).message);
+    }
+    return out;
+  }
+
+  // ============ 每曲进度记忆(0.19.0) ============
+
+  // 无记忆/记忆过短返回 0(调用方 <5s 不恢复)
+  async getTrackPos(songId: number): Promise<number> {
+    const st = this.storeOrThrow();
+    try {
+      const rs = await st.querySql('SELECT pos_ms FROM track_pos WHERE song_id = ?', [songId]);
+      let v = 0;
+      if (rs.goToFirstRow()) {
+        v = rs.getLong(0);
+      }
+      rs.close();
+      return v;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  async saveTrackPos(songId: number, posMs: number): Promise<void> {
+    const st = this.storeOrThrow();
+    const bucket: relationalStore.ValuesBucket = {
+      'song_id': songId, 'pos_ms': Math.round(posMs), 'updated_at': Date.now()
+    };
+    await st.insert('track_pos', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+  }
+
+  async clearTrackPos(songId: number): Promise<void> {
+    const st = this.storeOrThrow();
+    const pred = new relationalStore.RdbPredicates('track_pos');
+    pred.equalTo('song_id', songId);
+    await st.delete(pred);
+  }
+
+  // ============ 波形包络缓存(0.19.0) ============
+
+  // BLOB → Float32Array(缓存行 buckets 与请求不符视为无效返回 null,防历史数据口径漂移)
+  async getWaveform(songId: number, buckets: number): Promise<Float32Array | null> {
+    const st = this.storeOrThrow();
+    try {
+      const rs = await st.querySql('SELECT buckets, data FROM waveform_cache WHERE song_id = ?', [songId]);
+      let out: Float32Array | null = null;
+      if (rs.goToFirstRow()) {
+        if (rs.getLong(rs.getColumnIndex('buckets')) === buckets) {
+          const blob = rs.getBlob(rs.getColumnIndex('data'));
+          if (blob !== undefined && blob !== null && blob.byteLength >= 4) {
+            out = new Float32Array(blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.byteLength));
+          }
+        }
+      }
+      rs.close();
+      return out;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'getWaveform fail %{public}s', (e as Error).message);
+      return null;
+    }
+  }
+
+  async putWaveform(songId: number, buckets: number, data: Float32Array): Promise<void> {
+    const st = this.storeOrThrow();
+    try {
+      const bucket: relationalStore.ValuesBucket = {
+        'song_id': songId, 'buckets': buckets, 'data': new Uint8Array(data.buffer)
+      };
+      await st.insert('waveform_cache', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'putWaveform fail %{public}s', (e as Error).message);
+    }
   }
 
   // ============ EQ 作用域覆盖(song:/album: target) ============

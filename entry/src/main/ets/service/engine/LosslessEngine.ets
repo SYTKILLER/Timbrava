@@ -43,6 +43,7 @@ interface NativeModule {
   vizSetEnabled(on: boolean): void;
   vizPoll(): NativeVizResult;
   analyzeFd(fd: number): Promise<NativeAnalyzeResult>;
+  envelopeFd(fd: number, buckets: number): Promise<NativeEnvelopeResult>;
 };
 
 export interface NativeAnalyzeResult {
@@ -51,6 +52,13 @@ export interface NativeAnalyzeResult {
   rmsDb: number;
   peak: number;
   durationMs: number;
+}
+
+// 波形包络结果(0.19.0):buckets 个峰值桶,全局归一化 [0,1];失败 ok=false
+export interface NativeEnvelopeResult {
+  ok: boolean;
+  msg: string;
+  data: Float32Array;
 }
 
 // 频谱快照(0.18.0):48 对数频段归一化能量(0~1)+ RMS dBFS / 线性峰值
@@ -241,6 +249,11 @@ export class LosslessEngine implements IAudioEngine {
   // ReplayGain 扫描(native 异步工作线程;fd 在 promise 完成前保持有效)
   async analyzeFd(fd: number): Promise<NativeAnalyzeResult> {
     return (timbravaCore as NativeModule).analyzeFd(fd);
+  }
+
+  // 波形包络(0.19.0):整曲解码取峰值桶;fd 在 promise 完成前保持有效(flac/wav)
+  async envelopeFd(fd: number, buckets: number): Promise<NativeEnvelopeResult> {
+    return (timbravaCore as NativeModule).envelopeFd(fd, buckets);
   }
 
   release(): void {
