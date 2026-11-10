@@ -88,6 +88,10 @@ struct DspConfig {
     float rgAlbumPeak = 0.0f;
     int rgMode = kReplayGainOff;
 
+    // 声道平衡/单声道(0.18.0):声明值,发布时进不可变快照
+    float balance = 0.0f; // [-1,1]
+    bool mono = false;
+
     // 状态代次:prepare / PEQ 开关切换时递增,音频线程据此自行清零滤波状态
     // (避免控制线程直接清零与音频线程产生数据竞争)。
     uint32_t stateEpoch = 1;
@@ -114,6 +118,10 @@ struct DspParams {
     bool allIdentity = true; // 31 段全部恒等 → PEQ 整链直通
     uint32_t stateEpoch = 1;
     float rgGain = 1.0f; // 线性增益(= 10^(dB/20);mode==off 时为 1)
+
+    float balance = 0.0f;      // [-1,1]
+    bool mono = false;
+    bool balanceActive = false; // balance≠0 或 mono → 平衡阶段参与处理
 
     bool identity[kPeqBandCount] = {};        // 该段是否恒等(可跳过)
     float coeffs[kPeqBandCount][kCoeffsPerBand] = {};
@@ -343,6 +351,9 @@ DspParams buildParams(const DspConfig &cfg) {
     p.rgGain = (cfg.rgMode == kReplayGainTrack) ? rgLinearGain(cfg.rgTrackGainDb)
                : (cfg.rgMode == kReplayGainAlbum) ? rgLinearGain(cfg.rgAlbumGainDb)
                                                   : 1.0f;
+    p.balance = cfg.balance;
+    p.mono = cfg.mono;
+    p.balanceActive = cfg.mono || cfg.balance > 0.001f || cfg.balance < -0.001f;
 
     bool all = true;
     for (int b = 0; b < kPeqBandCount; ++b) {
@@ -421,20 +432,39 @@ void dspProcessInterleavedF32(float *data, size_t frameCount) {
 
     const bool rgOn = (p.rgGain != 1.0f);
     const bool peqOn = (p.peqEnabled && !p.allIdentity);
-    if (!rgOn && !peqOn && !p.skipSilence) return; // DSP 全关:逐位直通(恒等保证)
+    if (!rgOn && !peqOn && !p.skipSilence && !p.balanceActive) {
+        return; // DSP 全关:逐位直通(恒等保证)
+    }
 
     for (size_t f = 0; f < frameCount; ++f) {
         float *frame = data + f * static_cast<size_t>(ch);
-        float x = 0.0f;
+        // 逐声道先出 RG/PEQ 结果(平衡/单声道需要全声道值后置),再统一限幅
+        float vals[kDspMaxChannels];
         for (int c = 0; c < ch; ++c) {
-            x = frame[c];
+            float x = frame[c];
             if (rgOn) {
                 x *= p.rgGain; // RG:线性增益 = 10^(dB/20)(控制线程预算)
             }
             if (peqOn) {
                 x = peqChain(x, g_state[c], p); // PEQ:31 段 biquad 串联
             }
-            frame[c] = softLimit(x); // 软限幅:兜住 RG / PEQ 造成的 >1.0 过冲
+            vals[c] = x;
+        }
+        if (p.balanceActive && ch >= 2) {
+            if (p.mono) {
+                // 单声道合并:左右取均值(>2 声道仅混前两声道,罕见格式保守处理)
+                const float m = (vals[0] + vals[1]) * 0.5f;
+                vals[0] = m;
+                vals[1] = m;
+            }
+            if (p.balance > 0.0f) {
+                vals[1] *= (1.0f - p.balance); // 偏右:衰减右声道
+            } else if (p.balance < 0.0f) {
+                vals[0] *= (1.0f + p.balance); // 偏左:衰减左声道
+            }
+        }
+        for (int c = 0; c < ch; ++c) {
+            frame[c] = softLimit(vals[c]); // 软限幅:兜住 RG / PEQ / 平衡 造成的 >1.0 过冲
         }
         if (p.skipSilence) {
             gateTick(frame, ch, p.sampleRate);
@@ -493,6 +523,17 @@ void dspSetReplayGain(float trackGainDb, float trackPeak, float albumGainDb,
     g_config.rgMode = (mode == kReplayGainTrack || mode == kReplayGainAlbum)
                           ? mode
                           : kReplayGainOff;
+    publishParams();
+}
+
+void dspSetBalance(float balance, bool mono) {
+    std::lock_guard<std::mutex> lk(g_configMutex);
+    float b = balance;
+    if (!(b > -1.0e9f && b < 1.0e9f)) b = 0.0f; // NaN / Inf 防护
+    if (b > 1.0f) b = 1.0f;
+    if (b < -1.0f) b = -1.0f;
+    g_config.balance = b;
+    g_config.mono = mono;
     publishParams();
 }
 

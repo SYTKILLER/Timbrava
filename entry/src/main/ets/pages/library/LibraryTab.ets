@@ -19,6 +19,8 @@ import { PlayerController } from '../../service/PlayerController';
 import { QueueService } from '../../service/QueueService';
 import { L, Ls } from '../../common/Lang';
 import { BarCollapse } from '../../common/BarCollapse';
+import { SelService } from '../../common/SelService';
+import { SelActionBar } from '../../components/SelActionBar';
 import { PlaylistsTab } from '../playlist/PlaylistsTab';
 
 const TAG = '[Timbrava][Library]';
@@ -296,6 +298,8 @@ export struct LibraryTab {
       ids.push(s.id);
     }
     this.songIdCache = ids;
+    // 多选宿主注册(0.18.0):全选/反选范围 = 当前排序下的歌曲序
+    SelService.get().setHost(ids);
     this.songRows.setData(rows);
   }
 
@@ -835,6 +839,9 @@ export struct LibraryTab {
         }
         .width('100%')
         .layoutWeight(1)
+
+        // 多选批量操作栏(0.18.0):未激活零高度
+        SelActionBar()
       }
       .width('100%')
       .height('100%')

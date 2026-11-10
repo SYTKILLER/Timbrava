@@ -1355,6 +1355,222 @@
     {
       "name": "rescan_started",
       "value": "已开始重新扫描"
+    },
+    {
+      "name": "viz_toggle",
+      "value": "频谱可视化"
+    },
+    {
+      "name": "output_title",
+      "value": "输出"
+    },
+    {
+      "name": "balance_title",
+      "value": "声道平衡"
+    },
+    {
+      "name": "balance_left",
+      "value": "左"
+    },
+    {
+      "name": "balance_right",
+      "value": "右"
+    },
+    {
+      "name": "balance_sub",
+      "value": "负偏左、正偏右;仅无损引擎生效"
+    },
+    {
+      "name": "balance_center",
+      "value": "居中"
+    },
+    {
+      "name": "balance_left_pct",
+      "value": "偏左 %s%"
+    },
+    {
+      "name": "balance_right_pct",
+      "value": "偏右 %s%"
+    },
+    {
+      "name": "mono_title",
+      "value": "单声道"
+    },
+    {
+      "name": "mono_sub",
+      "value": "左右声道合并;系统引擎不生效"
+    },
+    {
+      "name": "menu_multiselect",
+      "value": "多选"
+    },
+    {
+      "name": "add_to_playlist",
+      "value": "加入歌单"
+    },
+    {
+      "name": "sel_count",
+      "value": "已选 %s 首"
+    },
+    {
+      "name": "sel_all",
+      "value": "全选"
+    },
+    {
+      "name": "sel_invert",
+      "value": "反选"
+    },
+    {
+      "name": "sel_fav_done",
+      "value": "已收藏 %s 首歌曲"
+    },
+    {
+      "name": "sel_queue_done",
+      "value": "已加入队列 %s 首"
+    },
+    {
+      "name": "sel_playnext_done",
+      "value": "已设为下一首播放 %s 首"
+    },
+    {
+      "name": "sel_pl_done",
+      "value": "已加入「%s」%s 首"
+    },
+    {
+      "name": "sel_pl_title",
+      "value": "添加 %s 首歌曲到歌单"
+    },
+    {
+      "name": "sel_pl_new",
+      "value": "新建歌单…"
+    },
+    {
+      "name": "sm_new",
+      "value": "新建智能歌单"
+    },
+    {
+      "name": "sm_edit",
+      "value": "编辑规则"
+    },
+    {
+      "name": "sm_delete",
+      "value": "删除智能歌单"
+    },
+    {
+      "name": "sm_rule_count",
+      "value": "规则 %s 条"
+    },
+    {
+      "name": "sm_editor_title",
+      "value": "智能歌单"
+    },
+    {
+      "name": "sm_name_hint",
+      "value": "智能歌单名称"
+    },
+    {
+      "name": "sm_no_rule_hint",
+      "value": "暂无条件,点下方按钮添加"
+    },
+    {
+      "name": "sm_add_rule",
+      "value": "＋ 添加条件"
+    },
+    {
+      "name": "sm_sort",
+      "value": "排序"
+    },
+    {
+      "name": "sm_limit",
+      "value": "数量上限"
+    },
+    {
+      "name": "sm_limit_hint",
+      "value": "0 = 不限量;智能歌单内容随曲库自动更新"
+    },
+    {
+      "name": "sm_need_rule",
+      "value": "请至少添加一条有效条件"
+    },
+    {
+      "name": "sm_rule_fav_hint",
+      "value": "已收藏的歌曲"
+    },
+    {
+      "name": "sm_num_hint",
+      "value": "数值"
+    },
+    {
+      "name": "sm_text_hint",
+      "value": "关键字"
+    },
+    {
+      "name": "sm_f_artist",
+      "value": "艺人包含"
+    },
+    {
+      "name": "sm_f_album",
+      "value": "专辑包含"
+    },
+    {
+      "name": "sm_f_genre",
+      "value": "流派包含"
+    },
+    {
+      "name": "sm_f_codec",
+      "value": "格式等于"
+    },
+    {
+      "name": "sm_f_fav",
+      "value": "已收藏"
+    },
+    {
+      "name": "sm_f_played",
+      "value": "播放次数≥"
+    },
+    {
+      "name": "sm_f_added",
+      "value": "最近N天入库"
+    },
+    {
+      "name": "sm_f_rate",
+      "value": "采样率≥Hz"
+    },
+    {
+      "name": "sm_f_bits",
+      "value": "位深≥"
+    },
+    {
+      "name": "sm_f_minyear",
+      "value": "年份≥"
+    },
+    {
+      "name": "sm_f_maxyear",
+      "value": "年份≤"
+    },
+    {
+      "name": "sm_f_dur",
+      "value": "时长≥秒"
+    },
+    {
+      "name": "sm_s_plays",
+      "value": "播放次数"
+    },
+    {
+      "name": "eq_exported",
+      "value": "曲线已复制到剪贴板并保存:%s"
+    },
+    {
+      "name": "eq_exported_nocopy",
+      "value": "曲线已保存:%s(剪贴板不可用)"
+    },
+    {
+      "name": "str_save",
+      "value": "保存"
+    },
+    {
+      "name": "sm_s_added",
+      "value": "最近添加"
     }
   ]
 }

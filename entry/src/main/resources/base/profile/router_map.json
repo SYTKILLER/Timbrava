@@ -79,6 +79,14 @@
       "data": {
         "description": "统计回顾(最近/最常播放)"
       }
+    },
+    {
+      "name": "SmartPlEditor",
+      "pageSourceFile": "src/main/ets/pages/playlist/SmartPlEditor.ets",
+      "buildFunction": "SmartPlEditorBuilder",
+      "data": {
+        "description": "规则式智能歌单编辑"
+      }
     }
   ]
 }

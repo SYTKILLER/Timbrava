@@ -37,6 +37,11 @@ const SQL_CREATE: string[] = [
   `CREATE TABLE IF NOT EXISTS playlist_songs(
     playlist_id INTEGER NOT NULL, song_id INTEGER NOT NULL, position INTEGER NOT NULL,
     UNIQUE(playlist_id, position))`,
+  // 规则式智能歌单(0.18.0):rules 为 SmartRule JSON 数组,查询时动态生成 WHERE,内容永远随库更新
+  `CREATE TABLE IF NOT EXISTS smart_playlists(
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL,
+    rules TEXT NOT NULL DEFAULT '[]', sort_by TEXT DEFAULT 'added',
+    limit_n INTEGER DEFAULT 0, created_at INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS queues(
     id TEXT PRIMARY KEY, title TEXT DEFAULT '', created_at INTEGER DEFAULT 0, last_active_at INTEGER DEFAULT 0,
     is_pinned INTEGER DEFAULT 0, is_original INTEGER DEFAULT 1,

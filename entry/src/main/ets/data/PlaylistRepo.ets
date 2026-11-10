@@ -16,6 +16,94 @@ export class PlaylistInfo {
   createdAt: number = 0;
 }
 
+// ============ 规则式智能歌单(0.18.0) ============
+
+// 规则字段:文本包含类 artist/album/genre/codec(value);
+// 条件类 fav(收藏)/played(播放次数≥num)/addedDays(最近 num 天入库)/
+// minRate(采样率≥num Hz)/minBits(位深≥num)/minYear/maxYear(年份区间)/minDur(时长≥num 秒)
+export class SmartRule {
+  field: string = 'genre';
+  value: string = '';
+  num: number = 0;
+
+  static of(field: string): SmartRule {
+    const r = new SmartRule();
+    r.field = field;
+    if (field === 'played') {
+      r.num = 1;
+    } else if (field === 'addedDays') {
+      r.num = 30;
+    } else if (field === 'minRate') {
+      r.num = 96000;
+    } else if (field === 'minBits') {
+      r.num = 24;
+    } else if (field === 'minYear') {
+      r.num = 1980;
+    } else if (field === 'maxYear') {
+      r.num = 2030;
+    } else if (field === 'minDur') {
+      r.num = 180;
+    } else if (field === 'codec') {
+      r.value = 'flac';
+    }
+    return r;
+  }
+}
+
+// 列表行(歌单页)
+export class SmartPlInfo {
+  id: number = 0;
+  name: string = '';
+  ruleCount: number = 0;
+  sortBy: string = 'added';
+  limitN: number = 0;
+  createdAt: number = 0;
+}
+
+// 编辑页完整行
+export class SmartPlFull {
+  id: number = 0;
+  name: string = '';
+  rules: SmartRule[] = [];
+  sortBy: string = 'added';
+  limitN: number = 0;
+}
+
+// 规则 → SQL 片段(全部参数化,无拼接注入面)
+class SmartQueryParts {
+  from: string = 'FROM songs s';
+  where: string = '';
+  args: Array<string | number> = [];
+  orderBy: string = 'ORDER BY s.date_added DESC';
+  limitSql: string = '';
+}
+
+// 规则 JSON 序列化/反序列化(ArkTS 严格类型:逐字段手工映射)
+export function smartRulesToJson(rules: SmartRule[]): string {
+  const arr: Array<Record<string, Object>> = [];
+  for (const r of rules) {
+    arr.push({ 'f': r.field, 'v': r.value, 'n': r.num } as Record<string, Object>);
+  }
+  return JSON.stringify(arr);
+}
+
+export function smartRulesFromJson(json: string): SmartRule[] {
+  const out: SmartRule[] = [];
+  try {
+    const arr = JSON.parse(json) as Array<Record<string, Object>>;
+    for (const o of arr) {
+      const r = new SmartRule();
+      r.field = String(o['f'] ?? 'genre');
+      r.value = String(o['v'] ?? '');
+      r.num = Number(o['n'] ?? 0);
+      out.push(r);
+    }
+  } catch (e) {
+    return out;
+  }
+  return out;
+}
+
 export class PlaylistRepo {
   private static instance: PlaylistRepo | null = null;
 
@@ -53,6 +141,11 @@ export class PlaylistRepo {
         `CREATE TABLE IF NOT EXISTS playlist_songs(
         playlist_id INTEGER NOT NULL, song_id INTEGER NOT NULL, position INTEGER NOT NULL,
         UNIQUE(playlist_id, position))`);
+      await this.store.executeSql(
+        `CREATE TABLE IF NOT EXISTS smart_playlists(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL,
+        rules TEXT NOT NULL DEFAULT '[]', sort_by TEXT DEFAULT 'added',
+        limit_n INTEGER DEFAULT 0, created_at INTEGER DEFAULT 0)`);
       hilog.info(DOMAIN, TAG, 'init ok');
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'init fail %{public}s', (e as Error).message);
@@ -248,6 +341,241 @@ export class PlaylistRepo {
       rs.close();
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'getPlaylistSongs fail %{public}s', (e as Error).message);
+    }
+    return out;
+  }
+
+  // ============ 规则式智能歌单(0.18.0) ============
+
+  async listSmartPls(): Promise<SmartPlInfo[]> {
+    const out: SmartPlInfo[] = [];
+    try {
+      const st = this.storeOrThrow();
+      const rs = await st.querySql(
+        'SELECT id, name, rules, sort_by, limit_n, created_at FROM smart_playlists ORDER BY created_at ASC');
+      while (rs.goToNextRow()) {
+        const info = new SmartPlInfo();
+        info.id = rs.getLong(rs.getColumnIndex('id'));
+        info.name = rs.getString(rs.getColumnIndex('name'));
+        info.ruleCount = smartRulesFromJson(rs.getString(rs.getColumnIndex('rules'))).length;
+        info.sortBy = rs.getString(rs.getColumnIndex('sort_by'));
+        info.limitN = rs.getLong(rs.getColumnIndex('limit_n'));
+        info.createdAt = rs.getLong(rs.getColumnIndex('created_at'));
+        out.push(info);
+      }
+      rs.close();
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'listSmartPls fail %{public}s', (e as Error).message);
+    }
+    return out;
+  }
+
+  async getSmartPl(id: number): Promise<SmartPlFull | null> {
+    try {
+      const st = this.storeOrThrow();
+      const rs = await st.querySql(
+        'SELECT id, name, rules, sort_by, limit_n FROM smart_playlists WHERE id = ?', [id]);
+      let full: SmartPlFull | null = null;
+      if (rs.goToFirstRow()) {
+        full = new SmartPlFull();
+        full.id = rs.getLong(rs.getColumnIndex('id'));
+        full.name = rs.getString(rs.getColumnIndex('name'));
+        full.rules = smartRulesFromJson(rs.getString(rs.getColumnIndex('rules')));
+        full.sortBy = rs.getString(rs.getColumnIndex('sort_by'));
+        full.limitN = rs.getLong(rs.getColumnIndex('limit_n'));
+      }
+      rs.close();
+      return full;
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'getSmartPl %{public}d fail %{public}s', id, (e as Error).message);
+      return null;
+    }
+  }
+
+  // 重名/空名/无规则返回 -1
+  async createSmartPl(name: string, rules: SmartRule[], sortBy: string, limitN: number): Promise<number> {
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || rules.length === 0) {
+      return -1;
+    }
+    try {
+      const st = this.storeOrThrow();
+      const dup = await st.querySql('SELECT id FROM smart_playlists WHERE name = ?', [trimmed]);
+      const exists = dup.goToFirstRow();
+      dup.close();
+      if (exists) {
+        return -1;
+      }
+      const bucket: relationalStore.ValuesBucket = {
+        'name': trimmed, 'rules': smartRulesToJson(rules), 'sort_by': sortBy,
+        'limit_n': limitN, 'created_at': Date.now()
+      };
+      const rowId = await st.insert('smart_playlists', bucket);
+      this.bump();
+      hilog.info(DOMAIN, TAG, 'smart pl created %{public}s rules=%{public}d', trimmed, rules.length);
+      return rowId;
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'createSmartPl fail %{public}s', (e as Error).message);
+      return -1;
+    }
+  }
+
+  async updateSmartPl(id: number, name: string, rules: SmartRule[], sortBy: string, limitN: number): Promise<boolean> {
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || rules.length === 0) {
+      return false;
+    }
+    try {
+      const st = this.storeOrThrow();
+      const dup = await st.querySql('SELECT id FROM smart_playlists WHERE name = ? AND id != ?', [trimmed, id]);
+      const exists = dup.goToFirstRow();
+      dup.close();
+      if (exists) {
+        return false;
+      }
+      const pred = new relationalStore.RdbPredicates('smart_playlists');
+      pred.equalTo('id', id);
+      const bucket: relationalStore.ValuesBucket = {
+        'name': trimmed, 'rules': smartRulesToJson(rules), 'sort_by': sortBy, 'limit_n': limitN
+      };
+      const n = await st.update(bucket, pred);
+      if (n > 0) {
+        this.bump();
+      }
+      return n > 0;
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'updateSmartPl fail %{public}s', (e as Error).message);
+      return false;
+    }
+  }
+
+  async deleteSmartPl(id: number): Promise<void> {
+    try {
+      const st = this.storeOrThrow();
+      const pred = new relationalStore.RdbPredicates('smart_playlists');
+      pred.equalTo('id', id);
+      await st.delete(pred);
+      this.bump();
+      hilog.info(DOMAIN, TAG, 'smart pl deleted %{public}d', id);
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'deleteSmartPl fail %{public}s', (e as Error).message);
+    }
+  }
+
+  // 规则 → SQL 片段(全部参数化;文本包含 LIKE,数值/存在类为精确条件,多规则 AND 连接)
+  private buildSmartQuery(rules: SmartRule[], sortBy: string, limitN: number): SmartQueryParts {
+    const p = new SmartQueryParts();
+    const conds: string[] = [];
+    const args: Array<string | number> = [];
+    for (const r of rules) {
+      const v = r.value.trim();
+      if ((r.field === 'artist' || r.field === 'album' || r.field === 'genre' || r.field === 'codec')
+        && v.length === 0) {
+        continue; // 空文本条件跳过(不构成过滤)
+      }
+      if (r.field === 'artist') {
+        conds.push('(s.artist LIKE ? OR s.album_artist LIKE ?)');
+        args.push(`%${v}%`, `%${v}%`);
+      } else if (r.field === 'album') {
+        conds.push('s.album LIKE ?');
+        args.push(`%${v}%`);
+      } else if (r.field === 'genre') {
+        conds.push('s.genre LIKE ?');
+        args.push(`%${v}%`);
+      } else if (r.field === 'codec') {
+        conds.push('s.codec = ?');
+        args.push(v.toLowerCase());
+      } else if (r.field === 'fav') {
+        conds.push('EXISTS(SELECT 1 FROM favorites f WHERE f.song_id = s.id)');
+      } else if (r.field === 'played') {
+        if (r.num <= 0) {
+          continue;
+        }
+        conds.push('EXISTS(SELECT 1 FROM play_count pc2 WHERE pc2.song_id = s.id AND pc2.count >= ?)');
+        args.push(Math.round(r.num));
+      } else if (r.field === 'addedDays') {
+        if (r.num <= 0) {
+          continue;
+        }
+        conds.push('s.date_added >= ?');
+        args.push(Date.now() - Math.round(r.num) * 86400000);
+      } else if (r.field === 'minRate') {
+        if (r.num <= 0) {
+          continue;
+        }
+        conds.push('s.sample_rate >= ?');
+        args.push(Math.round(r.num));
+      } else if (r.field === 'minBits') {
+        if (r.num <= 0) {
+          continue;
+        }
+        conds.push('s.bit_depth >= ?');
+        args.push(Math.round(r.num));
+      } else if (r.field === 'minYear') {
+        if (r.num <= 0) {
+          continue;
+        }
+        conds.push('s.year >= ?');
+        args.push(Math.round(r.num));
+      } else if (r.field === 'maxYear') {
+        if (r.num <= 0) {
+          continue;
+        }
+        conds.push('(s.year > 0 AND s.year <= ?)');
+        args.push(Math.round(r.num));
+      } else if (r.field === 'minDur') {
+        if (r.num <= 0) {
+          continue;
+        }
+        conds.push('s.duration_ms >= ?');
+        args.push(Math.round(r.num) * 1000);
+      }
+    }
+    if (conds.length > 0) {
+      p.where = ' WHERE ' + conds.join(' AND ');
+    }
+    p.args = args;
+    // 排序:播放次数排序需要 JOIN
+    if (sortBy === 'plays') {
+      p.from = 'FROM songs s LEFT JOIN play_count pc ON pc.song_id = s.id';
+      p.orderBy = 'ORDER BY pc.count DESC, s.title COLLATE NOCASE ASC';
+    } else {
+      p.from = 'FROM songs s';
+      if (sortBy === 'title') {
+        p.orderBy = 'ORDER BY s.title COLLATE NOCASE ASC';
+      } else if (sortBy === 'artist') {
+        p.orderBy = 'ORDER BY s.artist COLLATE NOCASE ASC, s.title COLLATE NOCASE ASC';
+      } else if (sortBy === 'album') {
+        p.orderBy = 'ORDER BY s.album COLLATE NOCASE ASC, s.disc_no ASC, s.track_no ASC';
+      } else if (sortBy === 'duration') {
+        p.orderBy = 'ORDER BY s.duration_ms DESC';
+      } else {
+        p.orderBy = 'ORDER BY s.date_added DESC'; // 默认最近添加
+      }
+    }
+    if (limitN > 0) {
+      p.limitSql = ` LIMIT ${Math.round(limitN)}`;
+    }
+    return p;
+  }
+
+  // 智能歌单动态取曲:规则永远随曲库实时求值(无物化,无需刷新时机)
+  async getSmartPlSongs(id: number): Promise<Song[]> {
+    const out: Song[] = [];
+    try {
+      const full = await this.getSmartPl(id);
+      if (full === null || full.rules.length === 0) {
+        return out;
+      }
+      const q = this.buildSmartQuery(full.rules, full.sortBy, full.limitN);
+      const st = this.storeOrThrow();
+      const rs = await st.querySql(`SELECT s.* ${q.from} ${q.where} ${q.orderBy} ${q.limitSql}`, q.args);
+      while (rs.goToNextRow()) {
+        out.push(PlaylistRepo.rowToSong(rs));
+      }
+      rs.close();
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'getSmartPlSongs %{public}d fail %{public}s', id, (e as Error).message);
     }
     return out;
   }

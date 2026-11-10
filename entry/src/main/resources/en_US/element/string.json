@@ -1355,6 +1355,222 @@
     {
       "name": "rescan_started",
       "value": "Rescan started"
+    },
+    {
+      "name": "viz_toggle",
+      "value": "Spectrum"
+    },
+    {
+      "name": "output_title",
+      "value": "Output"
+    },
+    {
+      "name": "balance_title",
+      "value": "Balance"
+    },
+    {
+      "name": "balance_left",
+      "value": "L"
+    },
+    {
+      "name": "balance_right",
+      "value": "R"
+    },
+    {
+      "name": "balance_sub",
+      "value": "Negative shifts left, positive right; lossless engine only"
+    },
+    {
+      "name": "balance_center",
+      "value": "Center"
+    },
+    {
+      "name": "balance_left_pct",
+      "value": "Left %s%"
+    },
+    {
+      "name": "balance_right_pct",
+      "value": "Right %s%"
+    },
+    {
+      "name": "mono_title",
+      "value": "Mono"
+    },
+    {
+      "name": "mono_sub",
+      "value": "Merge left and right; system engine not supported"
+    },
+    {
+      "name": "menu_multiselect",
+      "value": "Multi-select"
+    },
+    {
+      "name": "add_to_playlist",
+      "value": "Add to playlist"
+    },
+    {
+      "name": "sel_count",
+      "value": "%s selected"
+    },
+    {
+      "name": "sel_all",
+      "value": "All"
+    },
+    {
+      "name": "sel_invert",
+      "value": "Invert"
+    },
+    {
+      "name": "sel_fav_done",
+      "value": "Favorited %s songs"
+    },
+    {
+      "name": "sel_queue_done",
+      "value": "Added %s songs to queue"
+    },
+    {
+      "name": "sel_playnext_done",
+      "value": "%s songs set to play next"
+    },
+    {
+      "name": "sel_pl_done",
+      "value": "Added to %s: %s songs"
+    },
+    {
+      "name": "sel_pl_title",
+      "value": "Add %s songs to playlist"
+    },
+    {
+      "name": "sel_pl_new",
+      "value": "New playlist…"
+    },
+    {
+      "name": "sm_new",
+      "value": "New smart playlist"
+    },
+    {
+      "name": "sm_edit",
+      "value": "Edit rules"
+    },
+    {
+      "name": "sm_delete",
+      "value": "Delete smart playlist"
+    },
+    {
+      "name": "sm_rule_count",
+      "value": "%s rules"
+    },
+    {
+      "name": "sm_editor_title",
+      "value": "Smart playlist"
+    },
+    {
+      "name": "sm_name_hint",
+      "value": "Smart playlist name"
+    },
+    {
+      "name": "sm_no_rule_hint",
+      "value": "No rules yet; add one below"
+    },
+    {
+      "name": "sm_add_rule",
+      "value": "+ Add rule"
+    },
+    {
+      "name": "sm_sort",
+      "value": "Sort by"
+    },
+    {
+      "name": "sm_limit",
+      "value": "Limit"
+    },
+    {
+      "name": "sm_limit_hint",
+      "value": "0 = unlimited; smart playlists update with the library"
+    },
+    {
+      "name": "sm_need_rule",
+      "value": "Add at least one valid rule"
+    },
+    {
+      "name": "sm_rule_fav_hint",
+      "value": "Favorited songs"
+    },
+    {
+      "name": "sm_num_hint",
+      "value": "Number"
+    },
+    {
+      "name": "sm_text_hint",
+      "value": "Keyword"
+    },
+    {
+      "name": "sm_f_artist",
+      "value": "Artist contains"
+    },
+    {
+      "name": "sm_f_album",
+      "value": "Album contains"
+    },
+    {
+      "name": "sm_f_genre",
+      "value": "Genre contains"
+    },
+    {
+      "name": "sm_f_codec",
+      "value": "Format is"
+    },
+    {
+      "name": "sm_f_fav",
+      "value": "Favorited"
+    },
+    {
+      "name": "sm_f_played",
+      "value": "Plays ≥"
+    },
+    {
+      "name": "sm_f_added",
+      "value": "Added in N days"
+    },
+    {
+      "name": "sm_f_rate",
+      "value": "Sample rate ≥ Hz"
+    },
+    {
+      "name": "sm_f_bits",
+      "value": "Bit depth ≥"
+    },
+    {
+      "name": "sm_f_minyear",
+      "value": "Year ≥"
+    },
+    {
+      "name": "sm_f_maxyear",
+      "value": "Year ≤"
+    },
+    {
+      "name": "sm_f_dur",
+      "value": "Duration ≥ s"
+    },
+    {
+      "name": "sm_s_plays",
+      "value": "Play count"
+    },
+    {
+      "name": "eq_exported",
+      "value": "Curve copied to clipboard and saved: %s"
+    },
+    {
+      "name": "eq_exported_nocopy",
+      "value": "Curve saved: %s (clipboard unavailable)"
+    },
+    {
+      "name": "str_save",
+      "value": "Save"
+    },
+    {
+      "name": "sm_s_added",
+      "value": "Recently added"
     }
   ]
 }

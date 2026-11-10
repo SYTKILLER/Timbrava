@@ -7,6 +7,8 @@ import { SongRow, SongListParam } from '../../components/SongRow';
 import { AlbumCover } from '../library/LibraryTab';
 import { QueueService } from '../../service/QueueService';
 import { PlayerController } from '../../service/PlayerController';
+import { SelService } from '../../common/SelService';
+import { SelActionBar } from '../../components/SelActionBar';
 import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][Search]';
@@ -127,6 +129,8 @@ export struct SearchDest {
       }
       this.results = songs.length > 100 ? songs.slice(0, 100) : songs;
       this.deriveAggregates(songs);
+      // 多选宿主注册(0.18.0):全选/反选范围 = 命中歌曲
+      SelService.get().setHost(this.results.map((s: Song): number => s.id));
       this.resultTab = 0;
       this.searched = true;
       hilog.debug(DOMAIN, TAG, 'search %{public}s -> %{public}d songs / %{public}d albums / %{public}d artists',
@@ -455,6 +459,9 @@ export struct SearchDest {
             .padding({ bottom: 40 })
           }
         }
+
+        // 多选批量操作栏(0.18.0):未激活零高度
+        SelActionBar()
       }
       .width('100%')
       .height('100%')
@@ -470,6 +477,8 @@ export struct SearchDest {
         clearTimeout(this.debounce);
         this.debounce = -1;
       }
+      // 离开搜索页即退出选择模式(主流行为)
+      SelService.get().stop();
     })
   }
 }

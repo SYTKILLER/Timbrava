@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Added(0.18.0 对标市面播放器五链路:频谱可视化/多选批量/规则式智能歌单/声道平衡·单声道/EQ曲线导出)
+
+- **频谱可视化(Poweramp/Neutron 招牌能力补齐)**:native 新增 `viz` 模块——渲染回调在 DSP 之后采集成品 PCM(降混单声道→4096 点 Hann FFT→30Hz~20kHz 48 个对数频段能量归一化→4 槽无锁发布),覆盖无损引擎全部三条渲染路径(F32 DSP/整型比特完美直通/倍速重采样);napi 新增 `vizSetEnabled/vizPoll`(Float32Array 透传)。播放页新增 VizView(Canvas 48 柱频段+峰值保持线,30fps 轮询,仅"播放页打开+无损引擎+播放中"轮询,暂停平滑回落),「更多」菜单新增频谱开关(默认开,关闭时渲染回调仅剩单次原子读开销)。频谱表按曲目采样率在 openTrack 重建。
+- **多选批量操作(SongList/曲库歌曲分区/搜索结果全覆盖)**:新增 SelService(AppStorage selVer 广播)+SelActionBar 批量栏(未激活零高度)——SongRow 长按菜单与列表头部菜单均可进入多选,点击行改勾选(封面勾选圈,全取消即退出),操作栏提供 全选/反选/批量收藏/加入歌单(半模态选歌单+新建歌单)/加入队列/下一首播放;QueueService 新增 playNextBatch(按勾选序整批插到当前曲后)。离开列表页自动退出选择模式。
+- **规则式智能歌单(Symfonium/Musicolet 自动歌单对标)**:新表 smart_playlists(name/rules JSON/sort_by/limit_n,幂等建表免迁移);PlaylistRepo 新增 CRUD + 规则→参数化 SQL 生成器(12 类条件:艺人/专辑/流派包含、格式、收藏、播放次数≥、最近N天入库、采样率≥、位深≥、年份区间、时长≥秒,AND 连接;播放次数排序自动 JOIN play_count)+ getSmartPlSongs 实时求值(无物化,内容永远随曲库更新)。歌单页"+"改菜单(普通歌单/智能歌单),智能歌单行(wand_and_stars 图标)点击进 SongList(usmart 模式)实时取曲,长按 编辑规则/导出M3U/删除;新增 SmartPlEditor 编辑页(规则行本地态收集防焦点丢失/排序/数量上限)。
+- **声道平衡 + 单声道(Neutron/UAPP 对标)**:DSP 总链扩为 RG → PEQ → 单声道合并 → 平衡 → 软限幅(独立阶段,恒等时逐位直通不受影响);openTrack 恒调 dspPrepare 保证播放中启用即时生效(系数按声明保留重算)。专业页新增「输出」卡:平衡滑条(-100~100)+单声道开关,持久化 + 即时下发(系统引擎无逐声道 API,no-op,UI 注明)。
+- **EQ 曲线导出(补 P3 待办"EQ 预设导入导出"导出半边)**:31 段 → AutoEq「GraphicEq:」标准文本(与 parseAutoEq 同格式互认)→ 剪贴板 + 沙箱 exports/eq_curve.txt,导入旁新增导出钮。
+- 多语言:新增 54 键(base 中文 + en_US)。版本号 0.18.0/versionCode 18000。
+
 ### Fixed(0.17.3 专项:CUE 末轨时长/统计灌水/进度跳变/双跳竞态 四链修复)
 
 - **CUE 末轨 durationMs 残留(上轮实测遗留疑点,根因闭环)**:CueParser 末轨 endMs=-1(文件末尾语义)原样入库,`playSong` 的 `cueEnd>cueStart` 判断失效后 fallback 到**引擎整文件时长**——实测"列表 0:16/播放 0:44"分裂、recordPlay 灌水 44.7s。修复:①`playSong` CUE 分轨(含末轨)时长兜底改 `song.durationMs`(DB 区间值);②ScanService 末轨 `cueEndMs` 回填音频实际时长(探针值),dup 更新条件加 cueEndMs 比较让旧数据重扫回填;③**SEEK_DONE hint 是文件绝对位置,CUE 分轨未减 cueStart**——seek 后进度跳出区间且切曲补记拿到污染值(recordPlay 27500),已换算;④末轨终点与引擎 EOF 重合的**双推进竞态**(cueAdvance 与 TRACK_END 各推一曲):新增 autoAdvancing 推进互斥哨兵,实测第二发被吸收(`track end ignored (auto advancing)`)。模拟器实测:CueA→CueB 衔接 12000/16000 精确、手动直点 CueB 显示 0:16、单跳推进。

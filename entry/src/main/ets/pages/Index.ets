@@ -23,6 +23,7 @@ import { SearchDest } from './detail/Search';
 import { QueueBoardDest } from './queue/QueueBoard';
 import { TagEditorDest } from './detail/TagEditor';
 import { DuplicatesDest } from './library/Duplicates';
+import { SmartPlEditorDest } from './playlist/SmartPlEditor';
 
 const TAG = '[Timbrava][Index]';
 const DOMAIN = 0x0001;
@@ -275,6 +276,8 @@ struct Index {
       LibraryManageDest()
     } else if (name === 'Settings') {
       SettingsDest()
+    } else if (name === 'SmartPlEditor') {
+      SmartPlEditorDest()
     }
   }
 }

@@ -1,9 +1,11 @@
-// 歌曲行组件:封面/标题/艺人/格式徽章/时长 + 长按上下文菜单(播放/下一首/入队/收藏/看专辑/看艺人)。
+// 歌曲行组件:封面/标题/艺人/格式徽章/时长 + 长按上下文菜单(播放/多选/下一首/入队/收藏/看专辑/看艺人)。
+// 多选模式(0.18.0):SelService 激活时点击改为勾选/取消(封面盖勾选圈),批量操作在宿主页 SelActionBar。
 import { Song, formatDuration } from '../data/Model';
 import { LibraryStore } from '../data/LibraryStore';
 import { PlayerController } from '../service/PlayerController';
 import { QueueService } from '../service/QueueService';
 import { EqScopeParam } from '../pages/settings/Equalizer';
+import { SelService } from '../common/SelService';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { L, Ls } from '../common/Lang';
 
@@ -22,14 +24,23 @@ export struct SongRow {
   @Prop showAlbum: boolean = false;
   @StorageProp('libVer') libVer: number = 0;
   @StorageProp('playerVer') playerVer: number = 0;
+  @StorageProp('selVer') selVer: number = 0; // 多选模式/勾选态变化广播(0.18.0)
 
   navStack(): NavPathStack | null {
     return AppStorage.get<NavPathStack>('navStack') ?? null;
   }
 
+  private selMode(): boolean {
+    return SelService.get().active;
+  }
+
+  private selOn(): boolean {
+    return SelService.get().isSel(this.song.id);
+  }
+
   build() {
     Row({ space: 12 }) {
-      // 封面
+      // 封面(多选模式:盖勾选圈,选中=accent 填充白勾 / 未选=半透明遮罩)
       Stack() {
         if (this.song.artPath.length > 0) {
           Image(this.song.artPath)
@@ -48,6 +59,26 @@ export struct SongRow {
           .borderRadius(8)
           .backgroundColor($r('app.color.badge_bg'))
           .justifyContent(FlexAlign.Center)
+        }
+        if (this.selMode()) {
+          if (this.selOn()) {
+            Column() {
+              SymbolGlyph($r('sys.symbol.checkmark'))
+                .fontSize(15)
+                .fontColor([$r('app.color.on_accent')])
+            }
+            .width(26)
+            .height(26)
+            .borderRadius(13)
+            .backgroundColor($r('app.color.accent'))
+            .justifyContent(FlexAlign.Center)
+          } else {
+            Column()
+              .width(26)
+              .height(26)
+              .borderRadius(13)
+              .backgroundColor('#66000000')
+          }
         }
       }
       .alignContent(Alignment.Center)
@@ -100,6 +131,11 @@ export struct SongRow {
     .width('100%')
     .padding({ left: 16, right: 16, top: 8, bottom: 8 })
     .onClick(() => {
+      if (this.selMode()) {
+        // 多选模式:点击改勾选(SelService 内部含"全取消即退出"语义)
+        SelService.get().toggle(this.song.id);
+        return;
+      }
       this.playNow();
     })
     .bindContextMenu(this.rowMenu(), ResponseType.LongPress)
@@ -141,6 +177,10 @@ export struct SongRow {
       MenuItem({ content: $r('app.string.menu_play') })
         .onClick(() => {
           this.playNow();
+        })
+      MenuItem({ content: $r('app.string.menu_multiselect') })
+        .onClick(() => {
+          SelService.get().start([this.song.id]);
         })
       MenuItem({ content: $r('app.string.menu_play_next') })
         .onClick(() => {
@@ -249,6 +289,15 @@ export class SongListParam {
     const p = new SongListParam();
     p.mode = 'smart';
     p.key = kind;
+    p.title = title;
+    return p;
+  }
+
+  // 规则式智能歌单(0.18.0):key = smart_playlists.id
+  static usmart(id: number, title: string): SongListParam {
+    const p = new SongListParam();
+    p.mode = 'usmart';
+    p.key = String(id);
     p.title = title;
     return p;
   }

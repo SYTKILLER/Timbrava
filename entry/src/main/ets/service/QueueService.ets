@@ -181,6 +181,27 @@ export class QueueService {
     this.bump();
   }
 
+  // 批量"下一首播放"(0.18.0 多选):按给定顺序依次插到当前曲之后,整体顺序保持
+  playNextBatch(songIds: number[]): void {
+    if (songIds.length === 0) {
+      return;
+    }
+    let insertAt = this.list.length === 0 ? 0 : this.currentOrderIndex + 1;
+    for (const id of songIds) {
+      this.list.splice(insertAt, 0, id);
+      if (this.shuffled && this.originalList.indexOf(id) < 0) {
+        this.originalList.splice(this.currentOriginalIndex() + 1, 0, id);
+      }
+      insertAt++;
+    }
+    if (this.currentOrderIndex < 0 && this.list.length > 0) {
+      this.currentOrderIndex = 0;
+    }
+    this.scheduleSave();
+    this.bump();
+    hilog.info(DOMAIN, TAG, 'playNextBatch n=%{public}d', songIds.length);
+  }
+
   private currentOriginalIndex(): number {
     if (this.currentOrderIndex < 0 || this.currentOrderIndex >= this.list.length) {
       return -1;

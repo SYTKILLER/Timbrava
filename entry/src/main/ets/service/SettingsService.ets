@@ -46,6 +46,9 @@ export class SettingsService {
   onlineLyrics: boolean = false; // LRCLIB 联网歌词(默认关,#38 零联网定位)
   playerSkin: string = 'standard'; // standard 大封面 | minimal 极简 | immersive 沉浸模糊(#0.14.0)
   playerVolume: number = 1.0;    // 引擎音量 0~1(0.14.0 播放页音量条)
+  vizEnabled: boolean = true;    // 频谱可视化(0.18.0;仅播放页打开+无损引擎+播放中轮询,其余时刻零开销)
+  balancePct: number = 0;        // 声道平衡 -100~100(0.18.0;负偏左/正偏右,仅无损引擎)
+  monoMode: boolean = false;     // 单声道合并(0.18.0;仅无损引擎)
 
   private loaded: boolean = false;
 
@@ -81,6 +84,10 @@ export class SettingsService {
     this.playerSkin = skin === 'minimal' || skin === 'immersive' ? skin : 'standard';
     const vol = parseFloat(await db.getSetting('playerVolume', '1.0'));
     this.playerVolume = Number.isFinite(vol) && vol >= 0 && vol <= 1 ? vol : 1.0;
+    this.vizEnabled = (await db.getSetting('vizEnabled', '1')) === '1';
+    const bal = parseFloat(await db.getSetting('balancePct', '0'));
+    this.balancePct = Number.isFinite(bal) && bal >= -100 && bal <= 100 ? bal : 0;
+    this.monoMode = (await db.getSetting('monoMode', '0')) === '1';
     this.loaded = true;
     this.syncTokens();
     hilog.info(DOMAIN, TAG, 'settings loaded');
@@ -101,6 +108,9 @@ export class SettingsService {
     this.token('prefOnlineLyrics', this.onlineLyrics);
     this.token('prefPlayerSkin', this.playerSkin);
     this.token('prefPlayerVolume', this.playerVolume);
+    this.token('prefVizEnabled', this.vizEnabled);
+    this.token('prefBalancePct', this.balancePct);
+    this.token('prefMonoMode', this.monoMode);
   }
 
   private async save(key: string, value: string): Promise<void> {
@@ -188,6 +198,24 @@ export class SettingsService {
     this.syncTokens();
     await this.save('onlineLyrics', on ? '1' : '0');
     hilog.info(DOMAIN, TAG, 'online lyrics -> %{public}s', String(on));
+  }
+
+  // 频谱可视化开关(0.18.0):播放页更多菜单切换
+  async setVizEnabled(on: boolean): Promise<void> {
+    this.vizEnabled = on;
+    this.syncTokens();
+    await this.save('vizEnabled', on ? '1' : '0');
+    hilog.info(DOMAIN, TAG, 'viz -> %{public}s', String(on));
+  }
+
+  // 声道平衡/单声道(0.18.0):persist 后由 PlayerController 即时下发无损引擎
+  async setBalance(pct: number, mono: boolean): Promise<void> {
+    this.balancePct = Math.min(100, Math.max(-100, Math.round(pct)));
+    this.monoMode = mono;
+    this.syncTokens();
+    await this.save('balancePct', String(this.balancePct));
+    await this.save('monoMode', mono ? '1' : '0');
+    hilog.info(DOMAIN, TAG, 'balance -> %{public}d mono=%{public}s', this.balancePct, String(mono));
   }
 
   async setResumeAfterInterrupt(on: boolean): Promise<void> {

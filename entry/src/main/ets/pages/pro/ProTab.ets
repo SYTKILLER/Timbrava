@@ -1,4 +1,4 @@
-// 专业页:APP 独有调音/引擎能力集中展示——实时输出 + 音频引擎(无损/EQ/RG) + 响度分析 + 专业工具。
+// 专业页:APP 独有调音/引擎能力集中展示——实时输出 + 音频引擎(无损/EQ/RG) + 输出(平衡/单声道) + 响度分析 + 专业工具。
 import { common } from '@kit.AbilityKit';
 import { PlayerController } from '../../service/PlayerController';
 import { Song } from '../../data/Model';
@@ -12,6 +12,8 @@ export struct ProTab {
   @StorageProp('playerVer') playerVer: number = 0;
   @StorageProp('themePageBg') themePageBg: string = '';
   @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
+  @StorageProp('prefBalancePct') balPct: number = 0;
+  @StorageProp('prefMonoMode') monoMode: boolean = false;
   @State topSafe: number = 36;
 
   aboutToAppear(): void {
@@ -32,6 +34,18 @@ export struct ProTab {
 
   private song(): Song | null {
     return PlayerController.get().currentSong;
+  }
+
+  // 平衡档位文案:居中 / 偏左 n% / 偏右 n%
+  private balanceLabel(): string {
+    const v = Math.round(this.balPct);
+    if (v === 0) {
+      return L($r('app.string.balance_center'));
+    }
+    if (v < 0) {
+      return L($r('app.string.balance_left_pct'), String(-v));
+    }
+    return L($r('app.string.balance_right_pct'), String(v));
   }
 
   private openLyricsTool(): void {
@@ -147,6 +161,76 @@ export struct ProTab {
               this.NavItem($r('app.string.eq_entry'), $r('app.string.eq_entry_sub'), (): void => {
                 this.nav().pushPathByName('Equalizer', null);
               })
+            }
+          }
+
+          // 输出(0.18.0):声道平衡 + 单声道(无损引擎 DSP 独立阶段;系统引擎无逐声道 API)
+          CardSection({ title: $r('app.string.output_title') }) {
+            Column() {
+              Column({ space: 4 }) {
+                Row() {
+                  Text($r('app.string.balance_title'))
+                    .fontSize(15)
+                    .fontColor($r('app.color.text_primary'))
+                    .layoutWeight(1)
+                  Text(this.balanceLabel())
+                    .fontSize(12)
+                    .fontColor(Math.abs(this.balPct) < 1 ? $r('app.color.text_secondary') : $r('app.color.accent'))
+                }
+                .width('100%')
+                Row({ space: 8 }) {
+                  Text($r('app.string.balance_left'))
+                    .fontSize(10)
+                    .fontColor($r('app.color.text_secondary'))
+                  Slider({
+                    value: this.balPct,
+                    min: -100,
+                    max: 100,
+                    step: 1,
+                    style: SliderStyle.OutSet
+                  })
+                    .selectedColor($r('app.color.accent'))
+                    .trackColor($r('app.color.divider'))
+                    .blockColor($r('app.color.accent'))
+                    .layoutWeight(1)
+                    .height(34)
+                    .onChange((value: number, mode: SliderChangeMode) => {
+                      if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                        PlayerController.get().setBalance(Math.round(value), this.monoMode);
+                      }
+                    })
+                  Text($r('app.string.balance_right'))
+                    .fontSize(10)
+                    .fontColor($r('app.color.text_secondary'))
+                }
+                .width('100%')
+                Text($r('app.string.balance_sub'))
+                  .fontSize(11)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+              }
+              .width('100%')
+              .padding({ top: 6, bottom: 8 })
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              Row({ space: 12 }) {
+                Column({ space: 2 }) {
+                  Text($r('app.string.mono_title'))
+                    .fontSize(15)
+                    .fontColor($r('app.color.text_primary'))
+                  Text($r('app.string.mono_sub'))
+                    .fontSize(11)
+                    .fontColor($r('app.color.text_secondary'))
+                }
+                .alignItems(HorizontalAlign.Start)
+                .layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.monoMode })
+                  .selectedColor($r('app.color.accent'))
+                  .onChange((on: boolean): void => {
+                    PlayerController.get().setBalance(this.balPct, on);
+                  })
+              }
+              .width('100%')
+              .padding({ top: 8, bottom: 4 })
             }
           }
 

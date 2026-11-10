@@ -10,6 +10,8 @@ import { QueueService } from '../../service/QueueService';
 import { PlaylistRepo } from '../../data/PlaylistRepo';
 import { PlayerController } from '../../service/PlayerController';
 import { EqScopeParam } from '../settings/Equalizer';
+import { SelService } from '../../common/SelService';
+import { SelActionBar } from '../../components/SelActionBar';
 import { L, Ls } from '../../common/Lang';
 
 const TAG = '[Timbrava][SongList]';
@@ -59,6 +61,11 @@ export struct SongListDest {
     if (p.mode === 'smart') {
       return PlaylistRepo.get().getSmartSongs(p.key);
     }
+    if (p.mode === 'usmart') {
+      // 规则式智能歌单(0.18.0):每次进入实时求值,内容随曲库自动更新
+      const id = parseInt(p.key, 10);
+      return PlaylistRepo.get().getSmartPlSongs(Number.isNaN(id) ? 0 : id);
+    }
     if (p.mode === 'favorites') {
       const out: Song[] = [];
       for (const s of lib.songs) {
@@ -83,6 +90,8 @@ export struct SongListDest {
       if (this.param.mode === 'playlist') {
         this.memberIds = songs.map((s: Song): number => s.id);
       }
+      // 多选宿主注册(0.18.0):全选/反选范围 = 当前列表
+      SelService.get().setHost(songs.map((s: Song): number => s.id));
       hilog.debug(DOMAIN, TAG, 'reload %{public}s -> %{public}d songs', this.param.mode, songs.length);
     });
     hilog.debug(DOMAIN, TAG, 'reload %{public}s -> %{public}d songs', this.param.mode, this.songs.length);
@@ -282,6 +291,10 @@ export struct SongListDest {
   @Builder
   listMenu() {
     Menu() {
+      MenuItem({ content: $r('app.string.menu_multiselect') })
+        .onClick(() => {
+          SelService.get().start([]);
+        })
       if (this.param.mode === 'album') {
         // EQ 按专辑:整专辑曲线覆盖(target 与 LibraryStore 分组键一致)
         MenuItem({ content: $r('app.string.eq_scope_current_album') })
@@ -464,6 +477,9 @@ export struct SongListDest {
           .layoutWeight(1)
           .scrollBar(BarState.Auto)
           .padding({ bottom: 60 })
+
+          // 多选批量操作栏(0.18.0):未激活零高度
+          SelActionBar()
         }
       }
       .width('100%')
@@ -495,6 +511,10 @@ export struct SongListDest {
       if (this.param.mode === 'favorites') {
         this.reload();
       }
+    })
+    .onWillDisappear((): void => {
+      // 离开列表页即退出选择模式(主流行为)
+      SelService.get().stop();
     })
   }
 }

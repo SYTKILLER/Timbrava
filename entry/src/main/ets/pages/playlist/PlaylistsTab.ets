@@ -6,8 +6,10 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SongListParam } from '../../components/SongRow';
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { PlaylistRepo, PlaylistInfo } from '../../data/PlaylistRepo';
+import { PlaylistRepo, PlaylistInfo, SmartPlInfo } from '../../data/PlaylistRepo';
 import { M3UEntry, buildM3U } from '../../data/m3u/M3U';
+import { Song } from '../../data/Model';
+import { SmartPlParam } from './SmartPlEditor';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { L } from '../../common/Lang';
 import { BarCollapse } from '../../common/BarCollapse';
@@ -96,6 +98,7 @@ export struct PlaylistsTab {
   @StorageProp('themePageBg') themePageBg: string = '';
   @StorageProp('bottomSafeVp') bottomSafeVp: number = 28;
   @State playlists: PlaylistInfo[] = [];
+  @State smartPls: SmartPlInfo[] = [];
   @Prop mode: string = 'page'; // 'page' 曲库分区(满高) | 'card' 我的页卡片(延伸到底)
   @Prop minH: number = 0;      // card 态最小高度(vp):父级实测"视口-上方内容"传入,保证卡片延伸到屏幕最底部
   @State topSafe: number = 36;
@@ -128,6 +131,9 @@ export struct PlaylistsTab {
     PlaylistRepo.get().listPlaylists().then((list: PlaylistInfo[]): void => {
       this.playlists = list;
     });
+    PlaylistRepo.get().listSmartPls().then((list: SmartPlInfo[]): void => {
+      this.smartPls = list;
+    });
   }
 
   private pageBg(): ResourceColor {
@@ -142,7 +148,7 @@ export struct PlaylistsTab {
     this.getUIContext().getPromptAction().showToast({ message: msg, duration: 2000 });
   }
 
-  // "+"新建歌单:弹窗输入歌单名
+  // "+"新建入口(0.18.0:菜单二选一——普通歌单弹窗 / 智能歌单编辑页)
   private openCreateDialog(): void {
     this.newCtrl = new CustomDialogController({
       builder: NewPlaylistDialog({
@@ -154,6 +160,60 @@ export struct PlaylistsTab {
       customStyle: true
     });
     this.newCtrl.open();
+  }
+
+  // 新建/编辑智能歌单:进编辑页(id=0 新建)
+  private openSmartEditor(id: number): void {
+    const stack = AppStorage.get<NavPathStack>('navStack');
+    if (stack !== undefined && stack !== null) {
+      stack.pushPathByName('SmartPlEditor', new SmartPlParam(id));
+    }
+  }
+
+  private openSmartPl(pl: SmartPlInfo): void {
+    const stack = AppStorage.get<NavPathStack>('navStack');
+    if (stack !== undefined && stack !== null) {
+      stack.pushPathByName('SongList', SongListParam.usmart(pl.id, pl.name));
+    }
+  }
+
+  private confirmDeleteSmart(pl: SmartPlInfo): void {
+    this.getUIContext().showAlertDialog({
+      title: $r('app.string.sm_delete'),
+      message: L($r('app.string.pl_delete_confirm'), pl.name),
+      autoCancel: true,
+      alignment: DialogAlignment.Center,
+      primaryButton: {
+        value: $r('app.string.str_cancel'),
+        action: (): void => {
+        }
+      },
+      secondaryButton: {
+        value: $r('app.string.str_delete'),
+        fontColor: $r('app.color.accent'),
+        action: (): void => {
+          PlaylistRepo.get().deleteSmartPl(pl.id).then((): void => {
+            this.reload();
+          });
+        }
+      },
+      cancel: (): void => {
+      }
+    });
+  }
+
+  @Builder
+  createMenu() {
+    Menu() {
+      MenuItem({ content: $r('app.string.str_new_playlist') })
+        .onClick(() => {
+          this.openCreateDialog();
+        })
+      MenuItem({ content: $r('app.string.sm_new') })
+        .onClick(() => {
+          this.openSmartEditor(0);
+        })
+    }
   }
 
   private async createPlaylist(name: string): Promise<void> {
@@ -204,15 +264,10 @@ export struct PlaylistsTab {
     this.reload();
   }
 
-  // 导出 M3U 到沙箱 files/exports/<名称>.m3u
-  private async exportM3U(pl: PlaylistInfo): Promise<void> {
+  // 导出 M3U 到沙箱 files/exports/<名称>.m3u(0.18.0:抽核供普通/智能歌单共用)
+  private async exportM3USongs(name: string, songs: Song[]): Promise<void> {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     try {
-      const songs = await PlaylistRepo.get().getPlaylistSongs(pl.id);
-      if (songs.length === 0) {
-        this.toast($r('app.string.pl_empty_no_export'));
-        return;
-      }
       const items: M3UEntry[] = [];
       for (const s of songs) {
         const e = new M3UEntry();
@@ -222,7 +277,7 @@ export struct PlaylistsTab {
         e.durationMs = s.durationMs;
         items.push(e);
       }
-      const text = buildM3U(pl.name, items);
+      const text = buildM3U(name, items);
       const dir = `${ctx.filesDir}/exports`;
       try {
         if (!fs.accessSync(dir)) {
@@ -231,7 +286,7 @@ export struct PlaylistsTab {
       } catch (e2) {
         fs.mkdirSync(dir, true);
       }
-      const path = `${dir}/${safeFileName(pl.name)}.m3u`;
+      const path = `${dir}/${safeFileName(name)}.m3u`;
       const f = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
       fs.writeSync(f.fd, text);
       fs.closeSync(f);
@@ -241,6 +296,24 @@ export struct PlaylistsTab {
       hilog.error(DOMAIN, TAG, 'export fail %{public}s', (e as Error).message);
       this.toast($r('app.string.str_export_failed'));
     }
+  }
+
+  private async exportM3U(pl: PlaylistInfo): Promise<void> {
+    const songs = await PlaylistRepo.get().getPlaylistSongs(pl.id);
+    if (songs.length === 0) {
+      this.toast($r('app.string.pl_empty_no_export'));
+      return;
+    }
+    await this.exportM3USongs(pl.name, songs);
+  }
+
+  private async exportSmartM3U(pl: SmartPlInfo): Promise<void> {
+    const songs = await PlaylistRepo.get().getSmartPlSongs(pl.id);
+    if (songs.length === 0) {
+      this.toast($r('app.string.pl_empty_no_export'));
+      return;
+    }
+    await this.exportM3USongs(pl.name, songs);
   }
 
   build() {
@@ -266,7 +339,7 @@ export struct PlaylistsTab {
   // ===== 曲库分区形态:满高列表 =====
   @Builder
   PageContent() {
-    if (this.playlists.length === 0) {
+    if (this.playlists.length === 0 && this.smartPls.length === 0) {
       Column({ space: 8 }) {
         SymbolGlyph($r('sys.symbol.music_note_list'))
           .fontSize(42)
@@ -288,6 +361,11 @@ export struct PlaylistsTab {
             this.PlaylistRow(pl)
           }
         }, (pl: PlaylistInfo): string => `${pl.id}_${pl.name}_${pl.songCount}`)
+        ForEach(this.smartPls, (pl: SmartPlInfo) => {
+          ListItem() {
+            this.SmartRow(pl)
+          }
+        }, (pl: SmartPlInfo): string => `sm_${pl.id}_${pl.name}_${pl.ruleCount}`)
       }
       .width('100%')
       .height('100%')
@@ -318,16 +396,15 @@ export struct PlaylistsTab {
       .height(40)
       .borderRadius(20)
       .backgroundColor($r('app.color.accent'))
-      .onClick(() => {
-        this.openCreateDialog();
-      })
+      // 0.18.0:菜单二选一——普通歌单弹窗 / 智能歌单编辑页
+      .bindMenu(this.createMenu)
       Text($r('app.string.str_playlists'))
         .fontSize(16)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .layoutWeight(1)
-      if (this.playlists.length > 0) {
-        Text(String(this.playlists.length))
+      if (this.playlists.length + this.smartPls.length > 0) {
+        Text(String(this.playlists.length + this.smartPls.length))
           .fontSize(12)
           .fontColor($r('app.color.text_secondary'))
       }
@@ -335,7 +412,7 @@ export struct PlaylistsTab {
     .width('100%')
     .padding({ left: 12, right: 16, top: 12, bottom: 4 })
 
-    if (this.playlists.length === 0) {
+    if (this.playlists.length === 0 && this.smartPls.length === 0) {
       Column({ space: 6 }) {
         Text($r('app.string.no_playlists'))
           .fontSize(13)
@@ -352,6 +429,9 @@ export struct PlaylistsTab {
         ForEach(this.playlists, (pl: PlaylistInfo) => {
           this.PlaylistRow(pl)
         }, (pl: PlaylistInfo): string => `${pl.id}_${pl.name}_${pl.songCount}`)
+        ForEach(this.smartPls, (pl: SmartPlInfo) => {
+          this.SmartRow(pl)
+        }, (pl: SmartPlInfo): string => `sm_${pl.id}_${pl.name}_${pl.ruleCount}`)
       }
       .width('100%')
     }
@@ -410,6 +490,65 @@ export struct PlaylistsTab {
       MenuItem({ content: $r('app.string.str_delete') })
         .onClick(() => {
           this.confirmDelete(pl);
+        })
+    }
+  }
+
+  // 智能歌单行(0.18.0):sparkles 图标 + 规则数副行;点击进 SongList 实时求值列表
+  @Builder
+  SmartRow(pl: SmartPlInfo) {
+    Row({ space: 12 }) {
+      Column() {
+        SymbolGlyph($r('sys.symbol.wand_and_stars'))
+          .fontSize(22)
+          .fontColor([$r('app.color.accent')])
+      }
+      .width(46)
+      .height(46)
+      .borderRadius(8)
+      .backgroundColor($r('app.color.badge_bg'))
+      .justifyContent(FlexAlign.Center)
+
+      Column({ space: 3 }) {
+        Text(pl.name)
+          .fontSize(16)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(L($r('app.string.sm_rule_count'), String(pl.ruleCount)))
+          .fontSize(12)
+          .fontColor($r('app.color.text_secondary'))
+          .maxLines(1)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(14)
+        .fontColor([$r('app.color.text_secondary')])
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+    .onClick(() => {
+      this.openSmartPl(pl);
+    })
+    .bindContextMenu(this.smartRowMenu(pl), ResponseType.LongPress)
+  }
+
+  @Builder
+  smartRowMenu(pl: SmartPlInfo) {
+    Menu() {
+      MenuItem({ content: $r('app.string.sm_edit') })
+        .onClick(() => {
+          this.openSmartEditor(pl.id);
+        })
+      MenuItem({ content: $r('app.string.export_m3u') })
+        .onClick(() => {
+          this.exportSmartM3U(pl);
+        })
+      MenuItem({ content: $r('app.string.str_delete') })
+        .onClick(() => {
+          this.confirmDeleteSmart(pl);
         })
     }
   }

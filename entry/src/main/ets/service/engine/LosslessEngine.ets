@@ -39,6 +39,9 @@ interface NativeModule {
   setReplayGain(trackGainDb: number, trackPeak: number, albumGainDb: number, albumPeak: number, mode: number): void;
   setSpeed(speed: number): void;
   setSkipSilence(on: boolean): void;
+  setBalance(balance: number, mono: boolean): void;
+  vizSetEnabled(on: boolean): void;
+  vizPoll(): NativeVizResult;
   analyzeFd(fd: number): Promise<NativeAnalyzeResult>;
 };
 
@@ -48,6 +51,15 @@ export interface NativeAnalyzeResult {
   rmsDb: number;
   peak: number;
   durationMs: number;
+}
+
+// 频谱快照(0.18.0):48 对数频段归一化能量(0~1)+ RMS dBFS / 线性峰值
+export interface NativeVizResult {
+  ok: boolean;
+  frameId: number;
+  rmsDb: number;
+  peak: number;
+  bands: Float32Array;
 }
 
 export class LosslessEngine implements IAudioEngine {
@@ -209,6 +221,21 @@ export class LosslessEngine implements IAudioEngine {
 
   setSkipSilence(on: boolean): void {
     (timbravaCore as NativeModule).setSkipSilence(on);
+  }
+
+  // 声道平衡/单声道(0.18.0):native DSP 独立阶段(恒等时逐位直通)
+  setBalance(balance: number, mono: boolean): void {
+    (timbravaCore as NativeModule).setBalance(balance, mono);
+  }
+
+  // 频谱可视化开关:开启后渲染回调采集频谱(48 段,约 21ms 一帧);关闭零开销
+  vizSetEnabled(on: boolean): void {
+    (timbravaCore as NativeModule).vizSetEnabled(on);
+  }
+
+  // 轮询最新频谱快照(30fps 级;无数据时 ok=false)
+  vizPoll(): NativeVizResult {
+    return (timbravaCore as NativeModule).vizPoll();
   }
 
   // ReplayGain 扫描(native 异步工作线程;fd 在 promise 完成前保持有效)

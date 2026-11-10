@@ -28,6 +28,98 @@ const SPEED_OPTIONS: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
 // 睡眠定时弹层档位(分钟;0=关)
 const SLEEP_OPTIONS: number[] = [0, 15, 30, 45, 60, 90];
 const SLEEP_FADE_MS = 30000; // 到点前线性渐弱时长(与 PlayerController 一致)
+const VIZ_BANDS = 48;        // native 对数频段数(与 viz.h kVizBandCount 一致)
+
+// 频谱可视化(0.18.0):Canvas 48 柱对数频段 + 峰值保持线。
+// 仅本组件存活期间轮询 native(30fps);暂停/无新帧平滑回落,系统引擎返回 null 同样回落清零。
+@Component
+struct VizView {
+  private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
+  private timer: number = -1;
+  private vals: Float32Array = new Float32Array(VIZ_BANDS);
+  private peaks: Float32Array = new Float32Array(VIZ_BANDS);
+  private lastFrameId: number = 0;
+  private accentColor: string = '#FF7A5C';
+  private capColor: string = '#66FFFFFF';
+
+  aboutToAppear(): void {
+    try {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const c = ctx.resourceManager.getColorSync($r('app.color.accent'));
+      this.accentColor = `#${(c >>> 0).toString(16).padStart(8, '0')}`;
+    } catch (e) {
+      // 取色失败用兜底色
+    }
+    this.timer = setInterval((): void => {
+      this.poll();
+    }, 33) as number;
+  }
+
+  aboutToDisappear(): void {
+    if (this.timer >= 0) {
+      clearInterval(this.timer);
+      this.timer = -1;
+    }
+  }
+
+  private poll(): void {
+    const snap = PlayerController.get().vizPoll();
+    if (snap !== null && snap.frameId !== this.lastFrameId) {
+      this.lastFrameId = snap.frameId;
+      for (let i = 0; i < VIZ_BANDS; i++) {
+        const v = snap.bands[i];
+        this.vals[i] = v;
+        if (v > this.peaks[i]) {
+          this.peaks[i] = v;
+        }
+      }
+    } else {
+      // 暂停/切系统引擎:平滑回落到静默
+      for (let i = 0; i < VIZ_BANDS; i++) {
+        this.vals[i] = this.vals[i] * 0.86;
+      }
+    }
+    for (let i = 0; i < VIZ_BANDS; i++) {
+      this.peaks[i] = Math.max(this.vals[i], this.peaks[i] * 0.985);
+    }
+    this.draw();
+  }
+
+  private draw(): void {
+    const w = this.ctx.width;
+    const h = this.ctx.height;
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+    const gap = 2;
+    const barW = Math.max(1, (w - gap * (VIZ_BANDS - 1)) / VIZ_BANDS);
+    const usable = h - 4;
+    this.ctx.clearRect(0, 0, w, h);
+    this.ctx.fillStyle = this.accentColor;
+    for (let i = 0; i < VIZ_BANDS; i++) {
+      const bh = Math.max(2, this.vals[i] * usable);
+      const x = i * (barW + gap);
+      this.ctx.fillRect(x, h - bh, barW, bh);
+    }
+    // 峰值保持线
+    this.ctx.fillStyle = this.capColor;
+    for (let i = 0; i < VIZ_BANDS; i++) {
+      if (this.peaks[i] > 0.02) {
+        const y = h - Math.max(2, this.peaks[i] * usable);
+        this.ctx.fillRect(i * (barW + gap), y - 2, barW, 2);
+      }
+    }
+  }
+
+  build() {
+    Canvas(this.ctx)
+      .width('100%')
+      .height(64)
+      .onReady((): void => {
+        this.draw();
+      })
+  }
+}
 
 @Component
 export struct FullPlayerDest {
@@ -501,9 +593,15 @@ export struct FullPlayerDest {
       .padding({ left: 24, right: 24, top: 8 })
       .alignItems(HorizontalAlign.Center)
 
+      // 频谱可视化(0.18.0):开关开 + 无损引擎 + 有曲目时显示(条件经 playerVer bump 重估)
+      if (this.vizNow()) {
+        VizView()
+          .width('100%')
+          .padding({ left: 28, right: 28, top: 6, bottom: 2 })
+      }
+
       // 进度条
-      Column({ space: 4 }) {
-        Slider({
+      Column({ space: 4 }) {        Slider({
           value: this.sliderValue(),
           min: 0,
           max: Math.max(1, this.durMs()),
@@ -765,6 +863,13 @@ export struct FullPlayerDest {
               PlayerController.get().toggleSkipSilence();
             })
         }
+        // 频谱可视化(0.18.0;仅无损引擎生效,开关经 playerVer bump 刷新高亮)
+        ListItem() {
+          this.SheetRow($r('sys.symbol.waveform'), $r('app.string.viz_toggle'),
+            PlayerController.get().vizOn(), (): void => {
+              PlayerController.get().toggleViz();
+            })
+        }
         // 睡眠定时器(0.14.0:展开档位 chips;到点前 30s 渐弱;label 体内直读)
         ListItem() {
           this.SheetRow($r('sys.symbol.timer'), this.sleepLabel(),
@@ -1012,6 +1117,13 @@ export struct FullPlayerDest {
 
   private lyricsNow(): string {
     return PlayerController.get().currentLyrics;
+  }
+
+  // 频谱条显示条件:开关开 + 无损引擎 + 有曲目(更多菜单开关经 bumpPlayer 驱动重估)
+  private vizNow(): boolean {
+    return PlayerController.get().vizOn() &&
+      PlayerController.get().engineKind === EngineKind.LOSSLESS &&
+      PlayerController.get().currentSong !== null;
   }
 
   private editLabel(): ResourceStr {

@@ -6,10 +6,12 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { window, display } from '@kit.ArkUI';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { pasteboard } from '@kit.BasicServicesKit';
 import { SettingsService } from '../../service/SettingsService';
 import { Db, EqPresetRow } from '../../data/Db';
 import { PlayerController } from '../../service/PlayerController';
-import { PEQ_FREQS, flatBands, presetBands, isBuiltinPreset, parseAutoEq } from '../../service/EqPresets';
+import { PEQ_FREQS, PEQ_BAND_COUNT, flatBands, presetBands, isBuiltinPreset, parseAutoEq } from '../../service/EqPresets';
 import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][Equalizer]';
@@ -341,6 +343,47 @@ export struct EqualizerDest {
     this.importCtrl.open();
   }
 
+  // 曲线导出(0.18.0,补 P3 待办"EQ 预设导入导出"的导出半边):
+  // 31 段 → AutoEq「GraphicEq:」标准文本(与 parseAutoEq 同格式互认)→ 剪贴板 + 沙箱 exports/eq_curve.txt
+  private async exportCurve(): Promise<void> {
+    try {
+      const pairs: string[] = [];
+      for (let i = 0; i < PEQ_BAND_COUNT; i++) {
+        const g = Math.round(this.bands[i] * 2) / 2; // 与滑条步进一致(0.5dB)
+        pairs.push(`${this.fmtFreq(PEQ_FREQS[i])}-${g.toFixed(1)}`);
+      }
+      const text = `GraphicEq: ${pairs.join(';')}`;
+      let copied = false;
+      try {
+        const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+        await pasteboard.getSystemPasteboard().setData(data);
+        copied = true;
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'pasteboard fail %{public}s', (e as Error).message);
+      }
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const dir = `${ctx.filesDir}/exports`;
+      try {
+        if (!fs.accessSync(dir)) {
+          fs.mkdirSync(dir, true);
+        }
+      } catch (e2) {
+        fs.mkdirSync(dir, true);
+      }
+      const path = `${dir}/eq_curve.txt`;
+      const f = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      fs.writeSync(f.fd, text);
+      fs.closeSync(f);
+      hilog.info(DOMAIN, TAG, 'eq curve exported -> %{public}s copied=%{public}d', path, copied ? 1 : 0);
+      this.getUIContext().getPromptAction().showToast({
+        message: copied ? L($r('app.string.eq_exported'), path) : L($r('app.string.eq_exported_nocopy'), path)
+      });
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'exportCurve fail %{public}s', (e as Error).message);
+      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.str_export_failed') });
+    }
+  }
+
   private fmtFreq(hz: number): string {
     if (hz >= 1000) {
       return `${Math.round(hz / 100) / 10}k`;
@@ -449,6 +492,20 @@ export struct EqualizerDest {
           .borderRadius(12)
           .onClick(() => {
             this.openImportDialog();
+          })
+
+          // 曲线导出(0.18.0):GraphicEq 文本 → 剪贴板 + exports/eq_curve.txt
+          Button({ stateEffect: true }) {
+            SymbolGlyph($r('sys.symbol.doc_plaintext'))
+              .fontSize(18)
+              .fontColor([$r('app.color.text_primary')])
+          }
+          .width(40)
+          .height(40)
+          .backgroundColor($r('app.color.badge_bg'))
+          .borderRadius(12)
+          .onClick(() => {
+            this.exportCurve();
           })
 
           if (this.savedPresets.length > 0) {

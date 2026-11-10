@@ -16,6 +16,7 @@ add_library(timbrava_core SHARED
             src/flac_tag_writer.cpp
             src/mmap_file.cpp
             src/audio_output.cpp
+            src/viz.cpp
             third_party/xxhash.c)
 
 target_link_libraries(timbrava_core PUBLIC libohaudio.so libhilog_ndk.z.so libace_napi.z.so libohcrypto.so)

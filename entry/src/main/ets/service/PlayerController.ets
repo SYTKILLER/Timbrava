@@ -17,7 +17,7 @@ import { LrcLibClient } from './LrcLibClient';
 import { LiveViewService } from './LiveViewService';
 import { IAudioEngine, EngineKind, EngineEventData, EngineEventKind, EngineTrackInfo } from './engine/EngineTypes';
 import { SystemEngine } from './engine/SystemEngine';
-import { LosslessEngine, NativeAnalyzeResult } from './engine/LosslessEngine';
+import { LosslessEngine, NativeAnalyzeResult, NativeVizResult } from './engine/LosslessEngine';
 import { PEQ_FREQS, presetBands } from './EqPresets';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
@@ -277,10 +277,11 @@ export class PlayerController {
       target.seek(effectiveResume);
       this.positionMs = resumeFromMs;
     }
-    // ReplayGain/PEQ/跳过静音/倍速/音量:按设置应用到本曲
+    // ReplayGain/PEQ/跳过静音/倍速/音量/声道平衡:按设置应用到本曲
     target.setSpeed(this.speed);
     target.setVolume(this.volume);
     target.setSkipSilence(SettingsService.get().skipSilence);
+    target.setBalance(SettingsService.get().balancePct / 100, SettingsService.get().monoMode);
     this.applySongDsp(song);
     target.play();
     this.isPlaying = true;
@@ -800,6 +801,35 @@ export class PlayerController {
 
   isSkipSilenceOn(): boolean {
     return SettingsService.get().skipSilence;
+  }
+
+  // ===== 频谱可视化(0.18.0) =====
+  // 开关持久化;轮询仅在播放页可见 + 播放中 + 无损引擎时有数据(其余返回 null)。
+  async toggleViz(): Promise<void> {
+    const on = !SettingsService.get().vizEnabled;
+    await SettingsService.get().setVizEnabled(on);
+    this.losslessEngine.vizSetEnabled(on); // 系统引擎态下开关仅影响下次无损播放
+    this.bumpPlayer();
+  }
+
+  vizOn(): boolean {
+    return SettingsService.get().vizEnabled;
+  }
+
+  // 30fps 轮询入口(播放页 VizView 调):无损引擎返回最新快照,系统引擎 null
+  vizPoll(): NativeVizResult | null {
+    if (this.engineKind !== EngineKind.LOSSLESS) {
+      return null;
+    }
+    const r = this.losslessEngine.vizPoll();
+    return r.ok ? r : null;
+  }
+
+  // ===== 声道平衡 / 单声道(0.18.0) =====
+  // 持久化 + 即时下发(系统引擎 no-op,由 IAudioEngine 契约兜底)
+  async setBalance(pct: number, mono: boolean): Promise<void> {
+    await SettingsService.get().setBalance(pct, mono);
+    this.engine?.setBalance(pct / 100, mono);
   }
 
   // ReplayGain 扫描通道(AnalysisService 用;无损引擎独有,系统引擎格式不支持)

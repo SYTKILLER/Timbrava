@@ -44,7 +44,10 @@ public:
     void setReplayGain(float trackGainDb, float trackPeak, float albumGainDb, float albumPeak, int mode);
     void setSkipSilence(bool on);
     void setSpeed(float speed);
+    void setBalance(float balance, bool mono);
+    void setVizEnabled(bool on); // 频谱可视化开关(仅开关;表随 openTrack 按 sampleRate 重建)
     bool dspActive() const;
+    bool balanceActive() const;
     // ReplayGain 扫描(同步,重活;由 napi 异步工作线程调用,勿在 JS 线程调):
     // 整曲解码测 95 分位块 RMS 与峰值。与播放引擎互不干扰(独立解码器实例)。
     bool analyzeTrack(int fd, float *outRmsDb, float *outPeak, int64_t *outDurationMs, std::string *errMsg);
@@ -99,6 +102,8 @@ private:
     std::atomic<bool> peqEnabled_{false};
     std::atomic<bool> skipSilence_{false};
     std::atomic<float> speed_{1.0f};
+    std::atomic<float> balance_{0.0f};
+    std::atomic<bool> mono_{false};
     std::atomic<int> rgMode_{0};
     std::atomic<float> lastTrackGain_{0.0f};
     std::atomic<float> lastTrackPeak_{1.0f};

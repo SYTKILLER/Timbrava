@@ -17,6 +17,9 @@
 
 #include "include/engine.h"
 #include "include/flac_tag_writer.h"
+#include "include/viz.h"
+
+#include <cstring>
 
 #define LOG_TAG "[TimbravaNative][Napi]"
 #include <hilog/log.h>
@@ -314,6 +317,71 @@ static napi_value JSetSkipSilence(napi_env env, napi_callback_info info)
     }
     timbrava::Engine::instance().setSkipSilence(on);
     return nullptr;
+}
+
+// 声道平衡 + 单声道(0.18.0):balance ∈ [-1,1],mono 合并左右
+static napi_value JSetBalance(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    double balance = 0.0;
+    bool mono = false;
+    if (argc >= 1) {
+        napi_get_value_double(env, args[0], &balance);
+    }
+    if (argc >= 2) {
+        napi_get_value_bool(env, args[1], &mono);
+    }
+    timbrava::Engine::instance().setBalance(static_cast<float>(balance), mono);
+    return nullptr;
+}
+
+// 频谱可视化开关(0.18.0):仅无损引擎播放页启用,关闭时音频路径零开销
+static napi_value JVizSetEnabled(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool on = false;
+    if (argc >= 1) {
+        napi_get_value_bool(env, args[0], &on);
+    }
+    timbrava::Engine::instance().setVizEnabled(on);
+    return nullptr;
+}
+
+// 频谱轮询:返回 {ok, frameId, rmsDb, peak, bands:Float32Array(48)}
+static napi_value JVizPoll(napi_env env, napi_callback_info info)
+{
+    (void)info;
+    timbrava::VizSnapshot snap;
+    const bool has = timbrava::vizPoll(&snap);
+    napi_value result = nullptr;
+    napi_create_object(env, &result);
+    napi_value v;
+    napi_get_boolean(env, has, &v);
+    napi_set_named_property(env, result, "ok", v);
+    if (has) {
+        napi_create_int32(env, snap.frameId, &v);
+        napi_set_named_property(env, result, "frameId", v);
+        napi_create_double(env, static_cast<double>(snap.rmsDb), &v);
+        napi_set_named_property(env, result, "rmsDb", v);
+        napi_create_double(env, static_cast<double>(snap.peak), &v);
+        napi_set_named_property(env, result, "peak", v);
+        void *data = nullptr;
+        napi_value ab = nullptr;
+        if (napi_create_arraybuffer(env, timbrava::kVizBandCount * sizeof(float), &data, &ab) == napi_ok &&
+            data != nullptr && ab != nullptr) {
+            memcpy(data, snap.bands, timbrava::kVizBandCount * sizeof(float));
+            napi_value ta = nullptr;
+            if (napi_create_typedarray(env, napi_float32_array, timbrava::kVizBandCount, ab, 0, &ta) == napi_ok &&
+                ta != nullptr) {
+                napi_set_named_property(env, result, "bands", ta);
+            }
+        }
+    }
+    return result;
 }
 
 static napi_value JAnalyzeFd(napi_env env, napi_callback_info info)
@@ -709,6 +777,9 @@ static napi_value Init(napi_env env, napi_value exports)
         {"setReplayGain", nullptr, JSetReplayGain, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setSpeed", nullptr, JSetSpeed, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setSkipSilence", nullptr, JSetSkipSilence, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setBalance", nullptr, JSetBalance, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"vizSetEnabled", nullptr, JVizSetEnabled, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"vizPoll", nullptr, JVizPoll, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"analyzeFd", nullptr, JAnalyzeFd, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"writeFlacTags", nullptr, JWriteFlacTags, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"hashFd", nullptr, JHashFd, nullptr, nullptr, nullptr, napi_default, nullptr},

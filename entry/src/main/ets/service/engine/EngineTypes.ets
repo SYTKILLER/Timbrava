@@ -55,6 +55,9 @@ export interface IAudioEngine {
   getDurationMs(): number;
   // 倍速(0.25~3.0;SystemEngine 取最近 AVPlayer 档位,LosslessEngine 重采样任意值)
   setSpeed(speed: number): void;
+  // 声道平衡/单声道(0.18.0):balance ∈ [-1,1](负偏左/正偏右),mono 合并左右。
+  // 仅无损引擎 DSP 支持;系统引擎 no-op。
+  setBalance(balance: number, mono: boolean): void;
   // 引擎音量 0~1(LosslessEngine=OHAudio 渲染流音量;SystemEngine=AVPlayer setVolume)
   setVolume(v: number): void;
   // 跳过静音(仅无损引擎 DSP 支持;系统引擎 no-op)

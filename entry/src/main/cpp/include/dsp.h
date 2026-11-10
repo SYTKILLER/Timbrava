@@ -90,6 +90,12 @@ void dspSetSkipSilence(bool enabled);
 void dspSetReplayGain(float trackGainDb, float trackPeak, float albumGainDb,
                       float albumPeak, int mode);
 
+// 声道平衡与单声道(0.18.0):balance ∈ [-1,1](负=偏左/衰减右声道,正=偏右/衰减左声道),
+// mono=true 时左右声道取均值合并(立体声源;>2 声道仅混 ch0/ch1)。
+// 处理位置:RG → PEQ → 单声道合并 → 平衡 → 软限幅。balance==0 且 mono=false 时
+// 该阶段精确旁路(逐位直通不受影响)。
+void dspSetBalance(float balance, bool mono);
+
 // 全曲响度分析(ReplayGain 扫描器):对整曲交错 F32 PCM 分块测响度,
 // 返回 95 分位块 RMS(dB,未加等响权重,P2 近似)与线性峰值。
 // 分块调用:每块调 dspAnalyzeBlock,结束后 dspAnalyzeFinish 取结果。

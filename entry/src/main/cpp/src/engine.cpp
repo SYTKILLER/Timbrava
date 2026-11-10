@@ -10,6 +10,7 @@
 #include "flac_decoder.h"
 #include "wav_decoder.h"
 #include "dsd_decoder.h"
+#include "viz.h"
 
 namespace timbrava {
 
@@ -160,6 +161,8 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
 
     info_ = decoder_->info();
     fmt_ = decoder_->outFormat();
+    // 频谱表按新采样率重建(禁用态下仅重置窗口,开销极小)
+    timbrava::vizPrepare(info_.sampleRate, info_.channels);
     ring_.reset();
     framesConsumed_ = 0;
     eof_ = false;
@@ -180,11 +183,11 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
     if (useDsp && renderFmt != OutputFormat::F32LE) {
         renderFmt = OutputFormat::F32LE;
     }
-    if (dspActive()) {
-        timbrava::dspPrepare(info_.sampleRate, info_.channels);
-        timbrava::dspSetReplayGain(lastTrackGain_.load(), lastTrackPeak_.load(),
-                                   lastAlbumGain_.load(), lastAlbumPeak_.load(), rgMode_.load());
-    }
+    // 恒 prepare:让声道数/采样率始终有效(否则全关路径下播放中启用平衡时,
+    // dspSetBalance 发布的参数 channels=0 不生效);声明(频段/RG/平衡)保留并按新率重算
+    timbrava::dspPrepare(info_.sampleRate, info_.channels);
+    timbrava::dspSetReplayGain(lastTrackGain_.load(), lastTrackPeak_.load(),
+                               lastAlbumGain_.load(), lastAlbumPeak_.load(), rgMode_.load());
     out_ = std::make_unique<AudioOutput>();
     int channels = info_.channels;
     OutputFormat fmtCopy = fmt_;
@@ -224,6 +227,8 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
                     if (dspActive()) {
                         timbrava::dspProcessInterleavedF32(reinterpret_cast<float *>(buffer), frames);
                     }
+                    // 频谱采集:DSP 之后(听到的内容),仅启用态计算(feed 内部检查)
+                    timbrava::vizFeedF32(reinterpret_cast<float *>(buffer), frames, channels);
                     n = floatOut;
                     framesConsumed_ += static_cast<int64_t>(frames);
                     consumeGaplessFrames(static_cast<int64_t>(frames));
@@ -233,6 +238,11 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
                 const int64_t framesRead = static_cast<int64_t>(n / static_cast<size_t>(frameBytes));
                 framesConsumed_ += framesRead;
                 consumeGaplessFrames(framesRead);
+                // 比特完美整型直通路径同样采集(只读源缓冲,不动音频数据)
+                if (framesRead > 0) {
+                    timbrava::vizFeedInt(static_cast<uint8_t *>(buffer),
+                                         static_cast<size_t>(framesRead), channels, fmtCopy);
+                }
             }
             if (n < static_cast<size_t>(length)) {
                 std::memset(static_cast<uint8_t *>(buffer) + n, 0, static_cast<size_t>(length) - n);
@@ -575,9 +585,31 @@ void Engine::setSpeed(float speed)
     OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "speed %{public}s", std::to_string(speed_.load()).c_str());
 }
 
+void Engine::setBalance(float balance, bool mono)
+{
+    float b = std::max(-1.0f, std::min(1.0f, balance));
+    balance_.store(b);
+    mono_.store(mono);
+    timbrava::dspSetBalance(b, mono);
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "balance %{public}s mono=%{public}d",
+                 std::to_string(b).c_str(), mono ? 1 : 0);
+}
+
+void Engine::setVizEnabled(bool on)
+{
+    timbrava::vizSetEnabled(on);
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "viz %{public}s", on ? "on" : "off");
+}
+
+bool Engine::balanceActive() const
+{
+    const float b = balance_.load();
+    return mono_.load() || b > 0.001f || b < -0.001f;
+}
+
 bool Engine::dspActive() const
 {
-    return peqEnabled_.load() || rgMode_.load() != 0 || skipSilence_.load();
+    return peqEnabled_.load() || rgMode_.load() != 0 || skipSilence_.load() || balanceActive();
 }
 
 // ReplayGain 扫描:独立解码器全曲解码 → 50ms 块 RMS → 95 分位。
@@ -762,6 +794,14 @@ void Engine::produceSpeeded(uint8_t *out, size_t outBytes, int channels, OutputF
         while (resPhase_ >= 1.0) {
             resPhase_ -= 1.0;
             ++resIdx_;
+        }
+    }
+    // 倍速路径频谱采集(插值成品即所听内容)
+    if (produced > 0) {
+        if (f32Render) {
+            timbrava::vizFeedF32(reinterpret_cast<float *>(out), produced, channels);
+        } else {
+            timbrava::vizFeedInt(out, produced, channels, renderFmt);
         }
     }
     // 剩余填零
