@@ -6,6 +6,7 @@ import { Db } from '../data/Db';
 import { LibraryStore } from '../data/LibraryStore';
 import { Song, RepeatMode } from '../data/Model';
 import { L } from '../common/Lang';
+import { SettingsService } from './SettingsService';
 
 const TAG = '[Timbrava][Queue]';
 const DOMAIN = 0x0001;
@@ -41,7 +42,34 @@ export class QueueService {
   boundary: string = 'none';        // none | album | artist | folder
   stopAfterCurrent: boolean = false;
 
+  // 智能随机防重复(0.21.0):近 3 天已播曲目降权集合(60s TTL 异步刷新,nextIndex 同步读缓存)
+  private recentIds: Set<number> = new Set<number>();
+  private recentLoadedAt: number = 0;
+
   private saveTimer: number = -1;
+
+  // 近期已播集合异步刷新(TTL 节流;同步路径只读上次缓存,首用回落全随机)
+  private refreshRecentAsync(): void {
+    const now = Date.now();
+    if (now - this.recentLoadedAt < 60000) {
+      return;
+    }
+    this.recentLoadedAt = now;
+    Db.get().listRecentPlayedIds(3).then((ids: number[]): void => {
+      this.recentIds = new Set<number>(ids);
+    }).catch((): void => {
+    });
+  }
+
+  // Fisher-Yates 原地洗牌
+  private fisherYates(arr: number[]): void {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = arr[i];
+      arr[i] = arr[j];
+      arr[j] = t;
+    }
+  }
 
   // ===== 多队列(QueueBoard,P1 简化版:切换=重建播放流) =====
 
@@ -308,6 +336,21 @@ export class QueueService {
     }
     // 随机模式(华为音乐/QQ音乐共识):next 随机跳且可循环;自然播完也随机续播
     if (this.shuffled && this.list.length > 1) {
+      // 智能随机(0.21.0):优先在"未近播"曲目中随机(排除当前曲);候选空则回落全随机
+      if (SettingsService.get().smartShuffle) {
+        this.refreshRecentAsync();
+        if (this.recentIds.size > 0 && this.recentIds.size < this.list.length) {
+          const cands: number[] = [];
+          for (let i = 0; i < this.list.length; i++) {
+            if (i !== this.currentOrderIndex && !this.recentIds.has(this.list[i])) {
+              cands.push(i);
+            }
+          }
+          if (cands.length > 0) {
+            return cands[Math.floor(Math.random() * cands.length)];
+          }
+        }
+      }
       let r = this.currentOrderIndex;
       while (r === this.currentOrderIndex) {
         r = Math.floor(Math.random() * this.list.length);
@@ -434,14 +477,26 @@ export class QueueService {
       }
       const curId = this.currentSongId();
       const rest = this.list.slice();
-      // Fisher-Yates
-      for (let i = rest.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        const t = rest[i];
-        rest[i] = rest[j];
-        rest[j] = t;
+      if (SettingsService.get().smartShuffle) {
+        // 智能随机(0.21.0):近期已播曲目排到洗牌序列末段(首段全"新鲜"曲目),不重复一洗就抽到刚听过的
+        this.refreshRecentAsync();
+        const fresh: number[] = [];
+        const recent: number[] = [];
+        for (const id of rest) {
+          if (this.recentIds.has(id)) {
+            recent.push(id);
+          } else {
+            fresh.push(id);
+          }
+        }
+        this.fisherYates(fresh);
+        this.fisherYates(recent);
+        this.list = fresh.concat(recent);
+      } else {
+        // Fisher-Yates
+        this.fisherYates(rest);
+        this.list = rest;
       }
-      this.list = rest;
       this.shuffled = true;
       this.currentOrderIndex = curId >= 0 ? this.list.indexOf(curId) : 0;
     }

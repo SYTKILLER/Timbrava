@@ -1615,6 +1615,50 @@
     {
       "name": "chart_daily",
       "value": "Daily time (14 days)"
+    },
+    {
+      "name": "dbl_tap_fav",
+      "value": "Double-tap cover to favorite"
+    },
+    {
+      "name": "dbl_tap_fav_sub",
+      "value": "Double-tap the player cover to favorite the current song; disable to avoid accidental taps"
+    },
+    {
+      "name": "player_guide_fav",
+      "value": "Double-tap cover: favorite the current song"
+    },
+    {
+      "name": "player_guide_swipe",
+      "value": "Swipe down: close the player"
+    },
+    {
+      "name": "player_guide_more",
+      "value": "Top-right dots: more features"
+    },
+    {
+      "name": "player_guide_dismiss",
+      "value": "Tap anywhere to dismiss"
+    },
+    {
+      "name": "smart_shuffle",
+      "value": "Smart shuffle"
+    },
+    {
+      "name": "smart_shuffle_sub",
+      "value": "Reduce repeats of recently played songs when shuffling"
+    },
+    {
+      "name": "chart_weekly",
+      "value": "Weekly time (12 weeks)"
+    },
+    {
+      "name": "chart_artist_top",
+      "value": "Top artists (30 days)"
+    },
+    {
+      "name": "chart_plays_unit",
+      "value": "%s plays"
     }
   ]
 }

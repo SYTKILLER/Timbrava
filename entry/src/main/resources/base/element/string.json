@@ -1615,6 +1615,50 @@
     {
       "name": "chart_daily",
       "value": "近 14 天每日时长"
+    },
+    {
+      "name": "dbl_tap_fav",
+      "value": "双击封面收藏"
+    },
+    {
+      "name": "dbl_tap_fav_sub",
+      "value": "双击播放页封面收藏当前歌曲,可关防误触"
+    },
+    {
+      "name": "player_guide_fav",
+      "value": "双击封面:收藏当前歌曲"
+    },
+    {
+      "name": "player_guide_swipe",
+      "value": "下滑页面:关闭播放页"
+    },
+    {
+      "name": "player_guide_more",
+      "value": "右上四点:更多功能"
+    },
+    {
+      "name": "player_guide_dismiss",
+      "value": "轻触任意位置关闭"
+    },
+    {
+      "name": "smart_shuffle",
+      "value": "智能随机"
+    },
+    {
+      "name": "smart_shuffle_sub",
+      "value": "随机洗牌与跳曲时减少近期听过的重复"
+    },
+    {
+      "name": "chart_weekly",
+      "value": "近 12 周时长"
+    },
+    {
+      "name": "chart_artist_top",
+      "value": "艺人榜 · 近 30 天"
+    },
+    {
+      "name": "chart_plays_unit",
+      "value": "%s 次"
     }
   ]
 }

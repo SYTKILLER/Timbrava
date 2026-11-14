@@ -111,6 +111,13 @@ export class DayAgg {
   plays: number = 0;
 }
 
+// 艺人榜聚合(0.21.0 统计图表增强;按播放次数聚合,含时长)
+export class ArtistAgg {
+  artist: string = '';
+  plays: number = 0;
+  ms: number = 0;
+}
+
 export class Db {
   private static instance: Db | null = null;
   private store: relationalStore.RdbStore | null = null;
@@ -1044,6 +1051,53 @@ export class Db {
       rs.close();
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'listPlayAggByDay fail %{public}s', (e as Error).message);
+    }
+    return out;
+  }
+
+  // 艺人榜(0.21.0 统计图表增强):history JOIN songs 按艺人聚合,播放次数降序取前 limit
+  async listTopArtists(days: number, limit: number): Promise<ArtistAgg[]> {
+    const st = this.storeOrThrow();
+    const out: ArtistAgg[] = [];
+    try {
+      const since = Date.now() - days * 86400000;
+      const rs = await st.querySql(
+        'SELECT s.artist AS artist, COUNT(*) AS n, SUM(h.ms_played) AS ms FROM history h ' +
+        'JOIN songs s ON h.song_id = s.id WHERE h.played_at >= ? AND s.artist != \'\'' +
+        ' GROUP BY s.artist ORDER BY n DESC LIMIT ?', [since, limit]);
+      while (rs.goToNextRow()) {
+        const row = new ArtistAgg();
+        row.artist = rs.getString(rs.getColumnIndex('artist'));
+        row.plays = rs.getLong(rs.getColumnIndex('n'));
+        const msIdx = rs.getColumnIndex('ms');
+        if (rs.getColumnTypeSync(msIdx) === relationalStore.ColumnType.REAL) {
+          row.ms = Math.round(rs.getDouble(msIdx));
+        } else if (rs.getColumnTypeSync(msIdx) !== relationalStore.ColumnType.NULL) {
+          row.ms = rs.getLong(msIdx);
+        }
+        out.push(row);
+      }
+      rs.close();
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'listTopArtists fail %{public}s', (e as Error).message);
+    }
+    return out;
+  }
+
+  // 近 N 天播放过的曲目 id 集合(0.21.0 智能随机防重复;DISTINCT 去重)
+  async listRecentPlayedIds(days: number): Promise<number[]> {
+    const st = this.storeOrThrow();
+    const out: number[] = [];
+    try {
+      const since = Date.now() - days * 86400000;
+      const rs = await st.querySql(
+        'SELECT DISTINCT song_id FROM history WHERE played_at >= ?', [since]);
+      while (rs.goToNextRow()) {
+        out.push(rs.getLong(rs.getColumnIndex('song_id')));
+      }
+      rs.close();
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'listRecentPlayedIds fail %{public}s', (e as Error).message);
     }
     return out;
   }

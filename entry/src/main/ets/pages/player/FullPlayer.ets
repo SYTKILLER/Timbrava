@@ -9,11 +9,13 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
 import { display } from '@kit.ArkUI';
+import { vibrator } from '@kit.SensorServiceKit';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
 import { PlayerController } from '../../service/PlayerController';
 import { QueueService, PlayMode } from '../../service/QueueService';
 import { EngineKind } from '../../service/engine/EngineTypes';
 import { LibraryStore } from '../../data/LibraryStore';
+import { Db } from '../../data/Db';
 import { Song, RepeatMode, formatDuration } from '../../data/Model';
 import { LyricsPanel } from '../../components/LyricsPanel';
 import { CoverSuperRes } from '../../service/CoverSuperRes';
@@ -148,6 +150,7 @@ export struct FullPlayerDest {
   @StorageProp('playerExitY') exitY: number = 0;
   @State volMirror: number = 100;    // 音量条镜像(拖动中本地值,End 才落库)
   @State sheetExpand: string = '';   // 更多菜单展开区:'' | 'speed' | 'sleep'
+  @State spdMirror: number = 1.0;    // 倍速滑条镜像(拖动本地值,End 落库;0.21.0)
   // 曲目信息镜像(0.15.0 #20):playerVer 不经 @State 落地时 build 内节点零依赖不刷新,
   // "if (playerVer < 0)"注册依赖写法条件恒假不重评——切歌标题/艺人/专辑/封面纹丝不动的根因
   @State songTitle: string = '';
@@ -157,6 +160,10 @@ export struct FullPlayerDest {
   @State engineMirror: string = '';
   @State favMirror: boolean = false;
   @State hasSong: boolean = false;
+  @StorageProp('prefDblTapFav') dblTapFav: boolean = true; // 双击封面收藏开关(0.20.0)
+  @State heartScale: number = 0;    // 红心爆裂动效(0.20.0)
+  @State heartOpacity: number = 0;
+  @State showGuide: boolean = false; // 首次手势引导(0.20.0;一次性,轻触关闭并记忆)
   @State qIndexMirror: number = -1;  // 队列抽屉当前序高亮镜像
   @State waveData: Float32Array | null = null; // 波形包络(0.19.0;null=隐藏波形条)
   @State waveFor: number = -1;
@@ -167,6 +174,7 @@ export struct FullPlayerDest {
   private srFor: string = '';
   private pathStack: NavPathStack | null = null;
   private swiperCtrl: SwiperController = new SwiperController();
+  private lastCoverTap: number = 0; // 封面双击判定窗口(0.20.0)
 
   aboutToAppear(): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -180,6 +188,12 @@ export struct FullPlayerDest {
     this.volMirror = Math.round(PlayerController.get().volume * 100);
     AppStorage.setOrCreate('playerExitY', 0); // 上次 pop 残留清零(新实例从原位开始)
     this.cacheWaveColors();
+    // 首次手势引导(0.20.0):只在有曲目时弹一次
+    Db.get().getSetting('gestureGuideSeen', '0').then((v: string): void => {
+      if (v !== '1' && PlayerController.get().currentSong !== null) {
+        this.showGuide = true;
+      }
+    });
     // 页面可能晚于播放打开:@Watch 不会补发,主动拉一次(歌词由控制器中心化加载)
     this.onPlayerChanged();
   }
@@ -216,6 +230,57 @@ export struct FullPlayerDest {
 
   onLibChanged(): void {
     this.favMirror = this.hasSong && LibraryStore.get().isFavorite((PlayerController.get().currentSong as Song).id);
+  }
+
+  // ===== 双击封面收藏 + 手势引导(0.20.0) =====
+
+  // 收藏翻转 + 红心爆裂 + 轻震动:顶栏红心与双击封面共用
+  burstFavorite(): void {
+    PlayerController.get().toggleFavorite();
+    this.vibrate();
+    // 两段动画:弹出(0.4→1)再放大淡出(1→1.7/0),结束清零可复触发
+    this.heartScale = 0.4;
+    this.heartOpacity = 0;
+    this.getUIContext().animateTo({
+      duration: 170,
+      curve: Curve.EaseOut,
+      onFinish: (): void => {
+        this.getUIContext().animateTo({
+          duration: 280,
+          curve: Curve.EaseIn,
+          onFinish: (): void => {
+            this.heartScale = 0;
+            this.heartOpacity = 0;
+          }
+        }, (): void => {
+          this.heartScale = 1.7;
+          this.heartOpacity = 0;
+        });
+      }
+    }, (): void => {
+      this.heartScale = 1.0;
+      this.heartOpacity = 0.95;
+    });
+  }
+
+  // 轻震动反馈(手势动效标配);模拟器/不支持设备静默忽略
+  // API26 d.ts:VibratePreset={type:'preset',effectId,count};EffectId 仅有 clock timer 预设
+  private vibrate(): void {
+    try {
+      vibrator.startVibration(
+        { type: 'preset', effectId: vibrator.EffectId.EFFECT_CLOCK_TIMER, count: 1 },
+        { usage: 'touch' }
+      ).catch((): void => {
+      });
+    } catch (e) {
+      // 无振动能力(模拟器/无马达)忽略
+    }
+  }
+
+  // 首次引导:轻触关闭并落库(此后不再弹)
+  private closeGuide(): void {
+    this.showGuide = false;
+    Db.get().setSetting('gestureGuideSeen', '1');
   }
 
   // ===== 波形进度条(0.19.0) =====
@@ -391,7 +456,8 @@ export struct FullPlayerDest {
           .height(40)
           .backgroundColor(Color.Transparent)
           .onClick(() => {
-            PlayerController.get().toggleFavorite();
+            // 0.20.0:与双击封面同路径(红心爆裂+轻震动)
+            this.burstFavorite();
           })
           Button({ stateEffect: true }) {
             // 四点钮(0.17.0):华为应用"展开更多选项"语义;原 more(方块)改 dot_grid_2x2
@@ -448,6 +514,53 @@ export struct FullPlayerDest {
           this.showQueue = false;
         }
       })
+
+      // 首次手势引导(0.20.0):一次性浮层,轻触任意处关闭并记忆
+      if (this.showGuide) {
+        Column({ space: 22 }) {
+          Row({ space: 14 }) {
+            SymbolGlyph($r('sys.symbol.heart'))
+              .fontSize(22)
+              .fontColor([$r('app.color.accent')])
+            Text($r('app.string.player_guide_fav'))
+              .fontSize(15)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          Row({ space: 14 }) {
+            SymbolGlyph($r('sys.symbol.arrow_down'))
+              .fontSize(22)
+              .fontColor([$r('app.color.accent')])
+            Text($r('app.string.player_guide_swipe'))
+              .fontSize(15)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          Row({ space: 14 }) {
+            SymbolGlyph($r('sys.symbol.dot_grid_2x2'))
+              .fontSize(22)
+              .fontColor([$r('app.color.accent')])
+            Text($r('app.string.player_guide_more'))
+              .fontSize(15)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          Text($r('app.string.player_guide_dismiss'))
+            .fontSize(12)
+            .fontColor($r('app.color.text_secondary'))
+            .margin({ top: 6 })
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor('#B3000000')
+        .onClick(() => {
+          this.closeGuide();
+        })
+      }
 
       }
       .width('100%')
@@ -541,38 +654,61 @@ export struct FullPlayerDest {
 
       // 封面⇄歌词:Swiper 左右滑动(封面向左滑→歌词;歌词向右滑→封面)
       Swiper(this.swiperCtrl) {
-        // 第 1 页:大封面
-        Column() {
-          if (this.srPm !== null) {
-            Image(this.srPm)
+        // 第 1 页:大封面 + 双击收藏红心爆裂(0.20.0)
+        Stack() {
+          Column() {
+            if (this.srPm !== null) {
+              Image(this.srPm)
+                .width(this.playerSkin === 'minimal' ? '52%' : '78%')
+                .aspectRatio(1)
+                .borderRadius(24)
+                .objectFit(ImageFit.Cover)
+                .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
+            } else if (this.songArt.length > 0) {
+              Image(this.songArt)
+                .width(this.playerSkin === 'minimal' ? '52%' : '78%')
+                .aspectRatio(1)
+                .borderRadius(24)
+                .objectFit(ImageFit.Cover)
+                .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
+            } else {
+              Column({ space: 12 }) {
+                SymbolGlyph($r('sys.symbol.music_note_list'))
+                  .fontSize(72)
+                  .fontColor([$r('app.color.accent')])
+              }
               .width(this.playerSkin === 'minimal' ? '52%' : '78%')
               .aspectRatio(1)
               .borderRadius(24)
-              .objectFit(ImageFit.Cover)
-              .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
-          } else if (this.songArt.length > 0) {
-            Image(this.songArt)
-              .width(this.playerSkin === 'minimal' ? '52%' : '78%')
-              .aspectRatio(1)
-              .borderRadius(24)
-              .objectFit(ImageFit.Cover)
-              .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
-          } else {
-            Column({ space: 12 }) {
-              SymbolGlyph($r('sys.symbol.music_note_list'))
-                .fontSize(72)
-                .fontColor([$r('app.color.accent')])
+              .backgroundColor($r('app.color.badge_bg'))
+              .justifyContent(FlexAlign.Center)
             }
-            .width(this.playerSkin === 'minimal' ? '52%' : '78%')
-            .aspectRatio(1)
-            .borderRadius(24)
-            .backgroundColor($r('app.color.badge_bg'))
-            .justifyContent(FlexAlign.Center)
           }
+          .width('100%')
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+          // 红心爆裂层:双击封面收藏后的即时反馈(缩放淡出;轻震动在 burstFavorite 内)
+          SymbolGlyph($r('sys.symbol.heart_fill'))
+            .fontSize(110)
+            .fontColor([$r('app.color.accent')])
+            .opacity(this.heartOpacity)
+            .scale({ x: this.heartScale, y: this.heartScale })
         }
         .width('100%')
         .height('100%')
-        .justifyContent(FlexAlign.Center)
+        .onClick(() => {
+          // 双击收藏(0.20.0):TapGesture count=2 与单击 click 并存时单击会吞双击首击,
+          // 改 onClick + 自判 300ms 双击窗口,单击无动作
+          const now = Date.now();
+          if (now - this.lastCoverTap <= 300) {
+            this.lastCoverTap = 0;
+            if (this.dblTapFav) {
+              this.burstFavorite();
+            }
+          } else {
+            this.lastCoverTap = now;
+          }
+        })
         // 子级垂直 pan:子手势优先于 Swiper 内建手势(方向正交),封面区下滑可关闭页面
 .gesture(PanGesture({ fingers: 1, direction: PanDirection.Vertical, distance: 8 })
           .onActionUpdate((e: GestureEvent): void => {
@@ -905,6 +1041,9 @@ export struct FullPlayerDest {
           this.SheetRow($r('sys.symbol.speed_multiple'), this.speedLabel(),
             this.speedNow() !== 1.0, (): void => {
               this.sheetExpand = this.sheetExpand === 'speed' ? '' : 'speed';
+              if (this.sheetExpand === 'speed') {
+                this.spdMirror = this.speedNow(); // 滑条镜像对齐当前倍速(0.21.0)
+              }
             }, true, this.sheetExpand === 'speed', 'speed')
         }
         if (this.sheetExpand === 'speed') {
@@ -922,12 +1061,46 @@ export struct FullPlayerDest {
                   .responseRegion({ x: 0, y: -2, width: '100%', height: 40 })
                   .onClick(() => {
                     PlayerController.get().setSpeed(v);
+                    this.spdMirror = v;
                     this.sheetExpand = '';
                   })
               }, (v: number): string => `spd_${v}`)
             }
             .width('100%')
             .padding({ left: 16, right: 16, bottom: 4 })
+          }
+          // 自定义微调滑条(0.21.0,YT Music 0.05 步进):0.25~3.0,松手落库;档位 chips 之外的连续取值
+          ListItem() {
+            Row({ space: 12 }) {
+              Text('0.25x')
+                .fontSize(11)
+                .fontColor($r('app.color.text_secondary'))
+              Slider({
+                value: this.spdMirror,
+                min: 0.25,
+                max: 3.0,
+                step: 0.05,
+                style: SliderStyle.OutSet
+              })
+                .selectedColor($r('app.color.accent'))
+                .trackColor($r('app.color.divider'))
+                .blockColor($r('app.color.accent'))
+                .layoutWeight(1)
+                .height(34)
+                .onChange((value: number, mode: SliderChangeMode) => {
+                  this.spdMirror = Math.round(value * 20) / 20; // 0.05 步进对齐
+                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                    PlayerController.get().setSpeed(this.spdMirror);
+                  }
+                })
+              Text(`${this.spdMirror.toFixed(2)}x`)
+                .fontSize(11)
+                .fontColor(this.spdMirror !== 1.0 ? $r('app.color.accent') : $r('app.color.text_secondary'))
+                .width(46)
+                .textAlign(TextAlign.End)
+            }
+            .width('100%')
+            .padding({ left: 20, right: 16, top: 4, bottom: 12 })
           }
         }
         // A-B 重复

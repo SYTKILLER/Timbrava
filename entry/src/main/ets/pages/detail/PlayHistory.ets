@@ -1,7 +1,7 @@
 // 统计回顾页(M6+0.19.0):最近播放(history 单条记录,可滑删)/最常播放(play_count)/图表(热图+每日曲线)。
 // 行内播放按钮 = 以当前列表为队列从该曲起播;ListItem 左滑露出 16vp 圆形红底白 symbol 删除钮(左右 8vp 留白)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { Db, HistoryRow, MostRow, DayAgg } from '../../data/Db';
+import { Db, HistoryRow, MostRow, DayAgg, ArtistAgg } from '../../data/Db';
 import { Song, formatDuration } from '../../data/Model';
 import { PlayerController } from '../../service/PlayerController';
 import { QueueService } from '../../service/QueueService';
@@ -12,6 +12,7 @@ const DOMAIN = 0x0001;
 const PAGE_SIZE = 100;
 const HEAT_DAYS = 84; // 热图窗口:12 周
 const BAR_DAYS = 14;  // 每日曲线窗口
+const WEEK_BARS = 12; // 周时长柱窗口(0.21.0)
 
 // 路由参数:初始分段(0 最近播放/1 最常播放)
 export class PlayHistoryParam {
@@ -30,6 +31,7 @@ export struct PlayHistoryDest {
   @State recent: HistoryRow[] = [];
   @State most: MostRow[] = [];
   @State agg: DayAgg[] = [];
+  @State topArtists: ArtistAgg[] = []; // 艺人榜(0.21.0;近 30 天 top5)
   @State loading: boolean = true;
   private aggMap: Map<number, DayAgg> = new Map<number, DayAgg>();
   private pathStack: NavPathStack | null = null;
@@ -53,6 +55,9 @@ export struct PlayHistoryDest {
         this.aggMap.set(r.day, r);
       }
       this.agg = rows; // 触发图表分支重估
+    });
+    Db.get().listTopArtists(30, 5).then((rows: ArtistAgg[]): void => {
+      this.topArtists = rows;
     });
   }
 
@@ -266,6 +271,101 @@ export struct PlayHistoryDest {
         .backgroundColor($r('app.color.card_bg'))
         .alignItems(HorizontalAlign.Start)
 
+        // 近 12 周时长柱(0.21.0 统计增强):周合计时长,自 aggMap 逐周求和
+        Column({ space: 8 }) {
+          Text($r('app.string.chart_weekly'))
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+          Row({ space: 4 }) {
+            ForEach(Array.from({ length: WEEK_BARS }, (_v: undefined, i: number) => i), (i: number) => {
+              Column() {
+                Column()
+                  .layoutWeight(1)
+                  .width('100%')
+                  .borderRadius({ topLeft: 3, topRight: 3 })
+                  .backgroundColor($r('app.color.accent'))
+                  .opacity(this.weekOpacity(i))
+              }
+              .width('100%')
+              .height(72)
+              .justifyContent(FlexAlign.End)
+            }, (i: number): string => `wb_${i}`)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Bottom)
+          Row() {
+            Text(this.weekLabel(0))
+              .fontSize(10)
+              .fontColor($r('app.color.text_secondary'))
+            Blank()
+            Text(this.weekLabel(WEEK_BARS - 1))
+              .fontSize(10)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .padding(14)
+        .borderRadius(16)
+        .backgroundColor($r('app.color.card_bg'))
+        .alignItems(HorizontalAlign.Start)
+
+        // 艺人榜(0.21.0 统计增强):近 30 天播放次数 top5,条长=相对第一名占比
+        Column({ space: 10 }) {
+          Text($r('app.string.chart_artist_top'))
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+          if (this.topArtists.length === 0) {
+            Text($r('app.string.history_empty'))
+              .fontSize(12)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+          } else {
+            ForEach(this.topArtists, (a: ArtistAgg, idx: number) => {
+              Row({ space: 10 }) {
+                Text(`${idx + 1}`)
+                  .fontSize(12)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width(18)
+                  .textAlign(TextAlign.Center)
+                Column({ space: 4 }) {
+                  Text(a.artist)
+                    .fontSize(13)
+                    .fontColor($r('app.color.text_primary'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%')
+                  Row() {
+                    Column()
+                      .width(`${Math.max(8, 100 * a.plays / Math.max(1, this.topArtists[0].plays))}%`)
+                      .height(6)
+                      .borderRadius(3)
+                      .backgroundColor($r('app.color.accent'))
+                      .opacity(idx === 0 ? 1.0 : 0.65)
+                  }
+                  .width('100%')
+                }
+                .alignItems(HorizontalAlign.Start)
+                .layoutWeight(1)
+                Text(L($r('app.string.chart_plays_unit'), String(a.plays)))
+                  .fontSize(11)
+                  .fontColor($r('app.color.text_secondary'))
+              }
+              .width('100%')
+            }, (a: ArtistAgg): string => `ta_${a.artist}`)
+          }
+        }
+        .width('100%')
+        .padding(14)
+        .borderRadius(16)
+        .backgroundColor($r('app.color.card_bg'))
+        .alignItems(HorizontalAlign.Start)
+
         Blank().height(Math.max(this.bottomSafeVp, 28) + 8)
       }
       .width('100%')
@@ -318,6 +418,37 @@ export struct PlayHistoryDest {
   private barDayLabel(i: number): string {
     const day = this.todayIdx() - (BAR_DAYS - 1) + i;
     const d = new Date(day * 86400000);
+    const pad = (n: number): string => (n < 10 ? `0${n}` : `${n}`);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
+
+  // ===== 周时长柱 + 艺人榜(0.21.0 统计增强) =====
+
+  // 第 i 周合计时长:与热图对齐(末周含今天),按 7 日窗口在 aggMap 求和
+  private weekSum(i: number): number {
+    let s = 0;
+    const endDay = this.todayIdx() - (WEEK_BARS - 1 - i) * 7;
+    for (let d = endDay - 6; d <= endDay; d++) {
+      s += this.dayMs(d);
+    }
+    return s;
+  }
+
+  private weekOpacity(i: number): number {
+    const ms = this.weekSum(i);
+    let maxMs = 0;
+    for (let w = 0; w < WEEK_BARS; w++) {
+      maxMs = Math.max(maxMs, this.weekSum(w));
+    }
+    if (ms <= 0 || maxMs <= 0) {
+      return 0.12;
+    }
+    return Math.max(0.18, 0.25 + 0.75 * (ms / maxMs));
+  }
+
+  private weekLabel(i: number): string {
+    const endDay = this.todayIdx() - (WEEK_BARS - 1 - i) * 7;
+    const d = new Date(endDay * 86400000);
     const pad = (n: number): string => (n < 10 ? `0${n}` : `${n}`);
     return `${d.getMonth() + 1}/${d.getDate()}`;
   }

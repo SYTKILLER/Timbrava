@@ -50,6 +50,8 @@ export class SettingsService {
   balancePct: number = 0;        // 声道平衡 -100~100(0.18.0;负偏左/正偏右,仅无损引擎)
   monoMode: boolean = false;     // 单声道合并(0.18.0;仅无损引擎)
   resumePerTrack: boolean = false; // 每曲进度记忆(0.19.0;有声书/播客场景,默认关)
+  dblTapFav: boolean = true;     // 双击封面收藏(0.20.0;默认开,可关防误触)
+  smartShuffle: boolean = false; // 智能随机·减少重复(0.21.0;近期已播降权,默认关)
 
   private loaded: boolean = false;
 
@@ -90,6 +92,8 @@ export class SettingsService {
     this.balancePct = Number.isFinite(bal) && bal >= -100 && bal <= 100 ? bal : 0;
     this.monoMode = (await db.getSetting('monoMode', '0')) === '1';
     this.resumePerTrack = (await db.getSetting('resumePerTrack', '0')) === '1';
+    this.dblTapFav = (await db.getSetting('dblTapFav', '1')) === '1';
+    this.smartShuffle = (await db.getSetting('smartShuffle', '0')) === '1';
     this.loaded = true;
     this.syncTokens();
     hilog.info(DOMAIN, TAG, 'settings loaded');
@@ -114,6 +118,8 @@ export class SettingsService {
     this.token('prefBalancePct', this.balancePct);
     this.token('prefMonoMode', this.monoMode);
     this.token('prefResumeTrack', this.resumePerTrack);
+    this.token('prefDblTapFav', this.dblTapFav);
+    this.token('prefSmartShuffle', this.smartShuffle);
   }
 
   private async save(key: string, value: string): Promise<void> {
@@ -233,5 +239,21 @@ export class SettingsService {
     this.syncTokens();
     await this.save('resumePerTrack', on ? '1' : '0');
     hilog.info(DOMAIN, TAG, 'resume per track -> %{public}s', String(on));
+  }
+
+  // 双击封面收藏(0.20.0):默认开,可关防误触
+  async setDblTapFav(on: boolean): Promise<void> {
+    this.dblTapFav = on;
+    this.syncTokens();
+    await this.save('dblTapFav', on ? '1' : '0');
+    hilog.info(DOMAIN, TAG, 'dbl tap fav -> %{public}s', String(on));
+  }
+
+  // 智能随机·减少重复(0.21.0):洗牌时近期已播排尾段,随机跳过优先选未近播曲目
+  async setSmartShuffle(on: boolean): Promise<void> {
+    this.smartShuffle = on;
+    this.syncTokens();
+    await this.save('smartShuffle', on ? '1' : '0');
+    hilog.info(DOMAIN, TAG, 'smart shuffle -> %{public}s', String(on));
   }
 }

@@ -44,6 +44,8 @@ export struct PrefToggleRow {
   @StorageProp('prefPauseBt') prefPauseBt: boolean = true;
   @StorageProp('prefResumeInterrupt') prefResumeInterrupt: boolean = true;
   @StorageProp('prefResumeTrack') prefResumeTrack: boolean = false;
+  @StorageProp('prefDblTapFav') prefDblTapFav: boolean = true;
+  @StorageProp('prefSmartShuffle') prefSmartShuffle: boolean = false;
   prefKey: string = 'lossless';
   title: ResourceStr = '';
   sub: ResourceStr = '';
@@ -68,6 +70,12 @@ export struct PrefToggleRow {
     if (this.prefKey === 'resumeTrack') {
       return this.prefResumeTrack;
     }
+    if (this.prefKey === 'dblTapFav') {
+      return this.prefDblTapFav;
+    }
+    if (this.prefKey === 'smartShuffle') {
+      return this.prefSmartShuffle;
+    }
     return this.prefResumeInterrupt;
   }
 
@@ -81,6 +89,10 @@ export struct PrefToggleRow {
       s.setPauseOnBtOff(v);
     } else if (this.prefKey === 'resumeTrack') {
       s.setResumePerTrack(v);
+    } else if (this.prefKey === 'dblTapFav') {
+      s.setDblTapFav(v);
+    } else if (this.prefKey === 'smartShuffle') {
+      s.setSmartShuffle(v);
     } else {
       s.setResumeAfterInterrupt(v);
     }
@@ -227,6 +239,12 @@ export struct SettingsTab {
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               PrefToggleRow({ prefKey: 'resumeTrack', title: $r('app.string.resume_track'),
                 sub: $r('app.string.resume_track_sub') })
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              PrefToggleRow({ prefKey: 'dblTapFav', title: $r('app.string.dbl_tap_fav'),
+                sub: $r('app.string.dbl_tap_fav_sub') })
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              PrefToggleRow({ prefKey: 'smartShuffle', title: $r('app.string.smart_shuffle'),
+                sub: $r('app.string.smart_shuffle_sub') })
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               OnlineLyricsRow()
             }
