@@ -160,6 +160,7 @@ export struct LibraryTab {
   @State addedSongs: Song[] = [];       // 横滑卡展示:最近入库 10 首(左=最新)
   private addedQueue: Song[] = [];      // 点击起播的「最近添加」队列(前 50,与查看全部列表一致)
   @State vpH: number = 0;   // 外层 Scroll 视口高(onAreaChange 实测)
+  @State vpW: number = 0;   // 外层 Scroll 视口宽(0.22.0:专辑 Grid 响应列数,分栏窗格内自动变小)
   @State segH: number = 40; // 分段器行高(onAreaChange 实测)
   // 0.14.0 排序(持久化;索引条仅在按名称排序时显示)
   @State sortSongs: string = 'title';   // title|artist|album|added|duration
@@ -493,6 +494,22 @@ export struct LibraryTab {
     PlayerController.get().playQueueIndex(0);
   }
 
+  // 专辑 Grid 列数(0.22.0):窗格宽实测 → 2~5 列;手机竖持(374vp)保持原 3 列(回归红线:窄屏不变),
+  // 仅极窄(小折叠外屏/自由窗口 <400)降 2 列
+  private albumCols(): number {
+    const w = this.vpW;
+    if (w >= 980) {
+      return 5;
+    }
+    if (w >= 760) {
+      return 4;
+    }
+    if (w >= 400) {
+      return 3;
+    }
+    return 2;
+  }
+
   build() {
     Column() {
       // 24-1 页头联动收起:整页(页头+内容)装进外层 Scroll,Swiper 定高留出页头余量——
@@ -598,6 +615,7 @@ export struct LibraryTab {
       .edgeEffect(EdgeEffect.None)
       .onAreaChange((_o: Area, n: Area): void => {
         this.vpH = n.height as number;
+        this.vpW = n.width as number;
       })
     }
     .width('100%')
@@ -882,7 +900,8 @@ export struct LibraryTab {
           }
         }, (a: Album): string => a.key)
       }
-      .columnsTemplate('1fr 1fr 1fr')
+      // 0.22.0 响应列数:实测窗格宽(分栏左侧栏/手机)自动 2~5 列(原写死 3 列,平板/折叠屏展开浪费宽度)
+      .columnsTemplate(`repeat(${this.albumCols()}, 1fr)`)
       .columnsGap(12)
       .rowsGap(16)
       .padding({ left: 16, right: 16 })

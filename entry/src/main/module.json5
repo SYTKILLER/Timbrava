@@ -37,6 +37,28 @@
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
+        // 2in1/PC 自由窗口限制(0.22.0):最小 420×480(防缩到极致布局错乱;二分屏准入区间 [360,512] 合规),
+        // 默认窗口 1200×800vp 居中(PC 设计规范推荐值,首启即进宽布局)
+        "minWindowWidth": 420,
+        "minWindowHeight": 480,
+        "metadata": [
+          {
+            "name": "ohos.ability.window.width",
+            "value": "1200"
+          },
+          {
+            "name": "ohos.ability.window.height",
+            "value": "800"
+          },
+          {
+            "name": "ohos.ability.window.left",
+            "value": "center"
+          },
+          {
+            "name": "ohos.ability.window.top",
+            "value": "center"
+          }
+        ],
         "backgroundModes": [
           "audioPlayback"
         ],

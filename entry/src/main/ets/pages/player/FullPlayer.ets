@@ -11,6 +11,7 @@ import { image } from '@kit.ImageKit';
 import { display } from '@kit.ArkUI';
 import { vibrator } from '@kit.SensorServiceKit';
 import { AppTheme, SafeAreaResult } from '../../common/Theme';
+import { Breakpoint } from '../../common/Breakpoint';
 import { PlayerController } from '../../service/PlayerController';
 import { QueueService, PlayMode } from '../../service/QueueService';
 import { EngineKind } from '../../service/engine/EngineTypes';
@@ -143,6 +144,8 @@ export struct FullPlayerDest {
   @State playBounce: boolean = false; // 点击缩放弹跳
   @State topSafe: number = 36;
   @State bottomSafe: number = 28;
+  @StorageProp('bpMdPlus') bpMdPlus: boolean = false;  // md+:播放页双栏(0.22.0 折叠屏展开/平板/PC)
+  @StorageProp('foldHover') foldHover: boolean = false; // 折叠悬停态:上封面避折痕/下半屏控制(0.22.0)
   @State srPm: image.PixelMap | null = null; // 26-5 超分封面(小封面实时超分,失败/不支持=null 原图)
   @State dragY: number = 0;          // 下滑关闭跟手位移(0.14.0)
   // pop 自定义转场位移(Index.playerNavTransition 经 animateTo 驱动 0→视口高;
@@ -165,7 +168,11 @@ export struct FullPlayerDest {
   @State heartOpacity: number = 0;
   @State showGuide: boolean = false; // 首次手势引导(0.20.0;一次性,轻触关闭并记忆)
   @State qIndexMirror: number = -1;  // 队列抽屉当前序高亮镜像
-  @State waveData: Float32Array | null = null; // 波形包络(0.19.0;null=隐藏波形条)
+  // 波形包络(0.19.0;null=隐藏波形条)。0.22.0 修复:@State 存 TypedArray 丢 [[TypedArrayName]] 内部槽
+  // (KB 红线:状态代理不存 TypedArray)——开播放页即 jscrash(0.19.0 模拟器未验漏网)。
+  // 数据改 private + waveVer 计数触发 build 重估,drawWave 直读 private 无代理。
+  private waveData: Float32Array | null = null;
+  @State waveVer: number = 0;
   @State waveFor: number = -1;
   private waveCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
   private waveReady: boolean = false;
@@ -205,6 +212,7 @@ export struct FullPlayerDest {
     this.dismissing = false;
     AppStorage.setOrCreate('playerExitY', 0);
     AppStorage.setOrCreate('playerExitFrom', 0);
+    AppStorage.setOrCreate('fullPlayerInStack', false);
   }
 
   onPlayerChanged(): void {
@@ -291,6 +299,7 @@ export struct FullPlayerDest {
     if (s === null || !WaveformService.get().supported(s.codec)) {
       this.waveData = null;
       this.waveFor = -1;
+      this.waveVer++;
       return;
     }
     const id = s.id;
@@ -299,6 +308,7 @@ export struct FullPlayerDest {
       if (cur !== null && cur.id === id && d !== null) {
         this.waveData = d;
         this.waveFor = id;
+        this.waveVer++;
         this.drawWave();
       }
     });
@@ -505,9 +515,10 @@ export struct FullPlayerDest {
             this.dragFinish(e);
           }))
       // 播放队列(0.15.2:自绘 Stack 条目改标准 bindSheet 半模态——标准上滑动画/下拉关闭;
-      // 0.17.0 多档高度:默认中档,上滑展开大档)
+      // 0.17.0 多档高度:默认中档,上滑展开大档;0.22.0 preferType POPUP——<600vp 底部/≥600vp 跟手,官方折叠屏推荐)
       .bindSheet(this.showQueue, this.QueueDrawer(), {
         detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+        preferType: SheetType.POPUP,
         dragBar: false,
         showClose: false,
         onDisappear: (): void => {
@@ -571,6 +582,7 @@ export struct FullPlayerDest {
       .translate({ y: this.dragY + this.exitY })
       .bindSheet(this.showMoreSheet, this.MoreSheet(), {
         height: 500,
+        preferType: SheetType.POPUP,
         showClose: false,
         dragBar: true,
         onDisappear: (): void => {
@@ -584,6 +596,8 @@ export struct FullPlayerDest {
     .backgroundColor(Color.Transparent)
     .onReady((ctx: NavDestinationContext): void => {
       this.pathStack = ctx.pathStack;
+      // 宽屏播放条(Index.PlayerBar)据此隐藏:播放页自带完整播控(0.22.0)
+      AppStorage.setOrCreate('fullPlayerInStack', true);
     })
     .onBackPressed((): boolean => {
       if (this.showQueue) {
@@ -620,6 +634,17 @@ export struct FullPlayerDest {
     this.dismissAnimated();
   }
 
+  // 悬停态封面区高度(0.22.0):折痕上缘以上空间 − 状态栏 − 顶栏;无折痕数据回落 45% 视口高
+  private hoverCoverH(): number {
+    const crease = Breakpoint.creaseTopVp();
+    if (crease > 0) {
+      return Math.max(160, crease - this.topSafe - 56);
+    }
+    const density = display.getDefaultDisplaySync().densityPixels;
+    const vh = display.getDefaultDisplaySync().height / (density > 0 ? density : 3);
+    return Math.max(160, vh * 0.45);
+  }
+
   // 下滑关闭跟手/判定(多手势实例共用:内容 Column + Swiper 两个页面容器)
   private dragUpdate(e: GestureEvent): void {
     if (this.showQueue || this.showMoreSheet || this.dismissing) {
@@ -647,289 +672,363 @@ export struct FullPlayerDest {
     }
   }
 
-  @Builder
-  PlayerBody() {
-    Column() {
-      Blank().height(8)
+  // ===== 0.22.0 抽出的三形态共用子块(原 PlayerBody 内联;窄屏 Swiper/宽屏双栏/悬停态三处复用) =====
 
-      // 封面⇄歌词:Swiper 左右滑动(封面向左滑→歌词;歌词向右滑→封面)
-      Swiper(this.swiperCtrl) {
-        // 第 1 页:大封面 + 双击收藏红心爆裂(0.20.0)
-        Stack() {
-          Column() {
-            if (this.srPm !== null) {
-              Image(this.srPm)
-                .width(this.playerSkin === 'minimal' ? '52%' : '78%')
-                .aspectRatio(1)
-                .borderRadius(24)
-                .objectFit(ImageFit.Cover)
-                .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
-            } else if (this.songArt.length > 0) {
-              Image(this.songArt)
-                .width(this.playerSkin === 'minimal' ? '52%' : '78%')
-                .aspectRatio(1)
-                .borderRadius(24)
-                .objectFit(ImageFit.Cover)
-                .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
-            } else {
-              Column({ space: 12 }) {
-                SymbolGlyph($r('sys.symbol.music_note_list'))
-                  .fontSize(72)
-                  .fontColor([$r('app.color.accent')])
-              }
-              .width(this.playerSkin === 'minimal' ? '52%' : '78%')
-              .aspectRatio(1)
-              .borderRadius(24)
-              .backgroundColor($r('app.color.badge_bg'))
-              .justifyContent(FlexAlign.Center)
-            }
+  // 封面页(原 Swiper 第 1 页):双击收藏红心爆裂 + 下滑关闭手势
+  @Builder
+  CoverPage() {
+    Stack() {
+      Column() {
+        if (this.srPm !== null) {
+          Image(this.srPm)
+            .width(this.playerSkin === 'minimal' ? '52%' : '78%')
+            .aspectRatio(1)
+            .borderRadius(24)
+            .objectFit(ImageFit.Cover)
+            .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
+        } else if (this.songArt.length > 0) {
+          Image(this.songArt)
+            .width(this.playerSkin === 'minimal' ? '52%' : '78%')
+            .aspectRatio(1)
+            .borderRadius(24)
+            .objectFit(ImageFit.Cover)
+            .shadow({ radius: 48, color: '#33000000', offsetX: 0, offsetY: 12 })
+        } else {
+          Column({ space: 12 }) {
+            SymbolGlyph($r('sys.symbol.music_note_list'))
+              .fontSize(72)
+              .fontColor([$r('app.color.accent')])
           }
-          .width('100%')
-          .height('100%')
+          .width(this.playerSkin === 'minimal' ? '52%' : '78%')
+          .aspectRatio(1)
+          .borderRadius(24)
+          .backgroundColor($r('app.color.badge_bg'))
           .justifyContent(FlexAlign.Center)
-          // 红心爆裂层:双击封面收藏后的即时反馈(缩放淡出;轻震动在 burstFavorite 内)
-          SymbolGlyph($r('sys.symbol.heart_fill'))
-            .fontSize(110)
-            .fontColor([$r('app.color.accent')])
-            .opacity(this.heartOpacity)
-            .scale({ x: this.heartScale, y: this.heartScale })
         }
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      // 红心爆裂层:双击封面收藏后的即时反馈(缩放淡出;轻震动在 burstFavorite 内)
+      SymbolGlyph($r('sys.symbol.heart_fill'))
+        .fontSize(110)
+        .fontColor([$r('app.color.accent')])
+        .opacity(this.heartOpacity)
+        .scale({ x: this.heartScale, y: this.heartScale })
+    }
+    .width('100%')
+    .height('100%')
+    .onClick(() => {
+      // 双击收藏(0.20.0):TapGesture count=2 与单击 click 并存时单击会吞双击首击,
+      // 改 onClick + 自判 300ms 双击窗口,单击无动作
+      const now = Date.now();
+      if (now - this.lastCoverTap <= 300) {
+        this.lastCoverTap = 0;
+        if (this.dblTapFav) {
+          this.burstFavorite();
+        }
+      } else {
+        this.lastCoverTap = now;
+      }
+    })
+    // 子级垂直 pan:子手势优先于 Swiper 内建手势(方向正交),封面区下滑可关闭页面
+    .gesture(PanGesture({ fingers: 1, direction: PanDirection.Vertical, distance: 8 })
+      .onActionUpdate((e: GestureEvent): void => {
+        this.dragUpdate(e);
+      })
+      .onActionEnd((e: GestureEvent): void => {
+        this.dragFinish(e);
+      }))
+  }
+
+  // 歌词页(原 Swiper 第 2 页):逐字歌词面板 + 打轴入口 + 下滑关闭手势
+  @Builder
+  LyricsPage() {
+    Column({ space: 6 }) {
+      LyricsPanel({ lyricText: this.lyricsNow() })
         .width('100%')
-        .height('100%')
+        .layoutWeight(1)
+      Button(this.editLabel())
+        .fontSize(11)
+        .height(36)
+        .fontColor($r('app.color.text_secondary'))
+        .backgroundColor($r('app.color.badge_bg'))
+        .responseRegion({ x: 0, y: -2, width: '100%', height: 40 }) // 最小可点目标 40vp(0.17.0)
         .onClick(() => {
-          // 双击收藏(0.20.0):TapGesture count=2 与单击 click 并存时单击会吞双击首击,
-          // 改 onClick + 自判 300ms 双击窗口,单击无动作
-          const now = Date.now();
-          if (now - this.lastCoverTap <= 300) {
-            this.lastCoverTap = 0;
-            if (this.dblTapFav) {
-              this.burstFavorite();
-            }
-          } else {
-            this.lastCoverTap = now;
+          const song = PlayerController.get().currentSong;
+          const stack = this.pathStack;
+          if (song !== null && stack !== null) {
+            stack.pushPathByName('LyricsEditor', song.id);
           }
         })
-        // 子级垂直 pan:子手势优先于 Swiper 内建手势(方向正交),封面区下滑可关闭页面
-.gesture(PanGesture({ fingers: 1, direction: PanDirection.Vertical, distance: 8 })
-          .onActionUpdate((e: GestureEvent): void => {
-            this.dragUpdate(e);
-          })
-          .onActionEnd((e: GestureEvent): void => {
-            this.dragFinish(e);
-          }))
-
-        // 第 2 页:歌词
-        Column({ space: 6 }) {
-          LyricsPanel({ lyricText: this.lyricsNow() })
-            .width('100%')
-            .layoutWeight(1)
-          Button(this.editLabel())
-            .fontSize(11)
-            .height(36)
-            .fontColor($r('app.color.text_secondary'))
-            .backgroundColor($r('app.color.badge_bg'))
-            .responseRegion({ x: 0, y: -2, width: '100%', height: 40 }) // 最小可点目标 40vp(0.17.0)
-            .onClick(() => {
-              const song = PlayerController.get().currentSong;
-              const stack = this.pathStack;
-              if (song !== null && stack !== null) {
-                stack.pushPathByName('LyricsEditor', song.id);
-              }
-            })
-        }
-        .width('88%')
-        .height('100%')
-        .padding({ top: 8, bottom: 8 })
-        .justifyContent(FlexAlign.Center).gesture(PanGesture({ fingers: 1, direction: PanDirection.Vertical, distance: 8 })
-          .onActionUpdate((e: GestureEvent): void => {
-            this.dragUpdate(e);
-          })
-          .onActionEnd((e: GestureEvent): void => {
-            this.dragFinish(e);
-          }))
-      }
-      .index(this.pageIdx)
-      .loop(false)
-      .indicator(false)
-      .cachedCount(1)
-      .width('100%')
-      .layoutWeight(1)
-      .onChange((i: number) => {
-        this.pageIdx = i;
+    }
+    .width('88%')
+    .height('100%')
+    .padding({ top: 8, bottom: 8 })
+    .justifyContent(FlexAlign.Center)
+    .gesture(PanGesture({ fingers: 1, direction: PanDirection.Vertical, distance: 8 })
+      .onActionUpdate((e: GestureEvent): void => {
+        this.dragUpdate(e);
       })
+      .onActionEnd((e: GestureEvent): void => {
+        this.dragFinish(e);
+      }))
+  }
 
-      // 信息 + 引擎徽章(全部走 @State 镜像:切歌经 onPlayerChanged 落镜像驱动刷新)
-      Column({ space: 6 }) {
-        Text(this.songTitle)
-          .fontSize(22)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.songSub)
-          .fontSize(14)
-          .fontColor($r('app.color.text_secondary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Row({ space: 8 }) {
-          Text(this.engineMirror)
+  // 信息 + 引擎徽章(全部走 @State 镜像:切歌经 onPlayerChanged 落镜像驱动刷新)
+  @Builder
+  PlayerMeta() {
+    Column({ space: 6 }) {
+      Text(this.songTitle)
+        .fontSize(22)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(this.songSub)
+        .fontSize(14)
+        .fontColor($r('app.color.text_secondary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Row({ space: 8 }) {
+        Text(this.engineMirror)
+          .fontSize(10)
+          .fontColor($r('app.color.badge_text'))
+          .backgroundColor($r('app.color.badge_bg'))
+          .borderRadius(6)
+          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+        if (this.songSpec.length > 0) {
+          Text(this.songSpec)
             .fontSize(10)
             .fontColor($r('app.color.badge_text'))
             .backgroundColor($r('app.color.badge_bg'))
             .borderRadius(6)
             .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-          if (this.songSpec.length > 0) {
-            Text(this.songSpec)
-              .fontSize(10)
-              .fontColor($r('app.color.badge_text'))
-              .backgroundColor($r('app.color.badge_bg'))
-              .borderRadius(6)
-              .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-          }
         }
-        .justifyContent(FlexAlign.Center)
       }
-      .width('100%')
-      .padding({ left: 24, right: 24, top: 8 })
-      .alignItems(HorizontalAlign.Center)
+      .justifyContent(FlexAlign.Center)
+    }
+    .width('100%')
+    .padding({ left: 24, right: 24, top: 8 })
+    .alignItems(HorizontalAlign.Center)
+  }
 
-      // 频谱可视化(0.18.0):开关开 + 无损引擎 + 有曲目时显示(条件经 playerVer bump 重估)
-      if (this.vizNow()) {
+  // 进度条(0.19.0:有包络数据时波形条前置,点击波形即 seek)
+  @Builder
+  PlayerProgress() {
+    Column({ space: 4 }) {
+      // waveVer 读入条件注册依赖(private waveData 变化不触发 build,waveVer 计数驱动上屏/隐藏)
+      if (this.waveVer > 0 && this.waveFor >= 0 && this.waveData !== null) {
+        Canvas(this.waveCtx)
+          .width('88%')
+          .height(44)
+          .onReady((): void => {
+            this.waveReady = true;
+            this.drawWave();
+          })
+          .onClick((e: ClickEvent) => {
+            const w = this.waveCtx.width;
+            if (w > 0) {
+              const frac = Math.min(1, Math.max(0, e.x / w));
+              PlayerController.get().seekTo(Math.round(frac * this.durMs()));
+            }
+          })
+      }
+      Slider({
+        value: this.sliderValue(),
+        min: 0,
+        max: Math.max(1, this.durMs()),
+        step: 1,
+        style: SliderStyle.OutSet
+      })
+        .selectedColor($r('app.color.accent'))
+        .trackColor($r('app.color.divider'))
+        .blockColor($r('app.color.accent'))
+        .width('88%')
+        .onChange((value: number, mode: SliderChangeMode) => {
+          if (mode === SliderChangeMode.Begin) {
+            this.seeking = true;
+            this.seekPreviewMs = value;
+          } else if (mode === SliderChangeMode.Moving) {
+            this.seekPreviewMs = value;
+          } else if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+            PlayerController.get().seekTo(Math.round(value));
+            this.seeking = false;
+          }
+        })
+      Row() {
+        Text(formatDuration(this.sliderValue()))
+          .fontSize(11)
+          .fontColor($r('app.color.text_secondary'))
+        Blank()
+        Text(formatDuration(this.durMs()))
+          .fontSize(11)
+          .fontColor($r('app.color.text_secondary'))
+      }
+      .width('88%')
+    }
+    .width('100%')
+    .padding({ top: 4 })
+  }
+
+  // 控制区:播放模式(左) | 上一曲/播放暂停(动画)/下一曲 | 队列(右)
+  // 音量条 0.15.1 起收入「更多」菜单(用户约定)
+  @Builder
+  PlayerControls() {
+    Row({ space: 8 }) {
+      Button({ stateEffect: true }) {
+        SymbolGlyph(this.modeIcon())
+          .fontSize(20)
+          .fontColor([this.modeAccent() ? $r('app.color.accent') : $r('app.color.text_primary')])
+      }
+      .width(46)
+      .height(46)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => {
+        const m = QueueService.get().cyclePlayMode();
+        hilog.info(DOMAIN, TAG, 'play mode -> %{public}s', m);
+      })
+
+      Button({ stateEffect: true }) {
+        SymbolGlyph($r('sys.symbol.backward_end_fill'))
+          .fontSize(30)
+          .fontColor([$r('app.color.control_fg')])
+      }
+      .width(52)
+      .height(52)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => {
+        PlayerController.get().playPrev();
+      })
+
+      // 播放/暂停:点击缩放弹跳动画 + symbol 切换(@State 镜像驱动过渡)
+      Button({ stateEffect: false }) {
+        SymbolGlyph(this.playingMirror ? $r('sys.symbol.pause_fill') : $r('sys.symbol.play_fill'))
+          .fontSize(38)
+          .fontColor([$r('app.color.on_accent')])
+      }
+      .width(76)
+      .height(76)
+      .borderRadius(38)
+      .backgroundColor($r('app.color.accent'))
+      .scale(this.playBounce ? { x: 0.82, y: 0.82 } : { x: 1, y: 1 })
+      .animation({ duration: 160, curve: Curve.Friction })
+      .onClick(() => {
+        this.playBounce = true;
+        PlayerController.get().playPause();
+        // 下一帧回弹(等价按下-松开的弹性反馈)
+        setTimeout((): void => {
+          this.playBounce = false;
+        }, 90);
+      })
+
+      Button({ stateEffect: true }) {
+        SymbolGlyph($r('sys.symbol.forward_end_fill'))
+          .fontSize(30)
+          .fontColor([$r('app.color.control_fg')])
+      }
+      .width(52)
+      .height(52)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => {
+        PlayerController.get().playNext();
+      })
+
+      Button({ stateEffect: true }) {
+        SymbolGlyph($r('sys.symbol.list_bullet'))
+          .fontSize(20)
+          .fontColor([$r('app.color.text_primary')])
+      }
+      .width(46)
+      .height(46)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => {
+        this.showQueue = !this.showQueue;
+      })
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .padding({ top: 8, bottom: 8 })
+  }
+
+  @Builder
+  PlayerBody() {
+    Column() {
+      Blank().height(8)
+
+      // 0.22.0 三形态内容区:悬停(上封面避折痕/下歌词+控制,FolderStack 官方同款上下分区;
+      // 半折叠时窗口仍为全屏,上下两半都可交互)| 宽屏 md+(左封面/右歌词,官方 MusicHome
+      // 宽屏播放页同构,Q 音乐折叠屏同款)| 窄屏 sm(Swiper 封面⇄歌词,现状)
+      if (this.foldHover) {
+        Column() {
+          Column() {
+            this.CoverPage()
+          }
+          .width('100%')
+          .height(this.hoverCoverH()) // 折痕上缘以上:封面区(悬停听歌免手持,官方点名场景)
+          Row({ space: 16 }) {
+            Column() {
+              this.LyricsPage()
+            }
+            .layoutWeight(1)
+            Column({ space: 4 }) {
+              this.PlayerMeta()
+              this.PlayerProgress()
+              this.PlayerControls()
+            }
+            .layoutWeight(1)
+            .padding({ right: 12 })
+          }
+          .width('100%')
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .layoutWeight(1)
+      } else if (this.bpMdPlus) {
+        Row({ space: 16 }) {
+          Column() {
+            this.CoverPage()
+          }
+          .layoutWeight(1)
+          Column() {
+            this.LyricsPage()
+          }
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .layoutWeight(1)
+      } else {
+        // 窄屏:Swiper 左右滑动(封面向左滑→歌词;歌词向右滑→封面)
+        Swiper(this.swiperCtrl) {
+          this.CoverPage()
+          this.LyricsPage()
+        }
+        .index(this.pageIdx)
+        .loop(false)
+        .indicator(false)
+        .cachedCount(1)
+        .width('100%')
+        .layoutWeight(1)
+        .onChange((i: number) => {
+          this.pageIdx = i;
+        })
+      }
+
+      // 信息 + 引擎徽章(0.22.0 抽 PlayerMeta 三形态共用;镜像链路不变)
+      this.PlayerMeta()
+
+      // 频谱可视化(0.18.0):开关开 + 无损引擎 + 有曲目时显示;0.22.0 悬停态隐藏(下半屏空间有限)
+      if (!this.foldHover && this.vizNow()) {
         VizView()
           .width('100%')
           .padding({ left: 28, right: 28, top: 6, bottom: 2 })
       }
 
-      // 进度条(0.19.0:有包络数据时波形条前置,点击波形即 seek)
-      Column({ space: 4 }) {
-        if (this.waveData !== null && this.waveFor >= 0) {
-          Canvas(this.waveCtx)
-            .width('88%')
-            .height(44)
-            .onReady((): void => {
-              this.waveReady = true;
-              this.drawWave();
-            })
-            .onClick((e: ClickEvent) => {
-              const w = this.waveCtx.width;
-              if (w > 0) {
-                const frac = Math.min(1, Math.max(0, e.x / w));
-                PlayerController.get().seekTo(Math.round(frac * this.durMs()));
-              }
-            })
-        }
-        Slider({
-          value: this.sliderValue(),
-          min: 0,
-          max: Math.max(1, this.durMs()),
-          step: 1,
-          style: SliderStyle.OutSet
-        })
-          .selectedColor($r('app.color.accent'))
-          .trackColor($r('app.color.divider'))
-          .blockColor($r('app.color.accent'))
-          .width('88%')
-          .onChange((value: number, mode: SliderChangeMode) => {
-            if (mode === SliderChangeMode.Begin) {
-              this.seeking = true;
-              this.seekPreviewMs = value;
-            } else if (mode === SliderChangeMode.Moving) {
-              this.seekPreviewMs = value;
-            } else if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-              PlayerController.get().seekTo(Math.round(value));
-              this.seeking = false;
-            }
-          })
-        Row() {
-          Text(formatDuration(this.sliderValue()))
-            .fontSize(11)
-            .fontColor($r('app.color.text_secondary'))
-          Blank()
-          Text(formatDuration(this.durMs()))
-            .fontSize(11)
-            .fontColor($r('app.color.text_secondary'))
-        }
-        .width('88%')
-      }
-      .width('100%')
-      .padding({ top: 4 })
+      // 进度条(0.22.0 抽 PlayerProgress 三形态共用;波形条前置逻辑不变)
+      this.PlayerProgress()
 
-      // 控制区:播放模式(左) | 上一曲/播放暂停(动画)/下一曲 | 队列(右)
-      // 音量条 0.15.1 起收入「更多」菜单(用户约定)
-      Row({ space: 8 }) {
-        Button({ stateEffect: true }) {
-          SymbolGlyph(this.modeIcon())
-            .fontSize(20)
-            .fontColor([this.modeAccent() ? $r('app.color.accent') : $r('app.color.text_primary')])
-        }
-        .width(46)
-        .height(46)
-        .backgroundColor(Color.Transparent)
-        .onClick(() => {
-          const m = QueueService.get().cyclePlayMode();
-          hilog.info(DOMAIN, TAG, 'play mode -> %{public}s', m);
-        })
-
-        Button({ stateEffect: true }) {
-          SymbolGlyph($r('sys.symbol.backward_end_fill'))
-            .fontSize(30)
-            .fontColor([$r('app.color.control_fg')])
-        }
-        .width(52)
-        .height(52)
-        .backgroundColor(Color.Transparent)
-        .onClick(() => {
-          PlayerController.get().playPrev();
-        })
-
-        // 播放/暂停:点击缩放弹跳动画 + symbol 切换(@State 镜像驱动过渡)
-        Button({ stateEffect: false }) {
-          SymbolGlyph(this.playingMirror ? $r('sys.symbol.pause_fill') : $r('sys.symbol.play_fill'))
-            .fontSize(38)
-            .fontColor([$r('app.color.on_accent')])
-        }
-        .width(76)
-        .height(76)
-        .borderRadius(38)
-        .backgroundColor($r('app.color.accent'))
-        .scale(this.playBounce ? { x: 0.82, y: 0.82 } : { x: 1, y: 1 })
-        .animation({ duration: 160, curve: Curve.Friction })
-        .onClick(() => {
-          this.playBounce = true;
-          PlayerController.get().playPause();
-          // 下一帧回弹(等价按下-松开的弹性反馈)
-          setTimeout((): void => {
-            this.playBounce = false;
-          }, 90);
-        })
-
-        Button({ stateEffect: true }) {
-          SymbolGlyph($r('sys.symbol.forward_end_fill'))
-            .fontSize(30)
-            .fontColor([$r('app.color.control_fg')])
-        }
-        .width(52)
-        .height(52)
-        .backgroundColor(Color.Transparent)
-        .onClick(() => {
-          PlayerController.get().playNext();
-        })
-
-        Button({ stateEffect: true }) {
-          SymbolGlyph($r('sys.symbol.list_bullet'))
-            .fontSize(20)
-            .fontColor([$r('app.color.text_primary')])
-        }
-        .width(46)
-        .height(46)
-        .backgroundColor(Color.Transparent)
-        .onClick(() => {
-          this.showQueue = !this.showQueue;
-        })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .padding({ top: 8, bottom: 8 })
+      // 控制区(0.22.0 抽 PlayerControls 三形态共用):播放模式(左) | 上一曲/播放暂停(动画)/下一曲 | 队列(右)
+      this.PlayerControls()
 
       // 底部导航条避让(≥28vp)
       Blank().height(Math.max(this.bottomSafe, 28) + 8)
@@ -1122,6 +1221,17 @@ export struct FullPlayerDest {
           this.SheetRow($r('sys.symbol.waveform'), $r('app.string.viz_toggle'),
             PlayerController.get().vizOn(), (): void => {
               PlayerController.get().toggleViz();
+            })
+        }
+        // 驾驶模式(0.22.0 车机适配预备):大钮横屏页,支架/超级桌面车机屏场景
+        ListItem() {
+          this.SheetRow($r('sys.symbol.car_fill'), $r('app.string.driving_mode'),
+            false, (): void => {
+              this.showMoreSheet = false;
+              const stack = this.pathStack;
+              if (stack !== null) {
+                stack.pushPathByName('DrivingMode', null);
+              }
             })
         }
         // 睡眠定时器(0.14.0:展开档位 chips;到点前 30s 渐弱;label 体内直读)

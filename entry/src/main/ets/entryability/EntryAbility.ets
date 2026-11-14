@@ -2,6 +2,7 @@ import { AbilityConstant, common, Configuration, ConfigurationConstant, UIAbilit
 import { window } from '@kit.ArkUI';
 import { PlayerController } from '../service/PlayerController';
 import { AppTheme } from '../common/Theme';
+import { Breakpoint } from '../common/Breakpoint';
 import { SettingsService } from '../service/SettingsService';
 import { ScanService } from '../data/ScanService';
 import { RgScanner } from '../service/RgScanner';
@@ -309,6 +310,8 @@ export default class EntryAbility extends UIAbility {
       hilog.info(DOMAIN, TAG, 'loadContent ok');
       // 沉浸式:必须在 loadContent 完成回调内调用(过早静默失败 1300002)
       const mainWin = windowStage.getMainWindowSync();
+      // 断点服务(0.22.0 多端适配):windowSizeChange→bp/bpWide/bpMdPlus tokens,折叠悬停 foldHover
+      Breakpoint.init(mainWin);
       mainWin.setWindowLayoutFullScreen(true).then(async (): Promise<void> => {
         hilog.info(DOMAIN, TAG, 'layoutFullScreen on');
         // 全屏生效后再读一次避让区(此前读的是全屏前的旧值),并挂实时监听

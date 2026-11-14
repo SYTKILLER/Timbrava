@@ -59,6 +59,10 @@
     {
       "name": "danger",
       "value": "#E5443D"
+    },
+    {
+      "name": "hover_bg",
+      "value": "#1F000000"
     }
   ]
 }

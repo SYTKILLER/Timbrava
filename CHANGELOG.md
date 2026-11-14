@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### Added(0.22.0 多端适配:折叠屏/PC(2in1)/车机预备 + P0 崩溃修复)
+
+- **断点服务(公共底座)**:新增 `common/Breakpoint.ets`——`window.on('windowSizeChange')` 主通道 + avoidAreaChange 双保险(旋转/折叠),防抖(值无变化不写);AppStorage tokens `bp/winWVp/bpWide/bpMdPlus` 官方断点区间(xs/sm[320,600)/md[600,840)/lg[840,1440)/xl≥1440);`display.on('foldStatusChange')` 悬停态 token `foldHover` + `getCurrentFoldCreaseRegion` 折痕上缘查询。EntryAbility 挂载。
+- **页签双形态(折叠屏 lg/xl + PC 同构,官方 MusicHome 电脑端方案)**:sm/md 底部悬浮页签(现状不动);lg/xl 侧边页签(HdsTabs `vertical(true)+barPosition(Start)+barWidth(96)`)。实测逐属性切换(barWidth 等)与悬浮样式互相干扰,改 if/else 双实例整树切换(TabContent 经 @Builder 共享)。
+- **宽屏底部播放条**:新增 `components/PlayerBar.ets`——全宽浮于 Navigation 之上(网易云/QQ PC 版惯例:封面/歌名/进度滑条/上一曲/播放/下一曲/队列);与迷你条互斥(barFloatingStyle 官方约束 End+vertical(false),侧边模式不可用);播放页在栈顶时隐藏(fullPlayerInStack token,FullPlayer onReady/disappear 维护)。
+- **播放页三形态**:`PlayerBody` 拆 CoverPage/LyricsPage/PlayerMeta/PlayerProgress/PlayerControls 五个共用 Builder——①窄屏 sm:Swiper 封面⇄歌词(现状);②宽屏 md+ 双栏(左封面+双击收藏手势/右歌词,官方音乐宽屏播放页同构);③折叠悬停态:上封面避折痕(hoverCoverH=折痕上缘−状态栏−顶栏)/下半屏歌词+控制(FolderStack 官方同款上下分区,免手持听歌)。悬停态隐藏频谱(下半屏空间有限)。
+- **专辑 Grid 响应列数**:曲库专辑区按实测窗格宽 2~5 列自适应(手机竖持 374vp 保持原 3 列,回归红线);歌曲/艺人列表保持单列(索引条 lanes 语义)。
+- **PC/2in1 窗口配置**:module.json5 abilities 补 `minWindowWidth 420/minWindowHeight 480`(二分屏准入区间合规)+ 默认窗口 1200×800vp 居中 metadata(PC 设计规范推荐值,首启即进宽布局,模拟器实证)。
+- **键鼠适配(PC)**:全局快捷键(Index 根 `onKeyEventDispatch`,IME 消费后派发故文本输入不受影响)——媒体键 播放暂停/上下曲/停止、Space 播放暂停、Esc 关播放页、方向键 ±10s seek(仅播放页栈顶);SongRow 右键菜单(信息列挂 RightClick 与 Row 级 LongPress 并存)+ hover 高亮(`hoverEffect(Highlight)`,@Reusable 复用无状态泄漏);PlayerBar hover 态;色板新增 hover_bg(深浅色各一份)。
+- **跟手半模态**:播放页队列抽屉与更多菜单 `bindSheet` 补 `preferType: SheetType.POPUP`(<600vp 底部半模态不变/≥600vp 跟手,官方折叠屏推荐)。
+- **驾驶模式(车机适配预备)**:新增 `pages/player/DrivingMode.ets`——大封面+超大 88/120/88 播控钮(车机 HMI 大钮规范),锁横屏进入/离页还原(EQ 同款模式),更多菜单 car_fill 入口;路由注册 router_map+Index pagesMap。车机生态准入调研结论:个人开发者三条正式通道(原生上架=先行者受邀制/HiCar=企业认证/超级桌面=system_basic 权限)均不可行,本期为被动适配(详见 `docs/多端适配方案-折叠屏-PC-车机.md` 第三篇);deviceTypes 维持不加 "car"。
+- **修复(0.19.0 遗留 P0,双端模拟器实证)**:播放页 `@State waveData: Float32Array` 触发 KB 红线「状态代理不存 TypedArray」——读回丢失 [[TypedArrayName]] 内部槽,播放 flac/wav 开播放页必崩(jscrash TypeError,drawWave);改 private 数据 + `waveVer` 计数驱动 build 重估,drawWave 直读无代理。
+- 多语言:新增 1 键(driving_mode,base+en_US)。版本号 0.22.0/versionCode 22000。
+
 ### Added(0.21.0 播放页即时反馈 + 播放行为智能化)
 
 - **双击封面收藏(网易云/QQ/Spotify/AM 标配)**:播放页封面双击 → 收藏翻转 + 红心爆裂动效(两段动画弹出再放大淡出)+ 轻震动(module.json5 新增 ohos.permission.VIBRATE);顶栏红心共用 burstFavorite 链路;设置「播放行为」新开关(默认开)。

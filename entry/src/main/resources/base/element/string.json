@@ -1659,6 +1659,22 @@
     {
       "name": "chart_plays_unit",
       "value": "%s 次"
+    },
+    {
+      "name": "crossfade",
+      "value": "淡入淡出过渡"
+    },
+    {
+      "name": "crossfade_sub",
+      "value": "切歌时两曲重叠渐变衔接;仅无损引擎+1x 倍速生效"
+    },
+    {
+      "name": "crossfade_sec",
+      "value": "%s 秒"
+    },
+    {
+      "name": "driving_mode",
+      "value": "驾驶模式"
     }
   ]
 }

@@ -4,6 +4,7 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { window, display } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SettingsService, ThemeMode } from '../service/SettingsService';
+import { Breakpoint } from './Breakpoint';
 
 const TAG = '[Timbrava][Theme]';
 const DOMAIN = 0x0001;
@@ -83,6 +84,8 @@ export class AppTheme {
       }
       window.getLastWindow(ctx).then((win: window.Window): void => {
         win.on('avoidAreaChange', (data: window.AvoidAreaOptions): void => {
+          // 双保险:旋转/折叠时 avoidAreaChange 与 windowSizeChange 并发,断点同步重算(0.22.0)
+          Breakpoint.recompute(win);
           const density = display.getDefaultDisplaySync().densityPixels;
           const d = density > 0 ? density : 3;
           if (data.type === window.AvoidAreaType.TYPE_SYSTEM) {

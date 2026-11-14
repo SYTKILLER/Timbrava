@@ -87,6 +87,14 @@
       "data": {
         "description": "规则式智能歌单编辑"
       }
+    },
+    {
+      "name": "DrivingMode",
+      "pageSourceFile": "src/main/ets/pages/player/DrivingMode.ets",
+      "buildFunction": "DrivingModeBuilder",
+      "data": {
+        "description": "驾驶模式(车机/支架大钮横屏)"
+      }
     }
   ]
 }

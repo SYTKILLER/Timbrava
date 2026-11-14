@@ -118,6 +118,9 @@ export struct SongRow {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+      // PC 右键=上下文菜单(触屏长按等价,人机交互-鼠标规范):挂在信息列(行最宽命中区),
+      // Row 级保留 LongPress(bindContextMenu 同组件二次设置会覆盖,内外分挂规避)
+      .bindContextMenu(this.rowMenu(), ResponseType.RightClick)
 
       if (LibraryStore.get().isFavorite(this.song.id)) {
         SymbolGlyph($r('sys.symbol.heart_fill'))
@@ -130,6 +133,7 @@ export struct SongRow {
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+    .hoverEffect(HoverEffect.Highlight) // PC/平板 hover 高亮(系统标准态,@Reusable 复用无状态泄漏)
     .onClick(() => {
       if (this.selMode()) {
         // 多选模式:点击改勾选(SelService 内部含"全取消即退出"语义)

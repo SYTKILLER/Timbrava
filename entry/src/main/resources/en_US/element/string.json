@@ -1659,6 +1659,22 @@
     {
       "name": "chart_plays_unit",
       "value": "%s plays"
+    },
+    {
+      "name": "crossfade",
+      "value": "Crossfade"
+    },
+    {
+      "name": "crossfade_sub",
+      "value": "Overlap-fade transitions between tracks; lossless engine at 1x speed only"
+    },
+    {
+      "name": "crossfade_sec",
+      "value": "%s s"
+    },
+    {
+      "name": "driving_mode",
+      "value": "Driving Mode"
     }
   ]
 }

@@ -1,20 +1,24 @@
-// 应用根:Navigation + 底部 HdsTabs(音乐库/队列/设置)+ 迷你播放条(悬浮)。
+// 应用根:Navigation + HdsTabs(sm/md 底部悬浮页签 / lg/xl 侧边页签)+ 播放条
+// (sm/md:HdsTabs miniBar 悬浮迷你条;lg/xl:全宽 PlayerBar 底部播放条,叠于 Navigation 之上)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { HdsTabs, HdsTabsFloatingStyle, hdsMaterial, HdsBarLayoutMode, HdsTabsController, HdsBarStyle,
   HdsTabsBarChangeMode } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier, display } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
+import { KeyCode } from '@kit.InputKit';
 import { PlayerController } from '../service/PlayerController';
 import { SongRow } from '../components/SongRow';
 import { AppTheme, SafeAreaResult } from '../common/Theme';
 import { BarCollapse } from '../common/BarCollapse';
 import { MiniPlayer } from '../components/MiniPlayer';
+import { PlayerBar } from '../components/PlayerBar';
 import { LibraryTab } from './library/LibraryTab';
 import { LibraryManageDest } from './library/LibraryManage';
 import { ProTab } from './pro/ProTab';
 import { MineTab } from './mine/MineTab';
 import { SettingsDest } from './settings/SettingsTab';
 import { FullPlayerDest } from './player/FullPlayer';
+import { DrivingModeDest } from './player/DrivingMode';
 import { LyricsEditorDest } from './player/LyricsEditor';
 import { SongListDest } from './detail/SongList';
 import { EqualizerDest } from './settings/Equalizer';
@@ -37,6 +41,8 @@ struct Index {
   @StorageProp('playerVer') playerVer: number = 0;
   @StorageProp('posVer') posVer: number = 0;
   @StorageProp('themeVer') themeVer: number = 0;
+  @StorageProp('bpWide') bpWide: boolean = false;   // lg/xl:侧边页签+宽播放条(0.22.0)
+  @StorageProp('fullPlayerInStack') fullPlayerInStack: boolean = false; // 播放页在栈顶时隐藏宽播放条
   @State activeTab: number = 0;
   @StorageProp('eqFullscreen') eqFullscreen: boolean = false; // EQ 页在栈顶时强制 Stack(横屏不分栏)
   @State topSafe: number = 36;
@@ -71,43 +77,48 @@ struct Index {
   }
 
   build() {
-    Navigation(this.navStack) {
-      Stack({ alignContent: Alignment.Bottom }) {
-        HdsTabs({ barPosition: BarPosition.End, index: this.activeTab, controller: this.hdsController }) {
-          TabContent() {
-            LibraryTab()
+    Stack({ alignContent: Alignment.Bottom }) {
+      Navigation(this.navStack) {
+        Stack({ alignContent: Alignment.Bottom }) {
+          // 0.22.0 双形态:if/else 两实例(实测 barWidth 等属性逐项切换与悬浮样式互相干扰,整树切换最稳)。
+          // lg/xl:侧边页签 vertical(true)+barWidth(96);sm/md:底部悬浮页签(现状,悬浮三约束不变)
+          if (this.bpWide) {
+            HdsTabs({ barPosition: BarPosition.Start, index: this.activeTab, controller: this.hdsController }) {
+              this.TabItems()
+            }
+            .vertical(true)
+            .barWidth(96)
+            .scrollable(false)
+            .barOverlap(false) // 侧边非悬浮,barFloatingStyle 不适用(官方约束 End+vertical(false))
+            .onChange((index: number) => {
+              this.activeTab = index;
+            })
+            .width('100%')
+            .height('100%')
+          } else {
+            HdsTabs({ barPosition: BarPosition.End, index: this.activeTab, controller: this.hdsController }) {
+              this.TabItems()
+            }
+            .vertical(false)
+            .scrollable(true)
+            .barOverlap(true) // 悬浮约束:页签栏叠加在内容之上,barFloatingStyle 生效前提
+            .barFloatingStyle(this.ensureFloatingStyle())
+            .onChange((index: number) => {
+              this.activeTab = index;
+              // 0.15.1:HdsTabs 切页签会内部把迷你栏回落到配置态(mode=NORMAL)——
+              // 用户态已持续同步进配置对象(syncCacheStyle),回落即无感;
+              // 若回落态与用户镜像不一致,onBarStyleChange 内当场重新断言(不再延时补救)
+            })
+            .width('100%')
+            .height('100%')
           }
-          .tabBar(this.tabIcon($r('sys.symbol.music_note_list'), $r('app.string.tab_library'), 0))
-
-          TabContent() {
-            ProTab()
-          }
-          .tabBar(this.tabIcon($r('sys.symbol.waveform'), $r('app.string.tab_pro'), 1))
-
-          TabContent() {
-            MineTab()
-          }
-          .tabBar(this.tabIcon($r('sys.symbol.person'), $r('app.string.tab_mine'), 2))
         }
-        .vertical(false)
-        .scrollable(true)
-        .barOverlap(true) // 悬浮约束:页签栏叠加在内容之上,barFloatingStyle 生效前提
-        .barFloatingStyle(this.ensureFloatingStyle())
-        .onChange((index: number) => {
-          this.activeTab = index;
-          // 0.15.1:HdsTabs 切页签会内部把迷你栏回落到配置态(mode=NORMAL)——
-          // 用户态已持续同步进配置对象(syncCacheStyle),回落即无感;
-          // 若回落态与用户镜像不一致,onBarStyleChange 内当场重新断言(不再延时补救)
-        })
         .width('100%')
         .height('100%')
+        .backgroundColor(this.pageBg())
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(this.pageBg())
-    }
-    .navDestination(this.pagesMap)
-    .hideTitleBar(true)
+      .navDestination(this.pagesMap)
+      .hideTitleBar(true)
     // 播放页 pop 自定义转场(0.17.0 #4 全量修复):默认 pop 是系统级横向转场——即使上层页已透明/滑出,
     // 下层页面仍会横向滑入(实测 f4 帧),且非转场期下层页面被系统隐藏,手动 translate 只能露出白底。
     // 自定义转场期间系统保持前后页面同时可见:播放页纵向滑出、下层页面原地静止,双重动画与露白一并消除。
@@ -117,6 +128,65 @@ struct Index {
     .mode(this.eqFullscreen ? NavigationMode.Stack : NavigationMode.Auto)
     .navBarWidth('46%')
     .minContentWidth(360)
+
+      // lg/xl 宽屏底部播放条(0.22.0):全宽浮于 Navigation 之上;播放页在栈顶时隐藏(其自带完整播控)。
+      // playerVer 读入条件注册依赖(直接 hasSong() 读服务非响应式,起播后 build 不重评——实测首验踩坑)
+      if (this.bpWide && !this.fullPlayerInStack && this.hasSong() && this.playerVer >= 0) {
+        PlayerBar()
+      }
+    }
+    .width('100%')
+    .height('100%')
+    // 全局键盘快捷键(0.22.0 PC/2in1 键鼠适配):stage3 派发在输入法消费之后——
+    // 文本框内 Space/字符不会到达此处,输入不受影响;无曲目按键放行走焦
+    .onKeyEventDispatch((event: KeyEvent): boolean => {
+      return this.onGlobalKey(event);
+    })
+  }
+
+  // 全局键处理:媒体键(系统媒体键/键盘媒体钮)始终响应;Space 播放暂停;
+  // Esc 关闭播放页;方向键仅在播放页栈顶时 ±10s seek(其余场景放行走焦)
+  private onGlobalKey(event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    const c = event.keyCode;
+    const player = PlayerController.get();
+    if (c === KeyCode.KEYCODE_MEDIA_PLAY_PAUSE || c === KeyCode.KEYCODE_PLAYPAUSE) {
+      player.playPause();
+      return true;
+    }
+    if (c === KeyCode.KEYCODE_MEDIA_NEXT) {
+      player.playNext();
+      return true;
+    }
+    if (c === KeyCode.KEYCODE_MEDIA_PREVIOUS) {
+      player.playPrev();
+      return true;
+    }
+    if (c === KeyCode.KEYCODE_MEDIA_STOP && player.isPlaying) {
+      player.playPause();
+      return true;
+    }
+    const hasSong = player.currentSong !== null;
+    if (c === KeyCode.KEYCODE_SPACE && hasSong) {
+      player.playPause();
+      return true;
+    }
+    if (c === KeyCode.KEYCODE_ESCAPE && this.fullPlayerInStack) {
+      const stack = AppStorage.get<NavPathStack>('navStack');
+      if (stack !== undefined && stack !== null) {
+        stack.pop();
+      }
+      return true;
+    }
+    if (this.fullPlayerInStack &&
+      (c === KeyCode.KEYCODE_DPAD_LEFT || c === KeyCode.KEYCODE_DPAD_RIGHT)) {
+      const step = c === KeyCode.KEYCODE_DPAD_LEFT ? -10000 : 10000;
+      player.seekTo(Math.max(0, Math.min(player.durationMs, player.positionMs + step)));
+      return true;
+    }
+    return false;
   }
 
   // 首次构建生成并缓存;后续 rebuild 返回同一引用,避免迷你栏被重新初始化
@@ -205,6 +275,25 @@ struct Index {
     return undefined;
   };
 
+  // 三页签内容(0.22.0 双形态 HdsTabs 共用;@Builder 内联展开,TabContent 保持直接子组件语义)
+  @Builder
+  TabItems() {
+    TabContent() {
+      LibraryTab()
+    }
+    .tabBar(this.tabIcon($r('sys.symbol.music_note_list'), $r('app.string.tab_library'), 0))
+
+    TabContent() {
+      ProTab()
+    }
+    .tabBar(this.tabIcon($r('sys.symbol.waveform'), $r('app.string.tab_pro'), 1))
+
+    TabContent() {
+      MineTab()
+    }
+    .tabBar(this.tabIcon($r('sys.symbol.person'), $r('app.string.tab_mine'), 2))
+  }
+
   @Builder
   tabIcon(res: Resource, label: ResourceStr, idx: number) {
     Column({ space: 3 }) {
@@ -278,6 +367,8 @@ struct Index {
       SettingsDest()
     } else if (name === 'SmartPlEditor') {
       SmartPlEditorDest()
+    } else if (name === 'DrivingMode') {
+      DrivingModeDest()
     }
   }
 }
