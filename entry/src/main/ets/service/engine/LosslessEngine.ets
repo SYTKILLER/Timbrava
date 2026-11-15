@@ -39,6 +39,7 @@ interface NativeModule {
   setReplayGain(trackGainDb: number, trackPeak: number, albumGainDb: number, albumPeak: number, mode: number): void;
   setSpeed(speed: number): void;
   setSkipSilence(on: boolean): void;
+  setCrossfade(on: boolean, ms: number): void;
   setBalance(balance: number, mono: boolean): void;
   vizSetEnabled(on: boolean): void;
   vizPoll(): NativeVizResult;
@@ -229,6 +230,11 @@ export class LosslessEngine implements IAudioEngine {
 
   setSkipSilence(on: boolean): void {
     (timbravaCore as NativeModule).setSkipSilence(on);
+  }
+
+  // crossfade 淡入淡出(0.23.0):native 在当前曲解码 EOF 时发起重叠混音(需预排+倍速=1)
+  setCrossfade(on: boolean, ms: number): void {
+    (timbravaCore as NativeModule).setCrossfade(on, ms);
   }
 
   // 声道平衡/单声道(0.18.0):native DSP 独立阶段(恒等时逐位直通)

@@ -62,6 +62,8 @@ export interface IAudioEngine {
   setVolume(v: number): void;
   // 跳过静音(仅无损引擎 DSP 支持;系统引擎 no-op)
   setSkipSilence(on: boolean): void;
+  // crossfade 淡入淡出(0.23.0;仅无损引擎支持,系统引擎 no-op):on+ms>0 启用两曲重叠渐变
+  setCrossfade(on: boolean, ms: number): void;
   // 引擎自检(如 native so 加载状态)
   available(): boolean;
   release(): void;

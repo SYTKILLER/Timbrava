@@ -337,6 +337,24 @@ static napi_value JSetBalance(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
+// crossfade(0.23.0):on+ms 启用两曲重叠渐变;ms<=0 关闭
+static napi_value JSetCrossfade(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    bool on = false;
+    double ms = 0;
+    if (argc >= 1) {
+        napi_get_value_bool(env, args[0], &on);
+    }
+    if (argc >= 2) {
+        napi_get_value_double(env, args[1], &ms);
+    }
+    timbrava::Engine::instance().setCrossfade(on, static_cast<int>(ms));
+    return nullptr;
+}
+
 // 频谱可视化开关(0.18.0):仅无损引擎播放页启用,关闭时音频路径零开销
 static napi_value JVizSetEnabled(napi_env env, napi_callback_info info)
 {
@@ -850,6 +868,7 @@ static napi_value Init(napi_env env, napi_value exports)
         {"setSpeed", nullptr, JSetSpeed, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setSkipSilence", nullptr, JSetSkipSilence, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setBalance", nullptr, JSetBalance, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setCrossfade", nullptr, JSetCrossfade, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"vizSetEnabled", nullptr, JVizSetEnabled, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"vizPoll", nullptr, JVizPoll, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"analyzeFd", nullptr, JAnalyzeFd, nullptr, nullptr, nullptr, napi_default, nullptr},

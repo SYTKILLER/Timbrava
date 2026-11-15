@@ -143,6 +143,68 @@ export struct PrefToggleRow {
   }
 }
 
+// crossfade 行(0.23.0):开关 + 时长滑条(0.5~12s;展开仅开档可见)
+@Component
+struct CrossfadeRow {
+  @StorageProp('prefCrossfadeOn') cfOn: boolean = false;
+  @StorageProp('prefCrossfadeMs') cfMs: number = 6000;
+
+  private secLabel(): string {
+    return L($r('app.string.crossfade_sec'), (this.cfMs / 1000).toFixed(1));
+  }
+
+  build() {
+    Column({ space: 2 }) {
+      Row({ space: 12 }) {
+        Column({ space: 2 }) {
+          Text($r('app.string.crossfade'))
+            .fontSize(15)
+            .fontColor($r('app.color.text_primary'))
+          Text($r('app.string.crossfade_sub'))
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.cfOn })
+          .selectedColor($r('app.color.accent'))
+          .onChange((v: boolean): void => {
+            SettingsService.get().setCrossfade(v, this.cfMs);
+            hilog.info(DOMAIN, TAG, 'crossfade -> %{public}s', v ? 'on' : 'off');
+          })
+      }
+      .width('100%')
+      .padding({ top: 10, bottom: this.cfOn ? 4 : 10 })
+      if (this.cfOn) {
+        Row({ space: 12 }) {
+          Text('0.5')
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+          Slider({ value: this.cfMs / 1000, min: 0.5, max: 12, step: 0.5, style: SliderStyle.OutSet })
+            .selectedColor($r('app.color.accent'))
+            .trackColor($r('app.color.divider'))
+            .blockColor($r('app.color.accent'))
+            .layoutWeight(1)
+            .height(34)
+            .onChange((value: number, mode: SliderChangeMode): void => {
+              if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                SettingsService.get().setCrossfade(true, Math.round(value * 1000));
+              }
+            })
+          Text(this.secLabel())
+            .fontSize(11)
+            .fontColor($r('app.color.text_secondary'))
+            .width(56)
+            .textAlign(TextAlign.End)
+        }
+        .width('100%')
+        .padding({ bottom: 10 })
+      }
+    }
+    .width('100%')
+  }
+}
+
 // 主题行(0.15.0:改 Select,与设置项组内其他行一致)
 @Component
 struct ThemeRow {
@@ -245,6 +307,8 @@ export struct SettingsTab {
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               PrefToggleRow({ prefKey: 'smartShuffle', title: $r('app.string.smart_shuffle'),
                 sub: $r('app.string.smart_shuffle_sub') })
+              Divider().color($r('app.color.divider')).margin({ left: 0 })
+              CrossfadeRow()
               Divider().color($r('app.color.divider')).margin({ left: 0 })
               OnlineLyricsRow()
             }

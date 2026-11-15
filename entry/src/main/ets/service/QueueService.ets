@@ -57,7 +57,9 @@ export class QueueService {
     this.recentLoadedAt = now;
     Db.get().listRecentPlayedIds(3).then((ids: number[]): void => {
       this.recentIds = new Set<number>(ids);
-    }).catch((): void => {
+      hilog.info(DOMAIN, TAG, 'smart shuffle recent ids=%{public}d', ids.length);
+    }).catch((e: Error): void => {
+      hilog.warn(DOMAIN, TAG, 'smart shuffle recent load fail %{public}s', e.message);
     });
   }
 
@@ -443,6 +445,12 @@ export class QueueService {
       this.repeat = RepeatMode.ONE;
     } else {
       this.repeat = RepeatMode.OFF;
+    }
+    if (this.shuffled) {
+      // 进入随机模式即预载近播集合(0.23.0 修复:此前首次 nextIndex 时异步缓存未落地,
+      // 首选必走全随机回落,智能随机形同虚设)
+      this.recentLoadedAt = 0;
+      this.refreshRecentAsync();
     }
     this.scheduleSave();
     this.bump();

@@ -96,6 +96,204 @@ void Engine::clearNextTrack()
     hasNext_ = false;
 }
 
+// ---------------- crossfade(0.23.0) ----------------
+
+void Engine::setCrossfade(bool on, int ms)
+{
+    xfEnabled_ = on && ms > 0;
+    xfMs_ = xfEnabled_ ? std::min(12000, std::max(500, ms)) : 0;
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "crossfade %{public}d ms", xfMs_.load());
+}
+
+// 发起过渡:xf 线程解码新曲 → ring2_;渲染消费 xfStartIn_ 帧旧流后进入混音窗口。
+// 必须持 stateM_ 调用(decoder 转移 + 账本清空均在其保护下)。
+void Engine::engageCrossfadeLocked(std::unique_ptr<IDecoder> inc, int64_t fadeFrames)
+{
+    if (xfThread_.joinable()) {
+        xfThread_.join(); // 上一轮 xf 线程必已退出(promote/abort 后),先收句柄防 terminate
+    }
+    xfFadeFrames_ = fadeFrames;
+    xfConsumed_ = 0;
+    xfTotal_ = inc->info().totalFrames;
+    xfWritten_ = 0;
+    // 注意:xfStartIn_ 由调用方在 engage 前算好(旧流余量-fade 窗口),此处不得重置
+    // (0.23.0 实测:重置导致倒计=0、fade 起点提前到播放起点)
+    xfPromoted_ = false;
+    ring2_.reset();
+    // 时间轴即刻切新曲(Spotify 语义:fade 开始=切曲;positionMs 由渲染线程在新曲流上累计)
+    info_ = inc->info();
+    framesConsumed_ = 0;
+    curWrittenFrames_ = 0;
+    {
+        std::lock_guard<std::mutex> lk(boundsM_);
+        gaplessBounds_.clear(); // 旧账本作废:本次交接不再发 gaplessNext
+    }
+    xfPending_ = true;
+    xfActive_ = false;
+    xfEngaged_ = true;
+    hasNext_ = false;
+    xfThreadLive_ = true;
+    std::thread th([this](std::unique_ptr<IDecoder> dec) {
+        const TrackInfo inf = dec->info();
+        const OutputFormat f = dec->outFormat();
+        const int ch = inf.channels > 0 ? inf.channels : 2;
+        const int bps = f == OutputFormat::U8 ? 1 : f == OutputFormat::S16LE ? 2 : 4;
+        const int64_t fadeF = xfFadeFrames_;
+        const int64_t margin = inf.sampleRate; // 提前 1s 备量,保证 promote 时新流不断供
+        std::vector<uint8_t> buf(64 * 1024);
+        int64_t written = 0;
+        bool eofHit = false;
+        while (!quit_.load()) {
+            if (xfPromoted_.load()) {
+                break; // fade 结束/中止:停止供数(ring2 将被废弃)
+            }
+            if (written >= fadeF + margin) {
+                // 超前一个 margin:等待 promote/abort 再继续(否则 promotion 后写入的数据会丢失)
+                std::unique_lock<std::mutex> lk(wakeM_);
+                wakeCv_.wait_for(lk, std::chrono::milliseconds(20));
+                continue;
+            }
+            const int64_t maxFrames = static_cast<int64_t>(buf.size()) / (bps * ch);
+            const int64_t got = dec->readFrames(buf.data(), maxFrames, buf.size());
+            if (got <= 0) {
+                eofHit = true;
+                break;
+            }
+            const size_t bytes = static_cast<size_t>(got) * ch * bps;
+            const size_t w = ring2_.write(buf.data(), bytes);
+            written += static_cast<int64_t>(w / static_cast<size_t>(bps * ch));
+            xfWritten_ = written;
+            if (w < bytes) {
+                break; // abort( promotion/stop/seek)或不可写:终止供数
+            }
+        }
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "xf feed done eof=%{public}d written=%{public}lld",
+                     eofHit ? 1 : 0, static_cast<long long>(written));
+        {
+            std::lock_guard<std::mutex> lk(xfM_);
+            xfDecoder_ = std::move(dec); // 归还解码器(主链 adopt 或丢弃)
+            xfThreadLive_ = false;
+        }
+        wakeCv_.notify_all();
+    }, std::move(inc));
+    xfThread_.swap(th);
+    OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "crossfade engaged fade_frames=%{public}lld total=%{public}lld",
+                 static_cast<long long>(fadeFrames), static_cast<long long>(xfTotal_.load()));
+}
+
+// 中止过渡(持 stateM_ 调用)。adopt=true 且 xf 线程已退出时,把新曲解码器收编为主解码器,
+// 并把 ring2_ 已解码头部搬运进 ring_ 续流(seek/倍速变更场景:时间轴已属新曲)。
+bool Engine::abortFadeLocked(bool adopt)
+{
+    const bool wasActive = xfPending_.load() || xfActive_.load() || xfEngaged_.load();
+    xfPending_ = false;
+    xfActive_ = false;
+    xfPromoted_ = true; // 通用"fade 结束"信号:xf 线程见之即退
+    ring2_.abort();     // 解开可能阻塞在 write 的 xf 线程
+    wakeCv_.notify_all();
+    // 等 xf 线程退出(其退出路径只锁 xfM_,与 stateM_ 无交叉,无死锁)
+    while (xfThreadLive_.load()) {
+        std::unique_lock<std::mutex> lk(wakeM_);
+        wakeCv_.wait_for(lk, std::chrono::milliseconds(10));
+    }
+    if (xfThread_.joinable()) {
+        xfThread_.join(); // 收句柄(线程体已退出,立即返回)
+    }
+    bool adoptedOut = false;
+    {
+        std::lock_guard<std::mutex> lk(xfM_);
+        if (adopt && xfDecoder_ != nullptr) {
+            decoder_ = std::move(xfDecoder_);
+            adoptedOut = true;
+        }
+        xfDecoder_.reset();
+    }
+    if (adoptedOut) {
+        // 新曲已解码头部搬运进 ring_(xf 已停止写入,残余有界)
+        ring_.flushAll();
+        std::vector<uint8_t> bounce(256 * 1024);
+        for (;;) {
+            const size_t n = ring2_.read(bounce.data(), bounce.size());
+            if (n == 0) {
+                break;
+            }
+            ring_.write(bounce.data(), n);
+        }
+    }
+    ring2_.reset();
+    xfEngaged_ = false;
+    if (wasActive) {
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "crossfade aborted adopt=%{public}d", adoptedOut ? 1 : 0);
+    }
+    return adoptedOut;
+}
+
+// 渲染回调混音读:旧 ring_(gOut 线性淡出)+ 新 ring2_(gIn 线性淡入)F32 加权合成。
+// 返回本块计入新曲时间轴的帧数(= 请求帧数;缺失按静音处理并照常推进窗口)。
+size_t Engine::xfMixRead(uint8_t *out, size_t frames, int channels, OutputFormat srcFmt)
+{
+    const int srcBps = srcFmt == OutputFormat::U8 ? 1 : srcFmt == OutputFormat::S16LE ? 2 : 4;
+    const size_t frameBytes = static_cast<size_t>(channels * srcBps);
+    const size_t need = frames * frameBytes;
+    if (xfTmpA_.size() < need) {
+        xfTmpA_.resize(need);
+    }
+    if (xfTmpB_.size() < need) {
+        xfTmpB_.resize(need);
+    }
+    if (xfTmpF_.size() < frames * static_cast<size_t>(channels)) {
+        xfTmpF_.resize(frames * static_cast<size_t>(channels));
+    }
+    const size_t nOld = ring_.read(xfTmpA_.data(), need);
+    const size_t nNew = ring2_.read(xfTmpB_.data(), need);
+    const size_t oldFrames = nOld / frameBytes;
+    const size_t newFrames = nNew / frameBytes;
+    const double t = xfFadeFrames_ > 0
+                         ? std::min(1.0, static_cast<double>(xfConsumed_) / static_cast<double>(xfFadeFrames_))
+                         : 1.0;
+    const float gOut = static_cast<float>(1.0 - t);
+    const float gIn = oldFrames < frames ? 1.0f : static_cast<float>(t); // 旧流提前干:新流直接全量
+    float *dst = reinterpret_cast<float *>(out);
+    std::memset(dst, 0, frames * static_cast<size_t>(channels) * 4); // 缺帧区静音(underrun 兜底)
+    if (oldFrames > 0) {
+        timbrava::convertToInterleavedF32(xfTmpA_.data(), oldFrames * frameBytes, srcFmt, dst);
+        for (size_t i = 0; i < oldFrames * static_cast<size_t>(channels); i++) {
+            dst[i] *= gOut;
+        }
+    }
+    if (newFrames > 0) {
+        timbrava::convertToInterleavedF32(xfTmpB_.data(), newFrames * frameBytes, srcFmt, xfTmpF_.data());
+        for (size_t i = 0; i < newFrames * static_cast<size_t>(channels); i++) {
+            xfTmpF_[i] *= gIn;
+        }
+        for (size_t i = 0; i < newFrames * static_cast<size_t>(channels); i++) {
+            dst[i] += xfTmpF_[i];
+        }
+    }
+    xfConsumed_ += static_cast<int64_t>(frames);
+    // 窗口走完(或新曲短于窗口且已耗尽)→ promote:ring2 残余搬运进 ring_,主解码线程接手
+    if (xfConsumed_ >= xfFadeFrames_ || (xfConsumed_ >= xfTotal_ && xfTotal_ > 0)) {
+        ring_.flushAll(); // 旧流残余废弃
+        if (xfTmpA_.size() < 256 * 1024) {
+            xfTmpA_.resize(256 * 1024);
+        }
+        for (;;) {
+            const size_t n = ring2_.read(xfTmpA_.data(), 256 * 1024);
+            if (n == 0) {
+                break;
+            }
+            ring_.write(xfTmpA_.data(), n);
+        }
+        ring2_.abort(); // 解开 xf 线程可能阻塞的 write;其见 promoted 即退
+        xfPromoted_ = true;
+        xfActive_ = false;
+        wakeCv_.notify_all();
+        OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "crossfade promoted consumed=%{public}lld",
+                     static_cast<long long>(xfConsumed_));
+    }
+    return frames;
+}
+
 // 渲染回调消费 frames 帧后调用:扣减交接账本头,扣穿(播到交界)即通知上层。
 // 事件与实际听感同步(解码器读尽≠播到交界);回调块 ~10ms,一次消费穿两界概率≈0,不循环。
 void Engine::consumeGaplessFrames(int64_t frames)
@@ -168,6 +366,12 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
     eof_ = false;
     seeking_ = false;
     seekTargetFrames_ = -1;
+    // crossfade 状态清零(stopTrack 已 abort,此处兜底复位全部过渡态)
+    xfPending_ = false;
+    xfActive_ = false;
+    xfPromoted_ = false;
+    xfEngaged_ = false;
+    ring2_.reset();
 
     // 重采样状态复位(倍速在切曲/seek 后从当前帧继续计位)
     resFifo_.clear();
@@ -178,11 +382,13 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
     resDrained_ = false;
 
     // DSP(PEQ/RG/跳过静音)或倍速启用时渲染走 F32 管线;关闭时保持整型直通(比特完美)
-    bool useDsp = dspActive() || speed_.load() != 1.0f;
+    // crossfade(0.23.0):混音需 F32 域,启用时恒走 F32(混音窗口外的恒等路径听感无差)
+    bool useDsp = dspActive() || speed_.load() != 1.0f || (xfEnabled_.load() && xfMs_.load() > 0);
     OutputFormat renderFmt = fmt_;
     if (useDsp && renderFmt != OutputFormat::F32LE) {
         renderFmt = OutputFormat::F32LE;
     }
+    f32Render_ = (renderFmt == OutputFormat::F32LE);
     // 恒 prepare:让声道数/采样率始终有效(否则全关路径下播放中启用平衡时,
     // dspSetBalance 发布的参数 channels=0 不生效);声明(频段/RG/平衡)保留并按新率重算
     timbrava::dspPrepare(info_.sampleRate, info_.channels);
@@ -217,21 +423,57 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
                 // F32 渲染:按输出帧数反推源字节数再读(修复旧实现按 F32 字节数读整型源的错位)
                 const size_t outFrames = static_cast<size_t>(length) / (static_cast<size_t>(channels) * 4);
                 const size_t want = outFrames * static_cast<size_t>(frameBytes);
-                n = ring_.read(static_cast<uint8_t *>(buffer), want);
-                if (n > 0) {
-                    size_t frames = n / static_cast<size_t>(frameBytes);
-                    size_t floatOut = frames * static_cast<size_t>(channels) * 4;
-                    timbrava::convertToInterleavedF32(static_cast<uint8_t *>(buffer),
-                                                      frames * static_cast<size_t>(frameBytes), fmtCopy,
-                                                      reinterpret_cast<float *>(buffer));
+                if (xfPending_.load()) {
+                    // crossfade 倒计时:旧流全量渲染,消费满 xfStartIn_ 后进入混音窗口
+                    n = ring_.read(static_cast<uint8_t *>(buffer), want);
+                    if (n > 0) {
+                        size_t frames = n / static_cast<size_t>(frameBytes);
+                        size_t floatOut = frames * static_cast<size_t>(channels) * 4;
+                        timbrava::convertToInterleavedF32(static_cast<uint8_t *>(buffer),
+                                                          frames * static_cast<size_t>(frameBytes), fmtCopy,
+                                                          reinterpret_cast<float *>(buffer));
+                        if (dspActive()) {
+                            timbrava::dspProcessInterleavedF32(reinterpret_cast<float *>(buffer), frames);
+                        }
+                        timbrava::vizFeedF32(reinterpret_cast<float *>(buffer), frames, channels);
+                        n = floatOut;
+                        framesConsumed_ += static_cast<int64_t>(frames);
+                        const int64_t after = xfStartIn_.fetch_sub(static_cast<int64_t>(frames)) -
+                                              static_cast<int64_t>(frames);
+                        if (after <= 0) {
+                            xfPending_ = false;
+                            xfActive_ = true;
+                            framesConsumed_ = 0; // 新曲时间轴从混音起点起计
+                            pushEvent("{\"ev\":\"gaplessNext\"}");
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "crossfade fade start");
+                        }
+                    }
+                } else if (xfActive_.load()) {
+                    // 混音窗口:旧 ring_ 淡出 + 新 ring2_ 淡入;走完 promote(新曲接管 ring_)
+                    const size_t frames = this->xfMixRead(static_cast<uint8_t *>(buffer), outFrames, channels, fmtCopy);
                     if (dspActive()) {
                         timbrava::dspProcessInterleavedF32(reinterpret_cast<float *>(buffer), frames);
                     }
-                    // 频谱采集:DSP 之后(听到的内容),仅启用态计算(feed 内部检查)
                     timbrava::vizFeedF32(reinterpret_cast<float *>(buffer), frames, channels);
-                    n = floatOut;
+                    n = frames * static_cast<size_t>(channels) * 4;
                     framesConsumed_ += static_cast<int64_t>(frames);
-                    consumeGaplessFrames(static_cast<int64_t>(frames));
+                } else {
+                    n = ring_.read(static_cast<uint8_t *>(buffer), want);
+                    if (n > 0) {
+                        size_t frames = n / static_cast<size_t>(frameBytes);
+                        size_t floatOut = frames * static_cast<size_t>(channels) * 4;
+                        timbrava::convertToInterleavedF32(static_cast<uint8_t *>(buffer),
+                                                          frames * static_cast<size_t>(frameBytes), fmtCopy,
+                                                          reinterpret_cast<float *>(buffer));
+                        if (dspActive()) {
+                            timbrava::dspProcessInterleavedF32(reinterpret_cast<float *>(buffer), frames);
+                        }
+                        // 频谱采集:DSP 之后(听到的内容),仅启用态计算(feed 内部检查)
+                        timbrava::vizFeedF32(reinterpret_cast<float *>(buffer), frames, channels);
+                        n = floatOut;
+                        framesConsumed_ += static_cast<int64_t>(frames);
+                        consumeGaplessFrames(static_cast<int64_t>(frames));
+                    }
                 }
             } else {
                 n = ring_.read(static_cast<uint8_t *>(buffer), static_cast<size_t>(length));
@@ -316,6 +558,7 @@ void Engine::stopTrack()
     std::lock_guard<std::mutex> lk(stateM_);
     nextDecoder_.reset(); // gapless 预排随当前曲一并废弃(含 IDLE 早退分支)
     hasNext_ = false;
+    abortFadeLocked(false); // crossfade 过渡随 stop 一并中止(xf 线程 join、ring2 复位)
     {
         std::lock_guard<std::mutex> lk(boundsM_);
         gaplessBounds_.clear();
@@ -374,6 +617,12 @@ void Engine::applySeek()
     int64_t target = seekTargetFrames_.exchange(-1);
     if (target < 0) {
         return;
+    }
+    {
+        // crossfade:seek 即中止过渡。fade 已发声(Active)→ 时间轴属新曲,收编新曲解码器;
+        // 仅排程(Pending)→ 时间轴仍属旧曲,维持旧解码器。
+        std::lock_guard<std::mutex> lk(stateM_);
+        abortFadeLocked(xfActive_.load());
     }
     seeking_ = true; // 渲染回调置零、不消费
     ring_.setWritable(false);
@@ -441,11 +690,31 @@ void Engine::decodeLoop()
         if (eof_.load()) {
             // gapless(M3):当前曲解码尽且已预排下一曲 → 交换解码器无缝续填 ring。
             // ring 内剩余旧曲尾部照常渲染,新曲数据直接续写,renderer 无感——真无缝。
-            // 倍速≠1 时禁用(重采样游标跨曲不可拼接):丢弃预排,走下方普通 end 路径。
+            // crossfade(0.23.0):启用且旧流余量足够时改走过渡——xf 线程解码新曲入 ring2_,
+            // 渲染回调混音;窗口过小(<250ms)退回 gapless swap。倍速≠1 时两者均禁用。
             if (hasNext_.load()) {
                 std::lock_guard<std::mutex> lk(stateM_);
                 if (nextDecoder_ != nullptr && decoder_ != nullptr) {
                     if (speed_.load() == 1.0f) {
+                        const int chL = info_.channels > 0 ? info_.channels : 2;
+                        const int bpsL = fmt_ == OutputFormat::U8 ? 1 : fmt_ == OutputFormat::S16LE ? 2 : 4;
+                        const int64_t remainFrames =
+                            static_cast<int64_t>(ring_.sizeLocked() / static_cast<size_t>(bpsL * chL));
+                        const int rateL = info_.sampleRate > 0 ? info_.sampleRate : 44100;
+                        const int64_t wantFade = xfEnabled_.load()
+                                                     ? static_cast<int64_t>(xfMs_.load()) * rateL / 1000
+                                                     : 0;
+                        const int64_t fadeFrames = std::min(wantFade, remainFrames);
+                        if (wantFade > 0 && fadeFrames >= rateL / 4 && f32Render_.load()) {
+                            // F32 渲染守卫:整型直通分支无混音支持,若设置晚到仍选了整型,
+                            // 此处退回 gapless swap(否则 pending 永不被消费,decode 线程卡死 park)
+                            // (0.23.0 实测:新进程首曲 open 先于 setCrossfade 时命中)
+                            // 先算好倒计再发起(engage 内部置 pending,渲染线程立刻可见)
+                            xfStartIn_ = remainFrames - fadeFrames;
+                            engageCrossfadeLocked(std::move(nextDecoder_), fadeFrames);
+                            nextDecoder_.reset();
+                            continue;
+                        }
                         // 记账:本曲实际写入 ring 的帧数 = 渲染到下曲交界的距离
                         {
                             std::lock_guard<std::mutex> lk(boundsM_);
@@ -463,6 +732,36 @@ void Engine::decodeLoop()
                     }
                     nextDecoder_.reset(); // 倍速:放弃无缝
                     hasNext_ = false;
+                }
+                continue;
+            }
+            // crossfade 已排程/进行中:park 至 promote/abort,再收编新曲解码器续写 ring_
+            if (xfPending_.load() || xfActive_.load() || xfPromoted_.load()) {
+                while (!quit_.load() && (xfPending_.load() || xfActive_.load()) && !xfPromoted_.load()
+                       && seekTargetFrames_.load() < 0) {
+                    std::unique_lock<std::mutex> wl(wakeM_);
+                    wakeCv_.wait_for(wl, std::chrono::milliseconds(50));
+                }
+                if (xfPromoted_.load() && !xfActive_.load()) {
+                    std::unique_ptr<IDecoder> inc;
+                    {
+                        std::lock_guard<std::mutex> lk(xfM_);
+                        inc = std::move(xfDecoder_);
+                    }
+                    if (inc != nullptr) {
+                        std::lock_guard<std::mutex> lk(stateM_);
+                        if (mode_.load() != EngineMode::IDLE) {
+                            decoder_ = std::move(inc);
+                            info_ = decoder_->info();
+                            curWrittenFrames_ = 0;
+                            eof_ = false;
+                            OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "crossfade adopted by decode thread");
+                        }
+                    }
+                    xfEngaged_ = false;
+                    // ★ 复位 promote 标记:否则新曲自身的 EOF 会再次误入本分支,
+                    // end 事件永不发出(0.23.0 实测 crossfade 后队列卡死不推进的根因)
+                    xfPromoted_ = false;
                 }
                 continue;
             }
@@ -532,6 +831,9 @@ void Engine::shutdown()
         decodeThread_.join();
         threadStarted_ = false;
     }
+    if (xfThread_.joinable()) {
+        xfThread_.join(); // 防 joinable 线程析构 terminate
+    }
 }
 
 EngineMode Engine::mode() const { return mode_.load(); }
@@ -582,6 +884,19 @@ void Engine::setSpeed(float speed)
         speed = 1.0f;
     }
     speed_ = std::min(3.0f, std::max(0.25f, speed));
+    if (speed_.load() != 1.0f) {
+        // 倍速≠1 与 crossfade 互斥:过渡中改速 → 中止(已发声则收编新曲解码器续播)
+        std::lock_guard<std::mutex> lk(stateM_);
+        if (abortFadeLocked(xfActive_.load())) {
+            // 重采样游标对齐新曲时间轴(fifo 由渲染线程惰性重建)
+            resFifo_.clear();
+            resBase_ = framesConsumed_.load();
+            resIdx_ = resBase_;
+            resPhase_ = 0.0;
+            resCarryBuf_.clear();
+            resDrained_ = false;
+        }
+    }
     OH_LOG_Print(LOG_APP, LOG_INFO, 0, LOG_TAG, "speed %{public}s", std::to_string(speed_.load()).c_str());
 }
 

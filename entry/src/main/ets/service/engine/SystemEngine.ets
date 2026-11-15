@@ -269,6 +269,10 @@ export class SystemEngine implements IAudioEngine {
     // 系统引擎不支持,静默忽略
   }
 
+  setCrossfade(on: boolean, ms: number): void {
+    // 系统引擎(AVPlayer)无重叠混音能力,静默忽略(设置页有"仅无损引擎生效"说明)
+  }
+
   setBalance(balance: number, mono: boolean): void {
     // 系统引擎(AVPlayer)无逐声道增益 API,静默忽略(专业页有"仅无损引擎生效"说明)
   }

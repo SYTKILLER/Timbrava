@@ -52,6 +52,8 @@ export class SettingsService {
   resumePerTrack: boolean = false; // 每曲进度记忆(0.19.0;有声书/播客场景,默认关)
   dblTapFav: boolean = true;     // 双击封面收藏(0.20.0;默认开,可关防误触)
   smartShuffle: boolean = false; // 智能随机·减少重复(0.21.0;近期已播降权,默认关)
+  crossfadeOn: boolean = false;  // crossfade 淡入淡出(0.23.0;默认关,仅无损引擎)
+  crossfadeMs: number = 6000;    // 过渡时长 ms(500~12000)
 
   private loaded: boolean = false;
 
@@ -94,6 +96,9 @@ export class SettingsService {
     this.resumePerTrack = (await db.getSetting('resumePerTrack', '0')) === '1';
     this.dblTapFav = (await db.getSetting('dblTapFav', '1')) === '1';
     this.smartShuffle = (await db.getSetting('smartShuffle', '0')) === '1';
+    this.crossfadeOn = (await db.getSetting('crossfadeOn', '0')) === '1';
+    const cfm = parseFloat(await db.getSetting('crossfadeMs', '6000'));
+    this.crossfadeMs = Number.isFinite(cfm) && cfm >= 500 && cfm <= 12000 ? cfm : 6000;
     this.loaded = true;
     this.syncTokens();
     hilog.info(DOMAIN, TAG, 'settings loaded');
@@ -120,6 +125,8 @@ export class SettingsService {
     this.token('prefResumeTrack', this.resumePerTrack);
     this.token('prefDblTapFav', this.dblTapFav);
     this.token('prefSmartShuffle', this.smartShuffle);
+    this.token('prefCrossfadeOn', this.crossfadeOn);
+    this.token('prefCrossfadeMs', this.crossfadeMs);
   }
 
   private async save(key: string, value: string): Promise<void> {
@@ -255,5 +262,15 @@ export class SettingsService {
     this.syncTokens();
     await this.save('smartShuffle', on ? '1' : '0');
     hilog.info(DOMAIN, TAG, 'smart shuffle -> %{public}s', String(on));
+  }
+
+  // crossfade(0.23.0):开关/时长持久化;下发由 PlayerController 即时执行
+  async setCrossfade(on: boolean, ms: number): Promise<void> {
+    this.crossfadeOn = on;
+    this.crossfadeMs = Math.min(12000, Math.max(500, Math.round(ms)));
+    this.syncTokens();
+    await this.save('crossfadeOn', on ? '1' : '0');
+    await this.save('crossfadeMs', String(this.crossfadeMs));
+    hilog.info(DOMAIN, TAG, 'crossfade -> %{public}s %{public}dms', String(on), this.crossfadeMs);
   }
 }

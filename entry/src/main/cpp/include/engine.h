@@ -46,6 +46,9 @@ public:
     void setSpeed(float speed);
     void setBalance(float balance, bool mono);
     void setVizEnabled(bool on); // 频谱可视化开关(仅开关;表随 openTrack 按 sampleRate 重建)
+    // crossfade(0.23.0):两曲重叠渐变。on+ms>0 启用;仅在 无损引擎+倍速=1+预排格式一致 时生效,
+    // 触发点=当前曲解码 EOF(旧流余量 ≥ fade 窗口才走 crossfade,否则退回 gapless swap)。
+    void setCrossfade(bool on, int ms);
     bool dspActive() const;
     bool balanceActive() const;
     // ReplayGain 扫描(同步,重活;由 napi 异步工作线程调用,勿在 JS 线程调):
@@ -66,6 +69,35 @@ private:
     void consumeGaplessFrames(int64_t frames);
     void pushEvent(const std::string &json);
     void applySeek();
+    // crossfade(0.23.0):xf 线程解码下一曲 → ring2_;渲染回调混音。必须持 stateM_ 调用。
+    void engageCrossfadeLocked(std::unique_ptr<IDecoder> inc, int64_t fadeFrames);
+    // 中止过渡(abortFade 后旧流/新流语义见实现);adoptDecoder=true 时把 xf 解码器收回主链
+    // (seek 场景:UI 时间轴已切新曲)。返回是否回收了未用完的解码器。
+    bool abortFadeLocked(bool adoptDecoder);
+    // 渲染回调混音读:旧 ring_ + 新 ring2_ 各取 frames 帧,F32 加权合成。返回混音帧数。
+    size_t xfMixRead(uint8_t *out, size_t frames, int channels, OutputFormat srcFmt);
+
+    // crossfade 状态(xfM_ 保护可变体;atomic 供渲染/解码线程快查)。锁序:stateM_ → xfM_
+    std::mutex xfM_;
+    std::atomic<bool> xfEnabled_{false};
+    std::atomic<int> xfMs_{0};
+    std::atomic<bool> f32Render_{false}; // 当前渲染格式是否 F32(openTrack 决定;混音仅在 F32 域可行)
+    std::atomic<bool> xfPending_{false};  // 已排程:渲染消费 xfStartIn_ 帧后进入混音
+    std::atomic<bool> xfActive_{false};   // 混音窗口进行中
+    std::atomic<bool> xfPromoted_{false}; // 新曲已接管 ring_(旧流废弃)
+    std::atomic<bool> xfEngaged_{false};  // 本曲交接已改走 crossfade(压制旧曲 end 事件)
+    std::atomic<int64_t> xfStartIn_{0};   // 距混音开始还需消费的旧流帧数
+    int64_t xfFadeFrames_ = 0;            // 混音窗口帧数(xfM_ 保护;渲染线程消费用)
+    int64_t xfConsumed_ = 0;              // 混音窗口已消费帧数(仅渲染线程)
+    std::atomic<int64_t> xfWritten_{0};   // xf 线程已写入 ring2_ 帧数
+    std::atomic<int64_t> xfTotal_{0};     // 新曲总帧数(fade 截断判定)
+    std::unique_ptr<IDecoder> xfDecoder_; // xf 线程持有;promote/abort 时交还主链
+    RingBuffer ring2_{4u * 1024u * 1024u}; // 新曲混入缓冲(4MB;背压自限,~10s@192k/24)
+    std::thread xfThread_;
+    std::atomic<bool> xfThreadLive_{false};
+    std::vector<uint8_t> xfTmpA_; // 渲染线程草稿(混音旧流字节/搬运 bounce;仅回调线程访问)
+    std::vector<uint8_t> xfTmpB_; // 混音新流字节
+    std::vector<float> xfTmpF_;   // 混音新流 F32
     // 倍速输出:读 ring → F32 → DSP → 线性插值(speed 变速变调)→ 按渲染格式打包。
     // 仅渲染回调线程调用。f32Render=false 时输出打包回整型渲染格式。
     void produceSpeeded(uint8_t *out, size_t outBytes, int channels, OutputFormat srcFmt, bool f32Render);

@@ -232,6 +232,12 @@ export class PlayerController {
     this.stopEngine();
     let target = this.chooseEngine(song);
     let info: EngineTrackInfo | null = null;
+    // DSP/频谱/crossfade 设置先于 open 下发(0.23.0 修复:openTrack 依 crossfade 开关决定
+    // 渲染格式 F32/整型——首曲 open 时设置未到会选整型直通,过渡永不触发且 decode 线程
+    // 卡死 park 分支;提前下发保证首曲即 F32)
+    if (target.getKind() === EngineKind.LOSSLESS) {
+      this.applySongDsp(song);
+    }
     try {
       info = await target.open(openTargetOf(song.path));
     } catch (e) {
@@ -291,7 +297,6 @@ export class PlayerController {
     target.setVolume(this.volume);
     target.setSkipSilence(SettingsService.get().skipSilence);
     target.setBalance(SettingsService.get().balancePct / 100, SettingsService.get().monoMode);
-    this.applySongDsp(song);
     target.play();
     this.isPlaying = true;
     if (prevSong !== null && previousPlayedMs > 10000 && prevSong.id !== song.id) {
@@ -311,10 +316,10 @@ export class PlayerController {
   }
 
   // RG/EQ(含按曲目/按专辑覆盖)下发无损引擎;playSong 与 gapless/CUE 衔接共用
+  // DSP/频谱/crossfade 设置下发(0.23.0 起无条件直推 losslessEngine 单例:
+  // 系统引擎活 native 空闲时收设置无副作用,无损 openTrack 时按声明重应用;
+  // 原 engineKind 守卫会让冷启动首曲的 pre-open 下发被吞,渲染格式退回整型直通)
   private applySongDsp(song: Song): void {
-    if (this.engineKind !== EngineKind.LOSSLESS || this.engine === null) {
-      return;
-    }
     const settings = SettingsService.get();
     if (settings.rgMode > 0) {
       this.losslessEngine.setReplayGain(song.rgTrackGain, song.rgTrackPeak > 0 ? song.rgTrackPeak : 1,
@@ -324,6 +329,11 @@ export class PlayerController {
     if (settings.eqOn) {
       this.applyEqToEngine();
     }
+    // 频谱开关随曲下发(0.23.0 修复 0.18.0 遗留:vizSetEnabled 此前仅在手动切换时下发,
+    // 新装/重启后 native 侧恒关——频谱零能量呈虚线)
+    this.losslessEngine.vizSetEnabled(settings.vizEnabled);
+    // crossfade 设置随曲下发(0.23.0;时长/开关可能在上次打开后变化)
+    this.losslessEngine.setCrossfade(settings.crossfadeOn, settings.crossfadeMs);
   }
 
   // 歌词按需加载:缓存 → 文件头内嵌 → LRCLIB(默认关,显式开关)。完成后 bump + 同步桌面歌词。
@@ -846,6 +856,13 @@ export class PlayerController {
   async setBalance(pct: number, mono: boolean): Promise<void> {
     await SettingsService.get().setBalance(pct, mono);
     this.engine?.setBalance(pct / 100, mono);
+  }
+
+  // ===== crossfade 淡入淡出(0.23.0) =====
+  // 持久化 + 即时下发;native 在当前曲解码 EOF 且预排有效时发起重叠混音
+  async setCrossfade(on: boolean, ms: number): Promise<void> {
+    await SettingsService.get().setCrossfade(on, ms);
+    this.engine?.setCrossfade(on, ms);
   }
 
   // ReplayGain 扫描通道(AnalysisService 用;无损引擎独有,系统引擎格式不支持)

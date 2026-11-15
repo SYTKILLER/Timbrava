@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+### Added(0.23.0 Crossfade 淡入淡出专项)
+
+- **Crossfade 淡入淡出(Poweramp/Spotify/Apple Music 招牌)**:native 引擎新增两曲重叠渐变——解码线程在当前曲解码 EOF 且预排有效时改走过渡:预排解码器移交 xf 供数线程解码入独立 `ring2_`(4MB 背压自限),渲染回调消费完旧流余量(`xfStartIn_` 倒计)后进入混音窗口,旧流线性淡出+新流线性淡入 F32 域加权合成,一次走既有 DSP 链(PEQ/RG/平衡作用于混音成品);窗口走完 promote——ring2 残余搬运回 ring_,xf 线程归还解码器,主解码线程收编续写(gapless 账本语义无缝衔接,后续连环过渡可用)。触发条件:无损引擎+倍速 1x+预排格式一致+旧流余量≥250ms(不足退回 gapless swap);fade 开始即发 gaplessNext(上层切曲,时间轴切新曲,与 Spotify 语义一致);旧曲 end 事件在过渡态下压制防双推进。中止语义完备:seek(未发声=旧曲内 seek,已发声=收编新曲解码器 seek)、倍速改≠1、stopTrack 均安全收编/丢弃;启用 crossfade 时渲染恒 F32(混音需要;恒等路径听感无差)。混音期间 DSP 作用于双流合成物(RG 增益取新曲,混合区听感折衷,与主流实现一致)。
+- 设置页「播放行为」新增 crossfade 行:开关(默认关)+ 时长滑条 0.5~12s(0.5 步进,End 落库即时下发);PlayerController applySongDsp 随曲下发 + setCrossfade 即时通道;SystemEngine 契约 no-op。
+- 多语言:新增 3 键(crossfade/crossfade_sub/crossfade_sec,base 中文 + en_US)。版本号 0.23.0/versionCode 23000。
+
+### Fixed(0.23.0 模拟器实测四修复:crossfade 卡死双根因/首曲格式竞态/频谱零能量/智能随机预载)
+
+- **crossfade 后队列卡死(推进链断裂)**:`xfPromoted_` 在 decode 线程收编新曲后未复位——新曲自身解码 EOF 时再次误入 park 分支空转,`end` 事件永不发出,队列播完即停滞(实测 dbg_b 0:10/0:10 卡死)。修复:收编完成即复位 `xfPromoted_`,后续 EOF 走正常 end 逻辑(实测 crossfade→track end→自动推进恢复)。
+- **新进程首曲过渡永不触发(渲染格式竞态)**:`openTrack` 依 crossfade 开关决定渲染格式 F32/整型,但 `setCrossfade` 在 open 之后才下发——冷启动首曲选中整型直通分支,无混音支持且 pending 永不被消费,decode 线程卡死 park 分支。双保险修复:①ArkTS `applySongDsp` 提前到 `open` 之前下发(并去掉 engineKind 守卫,系统引擎活时 native 空闲收设置无副作用);②native 增加 `f32Render_` 守卫,非 F32 渲染时 engage 直接退回 gapless swap,绝不停滞。
+- **频谱零能量(0.18.0 遗留)**:`vizSetEnabled` 仅在用户手动切换时下发,新装/重启后 native 侧恒关,频谱 48 柱全零呈一条虚线。修复:`applySongDsp` 随曲下发 viz 开关(实测 `viz on`+48 柱满幅渲染)。
+- **智能随机首选必走全随机**:近播集合为异步缓存,进入随机模式后首次 nextIndex 时缓存未落地,规避恒失效。修复:`setPlayMode('shuffle')` 时强制预载近播集合(实测 `smart shuffle recent ids=6` 预载日志;语料全近播时按设计回落全随机)。
+
 ### Added(0.22.0 多端适配:折叠屏/PC(2in1)/车机预备 + P0 崩溃修复)
 
 - **断点服务(公共底座)**:新增 `common/Breakpoint.ets`——`window.on('windowSizeChange')` 主通道 + avoidAreaChange 双保险(旋转/折叠),防抖(值无变化不写);AppStorage tokens `bp/winWVp/bpWide/bpMdPlus` 官方断点区间(xs/sm[320,600)/md[600,840)/lg[840,1440)/xl≥1440);`display.on('foldStatusChange')` 悬停态 token `foldHover` + `getCurrentFoldCreaseRegion` 折痕上缘查询。EntryAbility 挂载。
