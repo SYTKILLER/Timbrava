@@ -16,6 +16,11 @@ const DOMAIN = 0x0001;
 export struct DrivingModeDest {
   @StorageProp('playerVer') @Watch('onPlayerChanged') playerVer: number = 0;
   @StorageProp('posVer') @Watch('onPosChanged') posVer: number = 0;
+  // 横竖屏自适应(0.24.0 重排):winWVp/winHVp 由断点服务随 windowSizeChange/avoidAreaChange 刷新,
+  // 旋转(含锁横屏成败两种结果)都会触发重算——旧实现写死横屏布局,竖屏锁定设备上大量元素重叠
+  @StorageProp('winWVp') @Watch('onWinChanged') winWVp: number = 0;
+  @StorageProp('winHVp') @Watch('onWinChanged') winHVp: number = 0;
+  @State isLandscape: boolean = false;
   @State posMs: number = 0;
   @State songTitle: string = '';
   @State songSub: string = '';
@@ -34,8 +39,28 @@ export struct DrivingModeDest {
       this.topSafe = r.topVp;
       this.bottomSafe = Math.max(r.bottomVp, 28);
     });
+    this.syncOrientation();
     this.onPlayerChanged();
     this.onPosChanged();
+  }
+
+  onWinChanged(): void {
+    this.syncOrientation();
+    // 旋转后避让区随边换侧,重读一次(aboutToAppear 读的是旋转前旧值)
+    AppTheme.safeAreas(this.getUIContext().getHostContext() as common.UIAbilityContext)
+      .then((r): void => {
+        this.topSafe = r.topVp;
+        this.bottomSafe = Math.max(r.bottomVp, 28);
+      });
+  }
+
+  private syncOrientation(): void {
+    const land = this.winWVp > this.winHVp;
+    if (land !== this.isLandscape) {
+      this.isLandscape = land;
+      hilog.info(DOMAIN, TAG, 'driving layout %{public}s w=%{public}d h=%{public}d',
+        land ? 'landscape' : 'portrait', this.winWVp, this.winHVp);
+    }
   }
 
   // 锁横屏:车机屏/支架均为横置,竖屏下同样强制横置保证按钮可达(EQ 页同款模式)
@@ -80,6 +105,187 @@ export struct DrivingModeDest {
     return override.length > 0 ? override : $r('app.color.player_bg');
   }
 
+  // ===== 0.24.0 响应式重排:横竖屏双形态,纯 flex 布局(元素不可能重叠) =====
+
+  @Builder
+  DrivingCover(sideVp: number) {
+    if (this.songArt.length > 0) {
+      Image(this.songArt)
+        .width(sideVp)
+        .height(sideVp)
+        .borderRadius(24)
+        .objectFit(ImageFit.Cover)
+        .shadow({ radius: 40, color: '#33000000', offsetX: 0, offsetY: 10 })
+    } else {
+      Column() {
+        SymbolGlyph($r('sys.symbol.music_note_list'))
+          .fontSize(56)
+          .fontColor([$r('app.color.accent')])
+      }
+      .width(sideVp)
+      .height(sideVp)
+      .borderRadius(24)
+      .backgroundColor($r('app.color.badge_bg')
+      )
+      .justifyContent(FlexAlign.Center)
+    }
+  }
+
+  @Builder
+  DrivingMeta() {
+    Text(this.songTitle)
+      .fontSize(24)
+      .fontWeight(FontWeight.Bold)
+      .fontColor($r('app.color.text_primary'))
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+      .width('100%')
+    Text(this.songSub)
+      .fontSize(15)
+      .fontColor($r('app.color.text_secondary'))
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+      .width('100%')
+  }
+
+  @Builder
+  DrivingProgress() {
+    Slider({
+      value: this.posMs,
+      min: 0,
+      max: Math.max(1, PlayerController.get().durationMs),
+      step: 1,
+      style: SliderStyle.OutSet
+    })
+      .selectedColor($r('app.color.accent'))
+      .trackColor($r('app.color.divider'))
+      .blockColor($r('app.color.accent'))
+      .width('100%')
+      .height(36)
+      .onChange((value: number, mode: SliderChangeMode): void => {
+        if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+          PlayerController.get().seekTo(Math.round(value));
+        }
+      })
+    Row() {
+      Text(formatDuration(this.posMs))
+        .fontSize(12)
+        .fontColor($r('app.color.text_secondary'))
+      Blank()
+      Text(formatDuration(PlayerController.get().durationMs))
+        .fontSize(12)
+        .fontColor($r('app.color.text_secondary'))
+    }
+    .width('100%')
+  }
+
+  // 超大播控(尺寸按形态缩放;竖屏收窄防 360vp 宽溢出)
+  @Builder
+  DrivingControls(prevVp: number, playVp: number, iconScale: number) {
+    Row({ space: prevVp * 0.3 }) {
+      Button({ stateEffect: true }) {
+        SymbolGlyph($r('sys.symbol.backward_end_fill'))
+          .fontSize(44 * iconScale)
+          .fontColor([$r('app.color.control_fg')])
+      }
+      .width(prevVp)
+      .height(prevVp)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => {
+        PlayerController.get().playPrev();
+      })
+
+      Button({ stateEffect: false }) {
+        SymbolGlyph(this.playingMirror ? $r('sys.symbol.pause_fill') : $r('sys.symbol.play_fill'))
+          .fontSize(56 * iconScale)
+          .fontColor([$r('app.color.on_accent')])
+      }
+      .width(playVp)
+      .height(playVp)
+      .borderRadius(playVp / 2)
+      .backgroundColor($r('app.color.accent'))
+      .onClick(() => {
+        PlayerController.get().playPause();
+      })
+
+      Button({ stateEffect: true }) {
+        SymbolGlyph($r('sys.symbol.forward_end_fill'))
+          .fontSize(44 * iconScale)
+          .fontColor([$r('app.color.control_fg')])
+      }
+      .width(prevVp)
+      .height(prevVp)
+      .backgroundColor(Color.Transparent)
+      .onClick(() => {
+        PlayerController.get().playNext();
+      })
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+  }
+
+  @Builder
+  DrivingBody() {
+    if (this.hasSong) {
+      if (this.isLandscape) {
+        // 横屏(车机/支架):左大封面 + 右信息/播控
+        Row({ space: 28 }) {
+          Column() {
+            this.DrivingCover(Math.min(this.winHVp * 0.62, 320))
+          }
+          .width('34%')
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+
+          Column({ space: 12 }) {
+            this.DrivingMeta()
+            this.DrivingProgress()
+            this.DrivingControls(88, 116, 1)
+          }
+          .layoutWeight(1)
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .padding({ left: 24, right: 24, top: 8, bottom: Math.max(this.bottomSafe, 28) + 8 })
+      } else {
+        // 竖屏(旋转锁定未生效等场景):纵向排布,播控收窄防溢出
+        Column({ space: 12 }) {
+          Column() {
+            this.DrivingCover(Math.min(this.winWVp * 0.42, 240))
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+
+          Column({ space: 10 }) {
+            this.DrivingMeta()
+            this.DrivingProgress()
+            this.DrivingControls(72, 96, 0.85)
+          }
+          .width('100%')
+          .padding({ bottom: Math.max(this.bottomSafe, 28) + 8 })
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .padding({ left: 24, right: 24, top: 8 })
+      }
+    } else {
+      Column({ space: 10 }) {
+        SymbolGlyph($r('sys.symbol.music_note_list'))
+          .fontSize(48)
+          .fontColor([$r('app.color.text_secondary')])
+        Text($r('app.string.no_playing_song'))
+          .fontSize(14)
+          .fontColor($r('app.color.text_secondary'))
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+    }
+  }
+
   build() {
     NavDestination() {
       Column() {
@@ -108,140 +314,7 @@ export struct DrivingModeDest {
         .width('100%')
         .padding({ left: 8, right: 8, top: this.topSafe })
 
-        if (this.hasSong) {
-          Row({ space: 32 }) {
-            // 大封面
-            Column() {
-              if (this.songArt.length > 0) {
-                Image(this.songArt)
-                  .height('82%')
-                  .aspectRatio(1)
-                  .borderRadius(24)
-                  .objectFit(ImageFit.Cover)
-                  .shadow({ radius: 40, color: '#33000000', offsetX: 0, offsetY: 10 })
-              } else {
-                Column() {
-                  SymbolGlyph($r('sys.symbol.music_note_list'))
-                    .fontSize(72)
-                    .fontColor([$r('app.color.accent')])
-                }
-                .height('82%')
-                .aspectRatio(1)
-                .borderRadius(24)
-                .backgroundColor($r('app.color.badge_bg'))
-                .justifyContent(FlexAlign.Center)
-              }
-            }
-            .width('32%')
-            .height('100%')
-            .justifyContent(FlexAlign.Center)
-
-            // 曲目信息 + 超大播控
-            Column({ space: 10 }) {
-              Text(this.songTitle)
-                .fontSize(26)
-                .fontWeight(FontWeight.Bold)
-                .fontColor($r('app.color.text_primary'))
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width('100%')
-              Text(this.songSub)
-                .fontSize(16)
-                .fontColor($r('app.color.text_secondary'))
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width('100%')
-
-              Slider({
-                value: this.posMs,
-                min: 0,
-                max: Math.max(1, PlayerController.get().durationMs),
-                step: 1,
-                style: SliderStyle.OutSet
-              })
-                .selectedColor($r('app.color.accent'))
-                .trackColor($r('app.color.divider'))
-                .blockColor($r('app.color.accent'))
-                .width('100%')
-                .height(36)
-                .onChange((value: number, mode: SliderChangeMode): void => {
-                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                    PlayerController.get().seekTo(Math.round(value));
-                  }
-                })
-              Row() {
-                Text(formatDuration(this.posMs))
-                  .fontSize(12)
-                  .fontColor($r('app.color.text_secondary'))
-                Blank()
-                Text(formatDuration(PlayerController.get().durationMs))
-                  .fontSize(12)
-                  .fontColor($r('app.color.text_secondary'))
-              }
-              .width('100%')
-
-              // 超大播控:上一曲 88 / 播放 120 / 下一曲 88(车机大钮规范,防误触)
-              Row({ space: 28 }) {
-                Button({ stateEffect: true }) {
-                  SymbolGlyph($r('sys.symbol.backward_end_fill'))
-                    .fontSize(44)
-                    .fontColor([$r('app.color.control_fg')])
-                }
-                .width(88)
-                .height(88)
-                .backgroundColor(Color.Transparent)
-                .onClick(() => {
-                  PlayerController.get().playPrev();
-                })
-
-                Button({ stateEffect: false }) {
-                  SymbolGlyph(this.playingMirror ? $r('sys.symbol.pause_fill') : $r('sys.symbol.play_fill'))
-                    .fontSize(56)
-                    .fontColor([$r('app.color.on_accent')])
-                }
-                .width(120)
-                .height(120)
-                .borderRadius(60)
-                .backgroundColor($r('app.color.accent'))
-                .onClick(() => {
-                  PlayerController.get().playPause();
-                })
-
-                Button({ stateEffect: true }) {
-                  SymbolGlyph($r('sys.symbol.forward_end_fill'))
-                    .fontSize(44)
-                    .fontColor([$r('app.color.control_fg')])
-                }
-                .width(88)
-                .height(88)
-                .backgroundColor(Color.Transparent)
-                .onClick(() => {
-                  PlayerController.get().playNext();
-                })
-              }
-              .width('100%')
-              .justifyContent(FlexAlign.Center)
-            }
-            .layoutWeight(1)
-            .height('100%')
-            .justifyContent(FlexAlign.Center)
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .padding({ left: 24, right: 24, bottom: Math.max(this.bottomSafe, 28) + 8 })
-        } else {
-          Column({ space: 10 }) {
-            SymbolGlyph($r('sys.symbol.music_note_list'))
-              .fontSize(48)
-              .fontColor([$r('app.color.text_secondary')])
-            Text($r('app.string.no_playing_song'))
-              .fontSize(14)
-              .fontColor($r('app.color.text_secondary'))
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .justifyContent(FlexAlign.Center)
-        }
+        this.DrivingBody()
       }
       .width('100%')
       .height('100%')

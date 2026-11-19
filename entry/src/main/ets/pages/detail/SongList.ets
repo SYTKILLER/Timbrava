@@ -162,6 +162,70 @@ export struct SongListDest {
     PlayerController.get().playQueueIndex(q.locateCurrent());
   }
 
+  // ===== 歌单滑动删除(0.24.0) =====
+
+  private toast(msg: ResourceStr): void {
+    this.getUIContext().getPromptAction().showToast({ message: msg, duration: 2000 });
+  }
+
+  // 左滑露出的删除钮:红色圆底白色 trash symbol,无文字
+  @Builder
+  SwipeDeleteBtn(s: Song) {
+    if (this.param.mode === 'playlist') {
+      Button({ stateEffect: true }) {
+        SymbolGlyph($r('sys.symbol.trash'))
+          .fontSize(16)
+          .fontColor([$r('app.color.on_accent')])
+      }
+      .width(36)
+      .height(36)
+      .borderRadius(18)
+      .backgroundColor('#E5484D')
+      .margin({ left: 4, right: 16 })
+      .onClick(() => {
+        this.confirmRemoveSong(s);
+      })
+    }
+  }
+
+  private confirmRemoveSong(s: Song): void {
+    this.getUIContext().showAlertDialog({
+      title: $r('app.string.pl_remove_title'),
+      message: L($r('app.string.pl_remove_confirm'), s.displayTitle()),
+      autoCancel: true,
+      alignment: DialogAlignment.Center,
+      primaryButton: {
+        value: $r('app.string.str_cancel'),
+        action: (): void => {
+        }
+      },
+      secondaryButton: {
+        value: $r('app.string.str_delete'),
+        fontColor: $r('app.color.accent'),
+        action: (): void => {
+          this.removeSongFromPlaylist(s);
+        }
+      },
+      cancel: (): void => {
+      }
+    });
+  }
+
+  // 按列表位次移出歌单(getPlaylistSongs 按 position 序,行序即 position)
+  private async removeSongFromPlaylist(s: Song): Promise<void> {
+    const plId = parseInt(this.param.key, 10);
+    if (Number.isNaN(plId)) {
+      return;
+    }
+    const pos = this.songs.findIndex((x: Song): boolean => x.id === s.id);
+    if (pos < 0) {
+      return;
+    }
+    await PlaylistRepo.get().removeSongAt(plId, pos);
+    this.toast(L($r('app.string.pl_removed'), s.displayTitle()));
+    this.reload();
+  }
+
   // ===== 0.14.0 头部卡数据 =====
 
   private headerArt(): string {
@@ -469,8 +533,17 @@ export struct SongListDest {
             ForEach(this.songs, (s: Song) => {
               ListItem() {
                 SongRow({ song: s, showAlbum: this.param.mode !== 'album',
-                  listIds: this.songs.map((x: Song): number => x.id), listTitle: Ls(this.title) })
+                  listIds: this.songs.map((x: Song): number => x.id), listTitle: Ls(this.title),
+                  plQueueAdd: this.param.mode === 'playlist' })
               }
+              // 歌单模式滑动删除(0.24.0):左滑露出红色圆形删除钮,点击弹确认后移出歌单
+              .swipeAction({
+                end: {
+                  builder: (): void => {
+                    this.SwipeDeleteBtn(s)
+                  }
+                }
+              })
             }, (s: Song): string => `${s.id}_${this.param.mode}`)
           }
           .width('100%')

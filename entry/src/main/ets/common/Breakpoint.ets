@@ -55,11 +55,13 @@ export class Breakpoint {
       }
       Breakpoint.lastWVp = wVp;
       const bp = wVp >= 1440 ? 'xl' : wVp >= 840 ? 'lg' : wVp >= 600 ? 'md' : 'sm';
+      const hVp = rect.height / d;
       AppStorage.setOrCreate('winWVp', Math.round(wVp));
+      AppStorage.setOrCreate('winHVp', Math.round(hVp));
       AppStorage.setOrCreate('bp', bp);
       AppStorage.setOrCreate('bpWide', bp === 'lg' || bp === 'xl');
       AppStorage.setOrCreate('bpMdPlus', bp !== 'sm');
-      hilog.info(DOMAIN, TAG, 'bp=%{public}s w=%{public}dvp', bp, Math.round(wVp));
+      hilog.info(DOMAIN, TAG, 'bp=%{public}s w=%{public}dvp h=%{public}dvp', bp, Math.round(wVp), Math.round(hVp));
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'recompute fail %{public}s', (e as Error).message);
     }

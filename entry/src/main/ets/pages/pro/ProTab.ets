@@ -168,7 +168,7 @@ export struct ProTab {
           CardSection({ title: $r('app.string.output_title') }) {
             Column() {
               Column({ space: 4 }) {
-                Row() {
+                Row({ space: 8 }) {
                   Text($r('app.string.balance_title'))
                     .fontSize(15)
                     .fontColor($r('app.color.text_primary'))
@@ -176,6 +176,16 @@ export struct ProTab {
                   Text(this.balanceLabel())
                     .fontSize(12)
                     .fontColor(Math.abs(this.balPct) < 1 ? $r('app.color.text_secondary') : $r('app.color.accent'))
+                  // 重置(0.24.0):一键回 0(居中);归零后按钮转灰仍可点(幂等)
+                  Text($r('app.string.balance_reset'))
+                    .fontSize(12)
+                    .fontColor(Math.abs(this.balPct) < 1 ? $r('app.color.text_secondary') : $r('app.color.accent'))
+                    .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                    .borderRadius(12)
+                    .backgroundColor($r('app.color.badge_bg'))
+                    .onClick(() => {
+                      PlayerController.get().setBalance(0, this.monoMode);
+                    })
                 }
                 .width('100%')
                 Row({ space: 8 }) {

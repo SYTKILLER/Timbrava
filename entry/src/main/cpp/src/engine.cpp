@@ -191,10 +191,24 @@ bool Engine::abortFadeLocked(bool adopt)
     xfPromoted_ = true; // 通用"fade 结束"信号:xf 线程见之即退
     ring2_.abort();     // 解开可能阻塞在 write 的 xf 线程
     wakeCv_.notify_all();
-    // 等 xf 线程退出(其退出路径只锁 xfM_,与 stateM_ 无交叉,无死锁)
-    while (xfThreadLive_.load()) {
+    // 等 xf 线程退出(其退出路径只锁 xfM_,与 stateM_ 无交叉,无死锁)。
+    // 兜底上限 3s:xf 线程停于 margin 等待时若因异常未观察到 promoted 信号,
+    // 无上限等待会把 JS 线程冻死(THREAD_BLOCK_6S appfreeze,0.24.0 实测根因);
+    // 超时 detach 保播放链路继续,泄漏容忍(正常路径 20ms 内必退)。
+    {
+        int waitedMs = 0;
         std::unique_lock<std::mutex> lk(wakeM_);
-        wakeCv_.wait_for(lk, std::chrono::milliseconds(10));
+        while (xfThreadLive_.load() && waitedMs < 3000) {
+            wakeCv_.wait_for(lk, std::chrono::milliseconds(10));
+            waitedMs += 10;
+        }
+        if (xfThreadLive_.load()) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, 0, LOG_TAG, "xf thread stuck, detach(anti-freeze)");
+            if (xfThread_.joinable()) {
+                xfThread_.detach();
+            }
+            xfThreadLive_ = false;
+        }
     }
     if (xfThread_.joinable()) {
         xfThread_.join(); // 收句柄(线程体已退出,立即返回)
@@ -424,12 +438,16 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
                 const size_t outFrames = static_cast<size_t>(length) / (static_cast<size_t>(channels) * 4);
                 const size_t want = outFrames * static_cast<size_t>(frameBytes);
                 if (xfPending_.load()) {
-                    // crossfade 倒计时:旧流全量渲染,消费满 xfStartIn_ 后进入混音窗口
-                    n = ring_.read(static_cast<uint8_t *>(buffer), want);
+                    // crossfade 倒计时:旧流全量渲染,消费满 xfStartIn_ 后进入混音窗口。
+                    // 整型源先读入暂存再转 F32(原地扩容转换会覆写未读源字节,0.24.0 修复)
+                    if (renderTmp_.size() < want) {
+                        renderTmp_.resize(want);
+                    }
+                    n = ring_.read(renderTmp_.data(), want);
                     if (n > 0) {
                         size_t frames = n / static_cast<size_t>(frameBytes);
                         size_t floatOut = frames * static_cast<size_t>(channels) * 4;
-                        timbrava::convertToInterleavedF32(static_cast<uint8_t *>(buffer),
+                        timbrava::convertToInterleavedF32(renderTmp_.data(),
                                                           frames * static_cast<size_t>(frameBytes), fmtCopy,
                                                           reinterpret_cast<float *>(buffer));
                         if (dspActive()) {
@@ -458,11 +476,17 @@ bool Engine::openTrack(int fd, std::string *errMsg, TrackInfo *outInfo)
                     n = frames * static_cast<size_t>(channels) * 4;
                     framesConsumed_ += static_cast<int64_t>(frames);
                 } else {
-                    n = ring_.read(static_cast<uint8_t *>(buffer), want);
+                    // 整型源先读入暂存再转 F32:原地扩容转换(S16/U8→F32 每样本 2/1 字节→4 字节)
+                    // 的写入会覆盖尚未读取的源字节,样本 1 起全为垃圾——电子音根因(0.24.0 修复)。
+                    // S32→F32 等宽原地虽恰好安全,统一走暂存消除隐式约束。
+                    if (renderTmp_.size() < want) {
+                        renderTmp_.resize(want);
+                    }
+                    n = ring_.read(renderTmp_.data(), want);
                     if (n > 0) {
                         size_t frames = n / static_cast<size_t>(frameBytes);
                         size_t floatOut = frames * static_cast<size_t>(channels) * 4;
-                        timbrava::convertToInterleavedF32(static_cast<uint8_t *>(buffer),
+                        timbrava::convertToInterleavedF32(renderTmp_.data(),
                                                           frames * static_cast<size_t>(frameBytes), fmtCopy,
                                                           reinterpret_cast<float *>(buffer));
                         if (dspActive()) {
@@ -743,6 +767,19 @@ void Engine::decodeLoop()
                     wakeCv_.wait_for(wl, std::chrono::milliseconds(50));
                 }
                 if (xfPromoted_.load() && !xfActive_.load()) {
+                    // 等 xf 线程真正退出再收编:解码器由 xf 线程退出路径放入 xfDecoder_,
+                    // promote 瞬间线程可能还在收尾(此前竞态扑空→promote 复位→新曲解码器
+                    // 永久漏收→旧曲时间轴已尽仍发 end,自动切歌连跳/卡死,0.24.0 修复)。
+                    // 只等标志、绝不在此 join:xfThread_ 句柄归持 stateM_ 的
+                    // abortFade/engage/shutdown 独占管理——本处 join 会与其 3s 兜底
+                    // detach 并发操作同一句柄(join/detach 竞态 SIGSEGV,压测实锤)。
+                    // 等待加 3s 上限:异常滞留时放弃收编走 end,绝不冻结解码线程。
+                    int waitedMs = 0;
+                    while (!quit_.load() && xfThreadLive_.load() && waitedMs < 3000) {
+                        std::unique_lock<std::mutex> wl(wakeM_);
+                        wakeCv_.wait_for(wl, std::chrono::milliseconds(10));
+                        waitedMs += 10;
+                    }
                     std::unique_ptr<IDecoder> inc;
                     {
                         std::lock_guard<std::mutex> lk(xfM_);

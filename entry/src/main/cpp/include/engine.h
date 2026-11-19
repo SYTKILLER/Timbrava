@@ -98,6 +98,10 @@ private:
     std::vector<uint8_t> xfTmpA_; // 渲染线程草稿(混音旧流字节/搬运 bounce;仅回调线程访问)
     std::vector<uint8_t> xfTmpB_; // 混音新流字节
     std::vector<float> xfTmpF_;   // 混音新流 F32
+    // ring 读出暂存(仅回调线程访问)。整型源→F32 输出为扩容转换(每样本 2/1 字节→4 字节),
+    // 直接以渲染 buffer 兼作源与目的地会覆写尚未读取的源字节(样本 1 起全为垃圾——0.24.0
+    // 实测"播放中切曲出电子音"根因);整型数据必须先读入本暂存,再转换到渲染 buffer。
+    std::vector<uint8_t> renderTmp_;
     // 倍速输出:读 ring → F32 → DSP → 线性插值(speed 变速变调)→ 按渲染格式打包。
     // 仅渲染回调线程调用。f32Render=false 时输出打包回整型渲染格式。
     void produceSpeeded(uint8_t *out, size_t outBytes, int channels, OutputFormat srcFmt, bool f32Render);

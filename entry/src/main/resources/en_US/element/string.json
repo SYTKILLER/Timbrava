@@ -1675,6 +1675,30 @@
     {
       "name": "driving_mode",
       "value": "Driving Mode"
+    },
+    {
+      "name": "str_unfavorited",
+      "value": "Unfavorited"
+    },
+    {
+      "name": "ab_cancelled",
+      "value": "A-B: Off"
+    },
+    {
+      "name": "balance_reset",
+      "value": "Reset"
+    },
+    {
+      "name": "pl_remove_title",
+      "value": "Remove from Playlist"
+    },
+    {
+      "name": "pl_remove_confirm",
+      "value": "Remove \"%s\" from this playlist?"
+    },
+    {
+      "name": "pl_removed",
+      "value": "Removed \"%s\" from playlist"
     }
   ]
 }

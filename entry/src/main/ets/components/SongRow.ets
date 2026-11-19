@@ -22,6 +22,8 @@ export struct SongRow {
   @Prop listIds: number[] = [];      // 所在列表的曲目顺序(空=未知,回退单曲插播)
   @Prop listTitle: string = '';      // 所在列表标题(队列名)
   @Prop showAlbum: boolean = false;
+  // 歌单语义(0.24.0):单击=加入播放队列并立即播放本曲(已在队列则跳播),不整单替换队列
+  @Prop plQueueAdd: boolean = false;
   @StorageProp('libVer') libVer: number = 0;
   @StorageProp('playerVer') playerVer: number = 0;
   @StorageProp('selVer') selVer: number = 0; // 多选模式/勾选态变化广播(0.18.0)
@@ -145,9 +147,25 @@ export struct SongRow {
     .bindContextMenu(this.rowMenu(), ResponseType.LongPress)
   }
 
-  // 点歌起播(主流共识):所在列表整体作为队列,从本曲起播;列表未知时回退单曲插播
+  // 点歌起播(主流共识):所在列表整体作为队列,从本曲起播;列表未知时回退单曲插播。
+  // 歌单页(plQueueAdd)例外:单击=追加进当前队列并立即播放,不冲掉既有队列(0.24.0 用户约定)
   private playNow(): void {
     const q = QueueService.get();
+    if (this.plQueueAdd) {
+      const exist = q.list.indexOf(this.song.id);
+      if (exist >= 0) {
+        q.jumpTo(exist);
+        PlayerController.get().playQueueIndex(exist);
+        return;
+      }
+      q.playNext(this.song.id); // 插到当前曲之后(下次即播语义)
+      const at = q.list.indexOf(this.song.id);
+      if (at >= 0) {
+        q.jumpTo(at);
+        PlayerController.get().playQueueIndex(at);
+      }
+      return;
+    }
     const existing = q.list.indexOf(this.song.id);
     if (existing >= 0 && this.listIds.length === 0) {
       q.jumpTo(existing);

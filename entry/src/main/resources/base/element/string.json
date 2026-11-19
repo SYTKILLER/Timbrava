@@ -1675,6 +1675,30 @@
     {
       "name": "driving_mode",
       "value": "驾驶模式"
+    },
+    {
+      "name": "str_unfavorited",
+      "value": "已取消收藏"
+    },
+    {
+      "name": "ab_cancelled",
+      "value": "A-B:已取消"
+    },
+    {
+      "name": "balance_reset",
+      "value": "重置"
+    },
+    {
+      "name": "pl_remove_title",
+      "value": "从歌单移除"
+    },
+    {
+      "name": "pl_remove_confirm",
+      "value": "将「%s」从歌单移除？"
+    },
+    {
+      "name": "pl_removed",
+      "value": "已从歌单移除「%s」"
     }
   ]
 }

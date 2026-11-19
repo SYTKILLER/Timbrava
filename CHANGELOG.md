@@ -7,6 +7,26 @@
 
 ## [Unreleased]
 
+### Added(0.24.0 实测反馈批量修复:电子音 P0 + 冻结 P0 + 歌单/播放页交互完善)
+
+- **歌单滑动删除**:歌单内容列表(`SongList` playlist 模式)`ListItem` 加 `swipeAction`——左滑露出红色圆底白色 trash symbol 删除钮(36vp 圆底 + 16vp symbol,无文字),点击弹确认对话框(标题/曲名),确认后按列表位次 `PlaylistRepo.removeSongAt` 移出歌单并 toast 回执;其余列表(专辑/艺人/曲库)不受影响。
+- **歌单点歌语义调整**:歌单页单击歌曲改为「加入播放队列并立即播放本曲」(已在队列则直接跳播;未在则插到当前曲后起播),不再整单替换既有队列(`SongRow` 新增 `plQueueAdd` 形参,仅 playlist 模式生效;专辑/艺人/曲库列表保持"整表入队从本曲起播"共识)。
+- **播放页「更多」菜单明确开关**:跳过静音/频谱可视化/桌面歌词三行改 `Toggle`(开关自身即反馈;onChange 绝对置位 + 镜像对齐,行内不叠 onClick 防双触发);`PlayerController` 抽出 `setVizEnabled`/`setSkipSilenceOn` 绝对置位通道(幂等跳过)。频谱可视化在播放页频谱区右上角加 × 直关(反馈直达,最小可点目标 40vp)。
+- **「更多」面板抽为 MoreSheetPanel 子组件**:bindSheet builder 内容实测为本 SDK 一次性快照——宿主 @State/@StorageProp/@Watch/500ms 轮询均无法触发其重渲染(0.15.0 labelKind 机制前提不成立,本次实测推翻),收收藏/A-B 的 label 翻转与 toast 反馈以即时动作+toast 承载,重开面板即见最新态;倍速/睡眠展开档位等既有交互不变。
+- **bindSheet 反馈补齐**:收藏行点击 toast 已收藏/已取消收藏(新键 `str_unfavorited`);A-B 行改三态动作 + toast 回执(已设A/循环中/已取消,新键 `ab_cancelled`)。
+- **专业页声道平衡一键重置**:平衡标题行新增「重置」钮(非居中态高亮),点击 `setBalance(0, mono)` 即回 0%(居中),prefBalancePct token 同步刷新滑条与文案。
+
+### Fixed(0.24.0 两颗 P0:无损引擎电子音 + crossfade 冻结死锁 + A-B 卡死)
+
+- **无损引擎电子音(P0,播放中切歌输出垃圾噪声)**:渲染回调 F32 分支把 `ring_` 数据直接读进渲染 buffer 后**原地**调 `convertToInterleavedF32`(src==dst)——S16/U8→F32 为扩容转换(每样本 2/1 字节→4 字节),写入覆写尚未读取的源字节,样本 1 起全为垃圾(宿主仿真复算确认)。触发面:任一 DSP 激活(声道平衡≠0/单声道/EQ/RG/跳过静音)或 crossfade 开启时的一切 16bit 及以下 PCM 无损播放——用户开着声道平衡,正在播的曲是平衡归零时开的(整型直通),点击下一首即电子音。修复:新增渲染线程私有 `renderTmp_` 暂存,ring 读入暂存再转换到渲染 buffer;crossfade 倒计时分支同型缺陷一并修复(S32→F32 等宽原地虽恰好安全,统一走暂存消除隐式约束)。
+- **crossfade 冻结死锁(P0,切歌/自动切歌卡住至 appfreeze 杀进程)**:切歌/停止路径 `stopTrack→abortFadeLocked` 死等 xf 线程退出——解码线程与 xf 线程同被 `wakeCv_` 唤醒,解码线程先抢跑 adopt(此刻 `xfDecoder_` 仍空,扑空)并**复位 `xfPromoted_`**,xf 线程(20ms park 延迟)醒来见标志已复位重新 park **永不退出**,JS 线程死等→THREAD_BLOCK_6S→appfreeze(模拟器两次冻结日志同栈实锤,进程被杀重启)。双保险修复:①解码线程 adopt 前先等 `xfThreadLive_` 归假再 join 收编(顺序化,顺带根治 adopt 扑空→漏收解码器→旧时间轴提前 end 连跳两曲的姊妹竞态);②`abortFadeLocked` 等待加 3s 兜底上限,超时 detach 保播放链路永不再冻死 JS 线程。
+- **A-B 重复卡死不再出声**:A-B 回跳 `seekTo` 后引擎 position 异步落地,250ms ticker 见 position 仍 ≥B 点即再次发起——seek 风暴致引擎/AVPlayer 停摆(系统引擎 AVPlayer 连发 seek 尤甚)。修复:回跳发起时刻记录 + 1.2s 守卫窗,窗内不重复发起。
+- **驾驶模式 UI 重叠**:旧布局写死横屏双栏(封面列 height 82% + 88/120/88 大钮),设备竖屏锁定时 `setPreferredOrientation(LANDSCAPE)` 静默失败,横屏布局跑在竖屏视口→大量元素重叠溢出不可操作;旋转后避让区也不刷新。重排:winWVp/winHVp 断点 token(新增 winHVp)驱动横竖屏双形态——横屏左封面右播控(88/116),竖屏纵排播控收窄(72/96),纯 flex 布局元素物理不可能重叠;旋转触发 safeAreas 重读。
+
+### Misc
+
+- 版本号 0.24.0 / versionCode 24000;新增 6 键多语言(str_unfavorited/ab_cancelled/balance_reset/pl_remove_title/pl_remove_confirm/pl_removed,base 中文 + en_US)。
+
 ### Added(0.23.0 Crossfade 淡入淡出专项)
 
 - **Crossfade 淡入淡出(Poweramp/Spotify/Apple Music 招牌)**:native 引擎新增两曲重叠渐变——解码线程在当前曲解码 EOF 且预排有效时改走过渡:预排解码器移交 xf 供数线程解码入独立 `ring2_`(4MB 背压自限),渲染回调消费完旧流余量(`xfStartIn_` 倒计)后进入混音窗口,旧流线性淡出+新流线性淡入 F32 域加权合成,一次走既有 DSP 链(PEQ/RG/平衡作用于混音成品);窗口走完 promote——ring2 残余搬运回 ring_,xf 线程归还解码器,主解码线程收编续写(gapless 账本语义无缝衔接,后续连环过渡可用)。触发条件:无损引擎+倍速 1x+预排格式一致+旧流余量≥250ms(不足退回 gapless swap);fade 开始即发 gaplessNext(上层切曲,时间轴切新曲,与 Spotify 语义一致);旧曲 end 事件在过渡态下压制防双推进。中止语义完备:seek(未发声=旧曲内 seek,已发声=收编新曲解码器 seek)、倍速改≠1、stopTrack 均安全收编/丢弃;启用 crossfade 时渲染恒 F32(混音需要;恒等路径听感无差)。混音期间 DSP 作用于双流合成物(RG 增益取新曲,混合区听感折衷,与主流实现一致)。

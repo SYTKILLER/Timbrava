@@ -5,6 +5,9 @@
 // - 控制区:左播放模式键(顺序→列表循环→单曲→随机,symbol 显示当前模式)+ 上一曲/播放暂停(缩放动画)/下一曲 + 右队列键;
 // - 右上角"更多"入口 → bindSheet 菜单(收藏/均衡器/编辑歌词/倍速弹层/A-B/跳过静音/睡眠定时弹层/桌面歌词/查看队列);
 // - 底部 ≥28vp 导航条避让。
+// 0.24.0:「更多」面板抽为 MoreSheetPanel 子组件——bindSheet 的 @Builder 内容对宿主 @State
+// 变化完全不重渲染(实测收藏/A-B label 永滞旧值),子组件自带 @StorageProp/@Watch 才有真响应式;
+// 菜单行全面改造:收藏/A-B toast 反馈、跳过静音/频谱/桌面歌词明确 Toggle、频谱区右上角 × 直关。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
@@ -125,6 +128,434 @@ struct VizView {
   }
 }
 
+// 「更多」菜单面板(0.24.0 抽为独立组件):见文件头说明。
+@Component
+struct MoreSheetPanel {
+  @State favMirror: boolean = false;
+  @State abMirror: string = 'off';
+  @State abLabelRes: ResourceStr = 'A-B';
+  @State skipMirror: boolean = false;
+  @State vizMirror: boolean = false;
+  @State lyricsMirror: boolean = false;
+  @State sheetExpand: string = '';  // 展开区:'' | 'speed' | 'sleep'
+  @State volMirror: number = 100;
+  @State spdMirror: number = 1.0;
+  private initialExpand: string = '';
+  onClose: () => void = (): void => {
+  };
+  onOpenQueue: () => void = (): void => {
+  };
+
+  aboutToAppear(): void {
+    this.sheetExpand = this.initialExpand;
+    this.volMirror = Math.round(PlayerController.get().volume * 100);
+    this.spdMirror = PlayerController.get().speed;
+    this.refreshMirrors();
+  }
+
+  private refreshMirrors(): void {
+    const s = PlayerController.get().currentSong;
+    const fav = s !== null && LibraryStore.get().isFavorite(s.id);
+    const ab = PlayerController.get().abState();
+    const skip = this.skipSilenceNow();
+    const viz = PlayerController.get().vizOn();
+    const lyrics = DesktopLyricsService.get().isOn();
+    const abRes: ResourceStr = ab === 'a' ? $r('app.string.ab_set_a')
+      : ab === 'ab' ? $r('app.string.ab_looping') : 'A-B';
+    this.favMirror = fav;
+    this.abMirror = ab;
+    this.abLabelRes = abRes;
+    this.skipMirror = skip;
+    this.vizMirror = viz;
+    this.lyricsMirror = lyrics;
+  }
+
+  private toast(msg: ResourceStr): void {
+    this.getUIContext().getPromptAction().showToast({ message: msg, duration: 2000 });
+  }
+
+  private navStack(): NavPathStack | null {
+    return AppStorage.get<NavPathStack>('navStack') ?? null;
+  }
+
+  // 桌面歌词开关:开→floatView 拉起浮窗页;失败提示(权限/设备不支持)
+  private async toggleDesktopLyrics(): Promise<void> {
+    try {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      await DesktopLyricsService.get().toggle(ctx);
+    } catch (e) {
+      this.toast($r('app.string.float_lyrics_fail'));
+    }
+  }
+
+  private editLabel(): ResourceStr {
+    return PlayerController.get().currentLyrics.length > 0 ? $r('app.string.edit_lyrics')
+      : $r('app.string.add_lyrics');
+  }
+
+  private speedNow(): number {
+    return PlayerController.get().speed;
+  }
+
+  private speedLabel(): ResourceStr {
+    const v = this.speedNow();
+    if (v === 1.0) {
+      return $r('app.string.speed_label');
+    }
+    return `${v}x`;
+  }
+
+  private abLabel(): ResourceStr {
+    if (this.abMirror === 'a') {
+      return $r('app.string.ab_set_a');
+    }
+    if (this.abMirror === 'ab') {
+      return $r('app.string.ab_looping');
+    }
+    return 'A-B';
+  }
+
+  private skipSilenceNow(): boolean {
+    return PlayerController.get().currentSong !== null &&
+      (PlayerController.get().engineKind === EngineKind.LOSSLESS) &&
+      PlayerController.get().isSkipSilenceOn();
+  }
+
+  private sleepChipLabel(n: number): ResourceStr {
+    if (n <= 0) {
+      return $r('app.string.sleep_off');
+    }
+    return L($r('app.string.sleep_chip_min'), String(n));
+  }
+
+  private sleepChipActive(n: number): boolean {
+    const cur = PlayerController.get().sleepRemainMin();
+    if (n <= 0) {
+      return cur <= 0;
+    }
+    return cur > n - 15 && cur <= n;
+  }
+
+  private sleepLabel(): ResourceStr {
+    const cur = PlayerController.get().sleepRemainMin();
+    if (cur <= 0) {
+      return $r('app.string.sleep_timer');
+    }
+    return L($r('app.string.sleep_remain'), String(cur));
+  }
+
+  // 开关行实时态(体内直读)
+  private rowToggleOn(kind: string): boolean {
+    if (kind === 'skip') {
+      return this.skipMirror;
+    }
+    if (kind === 'viz') {
+      return this.vizMirror;
+    }
+    if (kind === 'lyrics') {
+      return this.lyricsMirror;
+    }
+    return false;
+  }
+
+  // 开关行置位后同步镜像(Toggle 内部视觉已自翻,镜像对齐供下次打开)
+  private syncToggleMirror(kind: string, on: boolean): void {
+    if (kind === 'skip') {
+      this.skipMirror = on;
+    } else if (kind === 'viz') {
+      this.vizMirror = on;
+    } else if (kind === 'lyrics') {
+      this.lyricsMirror = on;
+    }
+  }
+
+  // 开关行置位;桌面歌词失败(权限/设备)经 toggleDesktopLyrics 内 toast
+  private applyRowToggle(kind: string, on: boolean): void {
+    if (kind === 'skip') {
+      PlayerController.get().setSkipSilenceOn(on);
+    } else if (kind === 'viz') {
+      PlayerController.get().setVizEnabled(on);
+    } else if (kind === 'lyrics' && on !== DesktopLyricsService.get().isOn()) {
+      this.toggleDesktopLyrics();
+    }
+    this.syncToggleMirror(kind, on);
+  }
+
+  @Builder
+  SheetRow(icon: Resource, label: ResourceStr, accent: boolean, onTap: () => void,
+    expandable: boolean = false, expanded: boolean = false, toggleKind: string = '') {
+    Row({ space: 12 }) {
+      SymbolGlyph(icon)
+        .fontSize(18)
+        .fontColor([accent ? $r('app.color.accent') : $r('app.color.text_primary')])
+      Text(label)
+        .fontSize(14)
+        .fontColor(accent ? $r('app.color.accent') : $r('app.color.text_primary'))
+        .layoutWeight(1)
+      if (toggleKind.length > 0) {
+        Toggle({ type: ToggleType.Switch, isOn: this.rowToggleOn(toggleKind) })
+          .selectedColor($r('app.color.accent'))
+          .onChange((on: boolean): void => {
+            this.applyRowToggle(toggleKind, on);
+          })
+      } else if (expandable) {
+        SymbolGlyph(expanded ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+          .fontSize(13)
+          .fontColor([$r('app.color.text_secondary')])
+      }
+    }
+    .width('100%')
+    .padding({ left: 20, right: 16, top: 12, bottom: 12 })
+    .onClick(() => {
+      onTap();
+    })
+  }
+
+  build() {
+    Column() {
+      Row({ space: 8 }) {
+        Button({ stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(18)
+            .fontColor([$r('app.color.text_primary')])
+        }
+        .width(48)
+        .height(48)
+        .borderRadius(24)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.onClose();
+        })
+        Text($r('app.string.more_menu'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ left: 8, right: 16, top: 8 })
+      List({ space: 0 }) {
+        // 音量(0.15.1:自播放页主体收入此菜单;引擎流音量,无损=OHAudio 渲染流/系统=AVPlayer)
+        ListItem() {
+          Row({ space: 12 }) {
+            SymbolGlyph($r('sys.symbol.speaker_wave_2'))
+              .fontSize(18)
+              .fontColor([this.volMirror <= 0 ? $r('app.color.text_secondary') : $r('app.color.text_primary')])
+            Slider({
+              value: this.volMirror,
+              min: 0,
+              max: 100,
+              step: 1,
+              style: SliderStyle.OutSet
+            })
+              .selectedColor($r('app.color.accent'))
+              .trackColor($r('app.color.divider'))
+              .blockColor($r('app.color.accent'))
+              .layoutWeight(1)
+              .height(34)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.volMirror = Math.round(value);
+                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                  PlayerController.get().setVolume(value / 100);
+                }
+              })
+            Text(`${Math.round(this.volMirror)}%`)
+              .fontSize(11)
+              .fontColor($r('app.color.text_secondary'))
+              .width(34)
+              .textAlign(TextAlign.End)
+          }
+          .width('100%')
+          .padding({ left: 20, right: 16, top: 16, bottom: 8 })
+        }
+        // 收藏(0.24.0:toast 反馈已收藏/已取消收藏;favMirror 经子组件 @Watch 活刷新)
+        ListItem() {
+          this.SheetRow(this.favMirror ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'),
+            this.favMirror ? $r('app.string.str_favorited') : $r('app.string.str_favorites'),
+            this.favMirror, (): void => {
+              const s = PlayerController.get().currentSong;
+              if (s === null) {
+                return;
+              }
+              const fav = !LibraryStore.get().isFavorite(s.id);
+              PlayerController.get().toggleFavorite();
+              this.toast(fav ? $r('app.string.str_favorited') : $r('app.string.str_unfavorited'));
+            })
+        }
+        // 均衡器直达(0.14.0)
+        ListItem() {
+          this.SheetRow($r('sys.symbol.adjustment'), $r('app.string.eq_entry'), false, (): void => {
+            this.onClose();
+            const stack = this.navStack();
+            if (stack !== null) {
+              stack.pushPathByName('Equalizer', null);
+            }
+          })
+        }
+        // 编辑歌词
+        ListItem() {
+          this.SheetRow($r('sys.symbol.pencil_line'), this.editLabel(), false, (): void => {
+            this.onClose();
+            const song = PlayerController.get().currentSong;
+            const stack = this.navStack();
+            if (song !== null && stack !== null) {
+              stack.pushPathByName('LyricsEditor', song.id);
+            }
+          })
+        }
+        // 倍速(展开档位 chips + 0.05 微调滑条)
+        ListItem() {
+          this.SheetRow($r('sys.symbol.speed_multiple'), this.speedLabel(),
+            this.speedNow() !== 1.0, (): void => {
+              this.sheetExpand = this.sheetExpand === 'speed' ? '' : 'speed';
+              if (this.sheetExpand === 'speed') {
+                this.spdMirror = this.speedNow();
+              }
+            }, true, this.sheetExpand === 'speed')
+        }
+        if (this.sheetExpand === 'speed') {
+          ListItem() {
+            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+              ForEach(SPEED_OPTIONS, (v: number) => {
+                Button(`${v}x`)
+                  .fontSize(12)
+                  .fontColor(this.speedNow() === v ? $r('app.color.on_accent') : $r('app.color.text_primary'))
+                  .backgroundColor(this.speedNow() === v ? $r('app.color.accent') : $r('app.color.badge_bg'))
+                  .borderRadius(14)
+                  .height(36)
+                  .margin({ right: 8, bottom: 8, left: 4 })
+                  // 最小可点目标 40vp:视觉 36,热区纵向外扩(0.17.0)
+                  .responseRegion({ x: 0, y: -2, width: '100%', height: 40 })
+                  .onClick(() => {
+                    PlayerController.get().setSpeed(v);
+                    this.spdMirror = v;
+                    this.sheetExpand = '';
+                  })
+              }, (v: number): string => `spd_${v}`)
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, bottom: 4 })
+          }
+          // 自定义微调滑条(0.21.0,YT Music 0.05 步进):0.25~3.0,松手落库
+          ListItem() {
+            Row({ space: 12 }) {
+              Text('0.25x')
+                .fontSize(11)
+                .fontColor($r('app.color.text_secondary'))
+              Slider({
+                value: this.spdMirror,
+                min: 0.25,
+                max: 3.0,
+                step: 0.05,
+                style: SliderStyle.OutSet
+              })
+                .selectedColor($r('app.color.accent'))
+                .trackColor($r('app.color.divider'))
+                .blockColor($r('app.color.accent'))
+                .layoutWeight(1)
+                .height(34)
+                .onChange((value: number, mode: SliderChangeMode) => {
+                  this.spdMirror = Math.round(value * 20) / 20; // 0.05 步进对齐
+                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+                    PlayerController.get().setSpeed(this.spdMirror);
+                  }
+                })
+              Text(`${this.spdMirror.toFixed(2)}x`)
+                .fontSize(11)
+                .fontColor(this.spdMirror !== 1.0 ? $r('app.color.accent') : $r('app.color.text_secondary'))
+                .width(46)
+                .textAlign(TextAlign.End)
+            }
+            .width('100%')
+            .padding({ left: 20, right: 16, top: 4, bottom: 12 })
+          }
+        }
+        // A-B 重复(三态动作 + toast;abMirror @State 活刷新 label/accent)
+        ListItem() {
+          this.SheetRow($r('sys.symbol.scope'), this.abLabelRes,
+            this.abMirror !== 'off', (): void => {
+              const st = PlayerController.get().setAbPoint();
+              this.toast(st === 'a' ? $r('app.string.ab_set_a')
+                : st === 'ab' ? $r('app.string.ab_looping') : $r('app.string.ab_cancelled'));
+            })
+        }
+        // 跳过静音(明确开关)
+        ListItem() {
+          this.SheetRow($r('sys.symbol.speaker_slash'), $r('app.string.skip_silence'),
+            false, (): void => {
+            }, false, false, 'skip')
+        }
+        // 频谱可视化(明确开关;播放页频谱区亦有 × 直关)
+        ListItem() {
+          this.SheetRow($r('sys.symbol.waveform'), $r('app.string.viz_toggle'),
+            false, (): void => {
+            }, false, false, 'viz')
+        }
+        // 驾驶模式(0.22.0 车机适配预备):大钮横屏页,支架/超级桌面车机屏场景
+        ListItem() {
+          this.SheetRow($r('sys.symbol.car_fill'), $r('app.string.driving_mode'),
+            false, (): void => {
+              this.onClose();
+              const stack = this.navStack();
+              if (stack !== null) {
+                stack.pushPathByName('DrivingMode', null);
+              }
+            })
+        }
+        // 睡眠定时器(展开档位 chips;到点前 30s 渐弱)
+        ListItem() {
+          this.SheetRow($r('sys.symbol.timer'), this.sleepLabel(),
+            PlayerController.get().sleepRemainMin() > 0, (): void => {
+              this.sheetExpand = this.sheetExpand === 'sleep' ? '' : 'sleep';
+            }, true, this.sheetExpand === 'sleep')
+        }
+        if (this.sheetExpand === 'sleep') {
+          ListItem() {
+            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+              ForEach(SLEEP_OPTIONS, (n: number) => {
+                Button(this.sleepChipLabel(n))
+                  .fontSize(12)
+                  .fontColor(this.sleepChipActive(n) ? $r('app.color.on_accent') : $r('app.color.text_primary'))
+                  .backgroundColor(this.sleepChipActive(n) ? $r('app.color.accent') : $r('app.color.badge_bg'))
+                  .borderRadius(14)
+                  .height(36)
+                  .margin({ right: 8, bottom: 8, left: 4 })
+                  // 最小可点目标 40vp:视觉 36,热区纵向外扩(0.17.0)
+                  .responseRegion({ x: 0, y: -2, width: '100%', height: 40 })
+                  .onClick(() => {
+                    PlayerController.get().setSleepTimer(n);
+                    this.sheetExpand = '';
+                  })
+              }, (n: number): string => `slp_${n}`)
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, bottom: 4 })
+          }
+        }
+        // 桌面歌词(26-7,floatView;24 设备/权限未授时不显示入口;明确开关)
+        if (DesktopLyricsService.get().available()) {
+          ListItem() {
+            this.SheetRow($r('sys.symbol.music_note_list'), $r('app.string.desktop_lyrics'),
+              false, (): void => {
+              }, false, false, 'lyrics')
+          }
+        }
+        // 查看队列
+        ListItem() {
+          this.SheetRow($r('sys.symbol.list_bullet'), $r('app.string.view_queue'), false, (): void => {
+            this.onClose();
+            this.onOpenQueue();
+          })
+        }
+      }
+      .width('100%')
+      .padding({ bottom: 16 })
+    }
+    .width('100%')
+    .backgroundColor($r('app.color.card_bg'))
+  }
+}
+
 @Component
 export struct FullPlayerDest {
   @StorageProp('playerVer') @Watch('onPlayerChanged') playerVer: number = 0;
@@ -151,9 +582,6 @@ export struct FullPlayerDest {
   // pop 自定义转场位移(Index.playerNavTransition 经 animateTo 驱动 0→视口高;
   // 与 dragY 相加为整层 translate——转场期间系统保持前后页同帧可见,纵向滑出直见下层页面)
   @StorageProp('playerExitY') exitY: number = 0;
-  @State volMirror: number = 100;    // 音量条镜像(拖动中本地值,End 才落库)
-  @State sheetExpand: string = '';   // 更多菜单展开区:'' | 'speed' | 'sleep'
-  @State spdMirror: number = 1.0;    // 倍速滑条镜像(拖动本地值,End 落库;0.21.0)
   // 曲目信息镜像(0.15.0 #20):playerVer 不经 @State 落地时 build 内节点零依赖不刷新,
   // "if (playerVer < 0)"注册依赖写法条件恒假不重评——切歌标题/艺人/专辑/封面纹丝不动的根因
   @State songTitle: string = '';
@@ -192,7 +620,6 @@ export struct FullPlayerDest {
     this.posMs = Math.round(PlayerController.get().positionMs);
     this.playingMirror = PlayerController.get().isPlaying;
     this.modeMirror = QueueService.get().playMode();
-    this.volMirror = Math.round(PlayerController.get().volume * 100);
     AppStorage.setOrCreate('playerExitY', 0); // 上次 pop 残留清零(新实例从原位开始)
     this.cacheWaveColors();
     // 首次手势引导(0.20.0):只在有曲目时弹一次
@@ -630,10 +1057,6 @@ export struct FullPlayerDest {
     }
   }
 
-  private dismissByGesture(vh: number): void {
-    this.dismissAnimated();
-  }
-
   // 悬停态封面区高度(0.22.0):折痕上缘以上空间 − 状态栏 − 顶栏;无折痕数据回落 45% 视口高
   private hoverCoverH(): number {
     const crease = Breakpoint.creaseTopVp();
@@ -664,7 +1087,7 @@ export struct FullPlayerDest {
     hilog.info(DOMAIN, TAG, 'dragFinish offsetY=%{public}d vel=%{public}d vh=%{public}d',
       Math.round(e.offsetY), Math.round(e.velocityY), Math.round(vh));
     if (e.offsetY > vh * 0.22 || e.velocityY > 900) {
-      this.dismissByGesture(vh);
+      this.dismissAnimated();
     } else {
       this.getUIContext().animateTo({ duration: 200, curve: Curve.Friction }, (): void => {
         this.dragY = 0;
@@ -1018,10 +1441,27 @@ export struct FullPlayerDest {
       this.PlayerMeta()
 
       // 频谱可视化(0.18.0):开关开 + 无损引擎 + 有曲目时显示;0.22.0 悬停态隐藏(下半屏空间有限)
+      // 0.24.0:右上角 × 直关(反馈直达,不必进更多菜单)
       if (!this.foldHover && this.vizNow()) {
-        VizView()
-          .width('100%')
-          .padding({ left: 28, right: 28, top: 6, bottom: 2 })
+        Stack({ alignContent: Alignment.TopEnd }) {
+          VizView()
+            .width('100%')
+          Button({ stateEffect: true }) {
+            SymbolGlyph($r('sys.symbol.xmark'))
+              .fontSize(12)
+              .fontColor([$r('app.color.text_secondary')])
+          }
+          .width(28)
+          .height(28)
+          .borderRadius(14)
+          .backgroundColor(Color.Transparent)
+          .responseRegion({ x: -6, y: -6, width: 40, height: 40 }) // 最小可点目标 40vp(0.17.0)
+          .onClick(() => {
+            PlayerController.get().setVizEnabled(false);
+          })
+        }
+        .width('100%')
+        .padding({ left: 28, right: 20, top: 6, bottom: 2 })
       }
 
       // 进度条(0.22.0 抽 PlayerProgress 三形态共用;波形条前置逻辑不变)
@@ -1037,281 +1477,25 @@ export struct FullPlayerDest {
     .layoutWeight(1) // 占顶栏以下剩余空间(height 100% 会把顶栏挤出视口致底部溢出)
   }
 
-  // ===== 右上角"更多"bindSheet 菜单 =====
+  // ===== 右上角"更多"bindSheet 菜单(0.24.0:面板抽为 MoreSheetPanel 子组件获得真响应式) =====
 
-  // 打开菜单:音量镜像对齐当前引擎值(0.15.1 音量条迁入菜单)
+  private moreInitialExpand: string = '';
+
   private openMoreSheet(expand: string = ''): void {
-    this.volMirror = Math.round(PlayerController.get().volume * 100);
-    this.sheetExpand = expand;
+    this.moreInitialExpand = expand;
     this.showMoreSheet = true;
   }
 
   @Builder
   MoreSheet() {
-    Column() {
-      // 自绘头部(0.17.0):系统 showClose 几何不可控——关闭钮与标题中心对齐、下方预留 8vp,全由本行决定
-      Row({ space: 8 }) {
-        Button({ stateEffect: true }) {
-          SymbolGlyph($r('sys.symbol.xmark'))
-            .fontSize(18)
-            .fontColor([$r('app.color.text_primary')])
-        }
-        .width(48)
-        .height(48)
-        .borderRadius(24)
-        .backgroundColor(Color.Transparent)
-        .onClick(() => {
-          this.showMoreSheet = false;
-        })
-        Text($r('app.string.more_menu'))
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
+    MoreSheetPanel({
+      initialExpand: this.moreInitialExpand,
+      onClose: (): void => {
+        this.showMoreSheet = false;
+      },
+      onOpenQueue: (): void => {
+        this.showQueue = true;
       }
-      .width('100%')
-      .padding({ left: 8, right: 16, top: 8 })
-      List({ space: 0 }) {
-        // 音量(0.15.1:自播放页主体收入此菜单;引擎流音量,无损=OHAudio 渲染流/系统=AVPlayer)
-        // top 16 = 原行距 8 + 关闭钮下方预留 8vp(0.17.0)
-        ListItem() {
-          Row({ space: 12 }) {
-            SymbolGlyph($r('sys.symbol.speaker_wave_2'))
-              .fontSize(18)
-              .fontColor([this.volMirror <= 0 ? $r('app.color.text_secondary') : $r('app.color.text_primary')])
-            Slider({
-              value: this.volMirror,
-              min: 0,
-              max: 100,
-              step: 1,
-              style: SliderStyle.OutSet
-            })
-              .selectedColor($r('app.color.accent'))
-              .trackColor($r('app.color.divider'))
-              .blockColor($r('app.color.accent'))
-              .layoutWeight(1)
-              .height(34)
-              .onChange((value: number, mode: SliderChangeMode) => {
-                this.volMirror = Math.round(value);
-                if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  PlayerController.get().setVolume(value / 100);
-                }
-              })
-            Text(`${Math.round(this.volMirror)}%`)
-              .fontSize(11)
-              .fontColor($r('app.color.text_secondary'))
-              .width(34)
-              .textAlign(TextAlign.End)
-          }
-          .width('100%')
-          .padding({ left: 20, right: 16, top: 16, bottom: 8 })
-        }
-        // 收藏
-        ListItem() {
-          this.SheetRow(this.favMirror ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'),
-            this.favMirror ? $r('app.string.str_favorited') : $r('app.string.str_favorites'),
-            this.favMirror, (): void => {
-              PlayerController.get().toggleFavorite();
-            })
-        }
-        // 均衡器直达(0.14.0:全局 EQ,免专业页三级跳)
-        ListItem() {
-          this.SheetRow($r('sys.symbol.adjustment'), $r('app.string.eq_entry'), false, (): void => {
-            this.showMoreSheet = false;
-            const stack = this.pathStack;
-            if (stack !== null) {
-              stack.pushPathByName('Equalizer', null);
-            }
-          })
-        }
-        // 编辑歌词
-        ListItem() {
-          this.SheetRow($r('sys.symbol.pencil_line'), this.editLabel(), false, (): void => {
-            this.showMoreSheet = false;
-            const song = PlayerController.get().currentSong;
-            const stack = this.pathStack;
-            if (song !== null && stack !== null) {
-              stack.pushPathByName('LyricsEditor', song.id);
-            }
-          })
-        }
-        // 倍速(0.14.0:展开档位 chips,替代循环点击;label 走 SheetRow 体内直读避免快照不刷新)
-        ListItem() {
-          this.SheetRow($r('sys.symbol.speed_multiple'), this.speedLabel(),
-            this.speedNow() !== 1.0, (): void => {
-              this.sheetExpand = this.sheetExpand === 'speed' ? '' : 'speed';
-              if (this.sheetExpand === 'speed') {
-                this.spdMirror = this.speedNow(); // 滑条镜像对齐当前倍速(0.21.0)
-              }
-            }, true, this.sheetExpand === 'speed', 'speed')
-        }
-        if (this.sheetExpand === 'speed') {
-          ListItem() {
-            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
-              ForEach(SPEED_OPTIONS, (v: number) => {
-                Button(`${v}x`)
-                  .fontSize(12)
-                  .fontColor(this.speedNow() === v ? $r('app.color.on_accent') : $r('app.color.text_primary'))
-                  .backgroundColor(this.speedNow() === v ? $r('app.color.accent') : $r('app.color.badge_bg'))
-                  .borderRadius(14)
-                  .height(36)
-                  .margin({ right: 8, bottom: 8, left: 4 })
-                  // 最小可点目标 40vp:视觉 36,热区纵向外扩(0.17.0)
-                  .responseRegion({ x: 0, y: -2, width: '100%', height: 40 })
-                  .onClick(() => {
-                    PlayerController.get().setSpeed(v);
-                    this.spdMirror = v;
-                    this.sheetExpand = '';
-                  })
-              }, (v: number): string => `spd_${v}`)
-            }
-            .width('100%')
-            .padding({ left: 16, right: 16, bottom: 4 })
-          }
-          // 自定义微调滑条(0.21.0,YT Music 0.05 步进):0.25~3.0,松手落库;档位 chips 之外的连续取值
-          ListItem() {
-            Row({ space: 12 }) {
-              Text('0.25x')
-                .fontSize(11)
-                .fontColor($r('app.color.text_secondary'))
-              Slider({
-                value: this.spdMirror,
-                min: 0.25,
-                max: 3.0,
-                step: 0.05,
-                style: SliderStyle.OutSet
-              })
-                .selectedColor($r('app.color.accent'))
-                .trackColor($r('app.color.divider'))
-                .blockColor($r('app.color.accent'))
-                .layoutWeight(1)
-                .height(34)
-                .onChange((value: number, mode: SliderChangeMode) => {
-                  this.spdMirror = Math.round(value * 20) / 20; // 0.05 步进对齐
-                  if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                    PlayerController.get().setSpeed(this.spdMirror);
-                  }
-                })
-              Text(`${this.spdMirror.toFixed(2)}x`)
-                .fontSize(11)
-                .fontColor(this.spdMirror !== 1.0 ? $r('app.color.accent') : $r('app.color.text_secondary'))
-                .width(46)
-                .textAlign(TextAlign.End)
-            }
-            .width('100%')
-            .padding({ left: 20, right: 16, top: 4, bottom: 12 })
-          }
-        }
-        // A-B 重复
-        ListItem() {
-          this.SheetRow($r('sys.symbol.scope'), this.abLabel(),
-            this.abStateNow() !== 'off', (): void => {
-              PlayerController.get().setAbPoint();
-            })
-        }
-        // 跳过静音
-        ListItem() {
-          this.SheetRow($r('sys.symbol.speaker_slash'), $r('app.string.skip_silence'),
-            this.skipSilenceNow(), (): void => {
-              PlayerController.get().toggleSkipSilence();
-            })
-        }
-        // 频谱可视化(0.18.0;仅无损引擎生效,开关经 playerVer bump 刷新高亮)
-        ListItem() {
-          this.SheetRow($r('sys.symbol.waveform'), $r('app.string.viz_toggle'),
-            PlayerController.get().vizOn(), (): void => {
-              PlayerController.get().toggleViz();
-            })
-        }
-        // 驾驶模式(0.22.0 车机适配预备):大钮横屏页,支架/超级桌面车机屏场景
-        ListItem() {
-          this.SheetRow($r('sys.symbol.car_fill'), $r('app.string.driving_mode'),
-            false, (): void => {
-              this.showMoreSheet = false;
-              const stack = this.pathStack;
-              if (stack !== null) {
-                stack.pushPathByName('DrivingMode', null);
-              }
-            })
-        }
-        // 睡眠定时器(0.14.0:展开档位 chips;到点前 30s 渐弱;label 体内直读)
-        ListItem() {
-          this.SheetRow($r('sys.symbol.timer'), this.sleepLabel(),
-            PlayerController.get().sleepRemainMin() > 0, (): void => {
-              this.sheetExpand = this.sheetExpand === 'sleep' ? '' : 'sleep';
-            }, true, this.sheetExpand === 'sleep', 'sleep')
-        }
-        if (this.sheetExpand === 'sleep') {
-          ListItem() {
-            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
-              ForEach(SLEEP_OPTIONS, (n: number) => {
-                Button(this.sleepChipLabel(n))
-                  .fontSize(12)
-                  .fontColor(this.sleepChipActive(n) ? $r('app.color.on_accent') : $r('app.color.text_primary'))
-                  .backgroundColor(this.sleepChipActive(n) ? $r('app.color.accent') : $r('app.color.badge_bg'))
-                  .borderRadius(14)
-                  .height(36)
-                  .margin({ right: 8, bottom: 8, left: 4 })
-                  // 最小可点目标 40vp:视觉 36,热区纵向外扩(0.17.0)
-                  .responseRegion({ x: 0, y: -2, width: '100%', height: 40 })
-                  .onClick(() => {
-                    PlayerController.get().setSleepTimer(n);
-                    this.sheetExpand = '';
-                  })
-              }, (n: number): string => `slp_${n}`)
-            }
-            .width('100%')
-            .padding({ left: 16, right: 16, bottom: 4 })
-          }
-        }
-        // 桌面歌词(26-7,floatView;24 设备/权限未授时不显示入口)
-        if (DesktopLyricsService.get().available()) {
-          ListItem() {
-            this.SheetRow($r('sys.symbol.music_note_list'), $r('app.string.desktop_lyrics'),
-              DesktopLyricsService.get().isOn(), (): void => {
-                this.toggleDesktopLyrics();
-              })
-          }
-        }
-        // 查看队列
-        ListItem() {
-          this.SheetRow($r('sys.symbol.list_bullet'), $r('app.string.view_queue'), false, (): void => {
-            this.showMoreSheet = false;
-            this.showQueue = true;
-          })
-        }
-      }
-      .width('100%')
-      .padding({ bottom: 16 })
-    }
-    .width('100%')
-    .backgroundColor($r('app.color.card_bg'))
-  }
-
-  // 展开指示:可展开行右侧 chevron(expanded 展开态朝上)。
-  // labelKind 非空时 label/accent 在 builder 体内重新求值(@Builder 参数是快照,KB §8.2;
-  // 倍速/睡眠档位选择后 playerVer/sleepVer bump 驱动 sheet 内容重跑,体内直读才能刷新)。
-  @Builder
-  SheetRow(icon: Resource, label: ResourceStr, accent: boolean, onTap: () => void,
-    expandable: boolean = false, expanded: boolean = false, labelKind: string = '') {
-    Row({ space: 12 }) {
-      SymbolGlyph(icon)
-        .fontSize(18)
-        .fontColor([this.rowAccent(labelKind, accent) ? $r('app.color.accent') : $r('app.color.text_primary')])
-      Text(this.rowLabel(labelKind, label))
-        .fontSize(14)
-        .fontColor(this.rowAccent(labelKind, accent) ? $r('app.color.accent') : $r('app.color.text_primary'))
-        .layoutWeight(1)
-      if (expandable) {
-        SymbolGlyph(expanded ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
-          .fontSize(13)
-          .fontColor([$r('app.color.text_secondary')])
-      }
-    }
-    .width('100%')
-    .padding({ left: 20, right: 16, top: 12, bottom: 12 })
-    .onClick(() => {
-      onTap();
     })
   }
 
@@ -1434,39 +1618,7 @@ export struct FullPlayerDest {
     .backgroundColor($r('app.color.card_bg'))
   }
 
-  // 桌面歌词开关:开→floatView 拉起浮窗页;失败提示(权限/设备不支持)
-  private async toggleDesktopLyrics(): Promise<void> {
-    try {
-      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      await DesktopLyricsService.get().toggle(ctx);
-      this.showMoreSheet = false;
-    } catch (e) {
-      this.getUIContext().getPromptAction().showToast({ message: $r('app.string.float_lyrics_fail') });
-    }
-  }
-
   // ===== 辅助 =====
-
-  // SheetRow 动态 label/accent(体内直读入口)
-  private rowLabel(kind: string, fallback: ResourceStr): ResourceStr {
-    if (kind === 'speed') {
-      return this.speedLabel();
-    }
-    if (kind === 'sleep') {
-      return this.sleepLabel();
-    }
-    return fallback;
-  }
-
-  private rowAccent(kind: string, fallback: boolean): boolean {
-    if (kind === 'speed') {
-      return PlayerController.get().speed !== 1.0;
-    }
-    if (kind === 'sleep') {
-      return PlayerController.get().sleepRemainMin() > 0;
-    }
-    return fallback;
-  }
 
   private sliderValue(): number {
     if (this.seeking) {
@@ -1492,64 +1644,6 @@ export struct FullPlayerDest {
 
   private editLabel(): ResourceStr {
     return this.lyricsNow().length > 0 ? $r('app.string.edit_lyrics') : $r('app.string.add_lyrics');
-  }
-
-  private speedNow(): number {
-    return PlayerController.get().speed;
-  }
-
-  private speedLabel(): ResourceStr {
-    const v = this.speedNow();
-    if (v === 1.0) {
-      return $r('app.string.speed_label');
-    }
-    return `${v}x`;
-  }
-
-  private abStateNow(): string {
-    return PlayerController.get().abState();
-  }
-
-  private abLabel(): ResourceStr {
-    const st = this.abStateNow();
-    if (st === 'a') {
-      return $r('app.string.ab_set_a');
-    }
-    if (st === 'ab') {
-      return $r('app.string.ab_looping');
-    }
-    return 'A-B';
-  }
-
-  private skipSilenceNow(): boolean {
-    return PlayerController.get().currentSong !== null &&
-      (PlayerController.get().engineKind === EngineKind.LOSSLESS) &&
-      PlayerController.get().isSkipSilenceOn();
-  }
-
-  // 睡眠定时档位文案(0.14.0 弹层)
-  private sleepChipLabel(n: number): ResourceStr {
-    if (n <= 0) {
-      return $r('app.string.sleep_off');
-    }
-    return L($r('app.string.sleep_chip_min'), String(n));
-  }
-
-  private sleepChipActive(n: number): boolean {
-    const cur = PlayerController.get().sleepRemainMin();
-    if (n <= 0) {
-      return cur <= 0;
-    }
-    // 当前剩余与档位同段视为选中(设置后分钟数递减)
-    return cur > n - 15 && cur <= n;
-  }
-
-  private sleepLabel(): ResourceStr {
-    const cur = PlayerController.get().sleepRemainMin();
-    if (cur <= 0) {
-      return $r('app.string.sleep_timer');
-    }
-    return L($r('app.string.sleep_remain'), String(cur));
   }
 
   private modeIcon(): Resource {

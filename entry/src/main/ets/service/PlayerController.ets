@@ -57,6 +57,8 @@ export class PlayerController {
   volume: number = 1.0;                // 引擎音量 0~1(0.14.0 播放页音量条;渐弱时临时下调)
   abStartMs: number = -1;              // A-B 重复起点(-1 未设)
   abEndMs: number = -1;                // A-B 重复终点(-1 未设)
+  private abSeekAtMs: number = 0;      // A-B 回跳发起时刻:引擎 seek 异步,落地前 positionMs 仍读旧值,
+                                       // 250ms ticker 会重复发起 seek 形成风暴致播放卡死(0.24.0 修复)
   currentLyrics: string = '';          // 当前曲 LRC 原文(缓存/文件头/LRCLIB;空=无)
   private lyricsLoadedFor: number = -1;
 
@@ -183,9 +185,14 @@ export class PlayerController {
           hilog.info(DOMAIN, TAG, 'cue range end -> next');
           this.cueAdvance();
         } else if (this.abStartMs >= 0 && this.abEndMs > this.abStartMs && this.positionMs >= this.abEndMs) {
-          // A-B 重复:到 B 点回跳 A 点
-          hilog.info(DOMAIN, TAG, 'ab repeat loop back %{public}d', Math.round(this.abStartMs));
-          this.seekTo(this.abStartMs);
+          // A-B 重复:到 B 点回跳 A 点。seek 异步:回跳后引擎 positionMs 仍会报旧值(≥B 点)
+          // 数百 ms,守卫窗口内不得重复发起,否则 seek 风暴致引擎/AVPlayer 卡死不再出声
+          const now = Date.now();
+          if (now - this.abSeekAtMs > 1200) {
+            this.abSeekAtMs = now;
+            hilog.info(DOMAIN, TAG, 'ab repeat loop back %{public}d', Math.round(this.abStartMs));
+            this.seekTo(this.abStartMs);
+          }
         }
       }
       if (this.engineKind === EngineKind.LOSSLESS) {
@@ -817,7 +824,14 @@ export class PlayerController {
   }
 
   async toggleSkipSilence(): Promise<void> {
-    const on = !SettingsService.get().skipSilence;
+    await this.setSkipSilenceOn(!SettingsService.get().skipSilence);
+  }
+
+  // 绝对置位(Toggle 直控;0.24.0 抽出)
+  async setSkipSilenceOn(on: boolean): Promise<void> {
+    if (SettingsService.get().skipSilence === on) {
+      return;
+    }
     await SettingsService.get().setSkipSilence(on);
     if (this.engineKind === EngineKind.LOSSLESS && this.engine !== null) {
       this.engine.setSkipSilence(on);
@@ -832,7 +846,14 @@ export class PlayerController {
   // ===== 频谱可视化(0.18.0) =====
   // 开关持久化;轮询仅在播放页可见 + 播放中 + 无损引擎时有数据(其余返回 null)。
   async toggleViz(): Promise<void> {
-    const on = !SettingsService.get().vizEnabled;
+    await this.setVizEnabled(!SettingsService.get().vizEnabled);
+  }
+
+  // 绝对置位(Toggle 直控;0.24.0 抽出):与当前态一致时幂等跳过
+  async setVizEnabled(on: boolean): Promise<void> {
+    if (SettingsService.get().vizEnabled === on) {
+      return;
+    }
     await SettingsService.get().setVizEnabled(on);
     this.losslessEngine.vizSetEnabled(on); // 系统引擎态下开关仅影响下次无损播放
     this.bumpPlayer();
