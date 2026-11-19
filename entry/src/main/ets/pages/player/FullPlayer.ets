@@ -10,6 +10,8 @@
 // 菜单行全面改造:收藏/A-B toast 反馈、跳过静音/频谱/桌面歌词明确 Toggle。
 // 0.25.0:进度条上方附加区收口——频谱区 × 直关钮移除(遮挡频谱,开关统一在「更多」菜单);
 // 频谱/波形条开关读 @StorageProp token,关闭即整区卸载(此前仅停帧不消失)。
+// 0.25.1:频谱区引擎侧条件镜像化(vizEngineOk @State)——vizNow() 直读普通字段不被状态代理
+// 追踪,页面先于无损曲打开时切歌频谱永不挂载(反之不卸载);模拟器 mp3→flac→ogg 双向实证。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
@@ -610,6 +612,10 @@ export struct FullPlayerDest {
   @State engineMirror: string = '';
   @State favMirror: boolean = false;
   @State hasSong: boolean = false;
+  // 频谱引擎侧条件镜像(0.25.1):无损引擎+有曲目。vizNow() 方法直读 controller 普通字段
+  // (engineKind/currentSong)不被状态代理追踪——切歌/引擎切换不触发频谱 if 重估,
+  // 页面先于无损曲打开(或从 mp3 切入无损)时频谱区永不挂载,反之不卸载(0.24.0 关闭不消失的同根残留)
+  @State vizEngineOk: boolean = false;
   @StorageProp('prefDblTapFav') dblTapFav: boolean = true; // 双击封面收藏开关(0.20.0)
   // 频谱可视化开关(0.25.0 改 @StorageProp 读 token):方法直读 SettingsService 的条件是惰性的,
   // 菜单里关掉只停帧不卸载(频谱冻在最后一帧);@StorageProp 才能让开关切换驱动 build 重估整区卸载
@@ -691,6 +697,9 @@ export struct FullPlayerDest {
     this.engineMirror = PlayerController.get().engineInfo;
     this.favMirror = s !== null && LibraryStore.get().isFavorite(s.id);
     this.qIndexMirror = QueueService.get().currentOrderIndex;
+    // 频谱引擎侧条件随镜像落 @State(0.25.1):playSong/gapless 推进/错误兜底均经 bumpPlayer →
+    // onPlayerChanged 到此,引擎或曲目变化即驱动频谱 if 重估(挂载/卸载)
+    this.vizEngineOk = PlayerController.get().engineKind === EngineKind.LOSSLESS && s !== null;
   }
 
   onLibChanged(): void {
@@ -1472,9 +1481,11 @@ export struct FullPlayerDest {
       this.PlayerMeta()
 
       // 频谱可视化(0.18.0):开关开 + 无损引擎 + 有曲目时显示;0.22.0 悬停态隐藏(下半屏空间有限)
-      // 0.25.0:右上角 × 直关钮移除(遮挡频谱末端频段,开关收口「更多」菜单);
-      // vizPref 经 @StorageProp 注册依赖,菜单里关掉即整区卸载(此前仅停帧,频谱冻在最后一帧)
-      if (!this.foldHover && this.vizPref && this.vizNow()) {
+      // 0.25.0:右上角 × 直关钮移除(遮挡频谱末端频段,开关收口「更多」菜单);vizPref 经
+      // @StorageProp 注册依赖,菜单里关掉即整区卸载(此前仅停帧,频谱冻在最后一帧)
+      // 0.25.1:引擎侧条件改读 vizEngineOk 镜像——vizNow() 直读普通字段不被追踪,切歌/换引擎
+      // 不重估致频谱区不挂载/不卸载(mp3 起播再切无损实证)
+      if (!this.foldHover && this.vizPref && this.vizEngineOk) {
         VizView()
           .width('100%')
           .padding({ left: 28, right: 20, top: 6, bottom: 2 })
@@ -1651,11 +1662,7 @@ export struct FullPlayerDest {
     return PlayerController.get().currentLyrics;
   }
 
-  // 频谱条引擎侧条件:无损引擎 + 有曲目(开关由 vizPref @StorageProp 承担:切换即 build 重估整区卸载)
-  private vizNow(): boolean {
-    return PlayerController.get().engineKind === EngineKind.LOSSLESS &&
-      PlayerController.get().currentSong !== null;
-  }
+  // 频谱条引擎侧条件已镜像化(0.25.1):vizEngineOk @State 于 refreshSongMirrors 统一刷新
 
   private editLabel(): ResourceStr {
     return this.lyricsNow().length > 0 ? $r('app.string.edit_lyrics') : $r('app.string.add_lyrics');

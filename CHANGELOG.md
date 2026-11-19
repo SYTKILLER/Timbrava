@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Fixed(0.25.1 频谱区不挂载/不卸载:引擎侧条件镜像化)
+
+- **频谱可视化"只开频谱、关波形进度条时不显示"实因:频谱区 if 的引擎侧条件非响应式(0.24.0「关闭不消失」同根残留的后半)**。频谱区挂载条件中引擎侧判断 `vizNow()` 直读 `PlayerController` 普通字段(`engineKind`/`currentSong`),不被状态代理追踪——ArkUI 最小化更新下,切歌/引擎切换(gapless 自动推进、错误兜底回系统引擎)均不触发该 `if` 重估:页面打开时是 mp3/系统引擎、之后再切到无损曲,频谱区**永不挂载**;反向(无损→系统引擎)永不卸载。0.25.0 只修了 vizPref 开关那半(菜单 Toggle 即时卸载),引擎侧这半漏网。模拟器插桩实证:vizDiag 仅在页首 build 打印一次,`playSong [flac]` 后零重估;波形条正常是因为其条件读的是被追踪的 `waveVer`/`wavePref` @State——"波形开着频谱就好"是测试流程巧合,与 wave 无关。修复:引擎侧条件镜像为 `@State vizEngineOk`,由 `refreshSongMirrors`(切歌/gapless 推进/兜底统一入口)落镜像,删除 `vizNow()`;模拟器回归三态通过(mp3 打开→切 flac 挂载 / flac→ogg 卸载 / viz=on+wave=off+flac 组合正常)。
+- EntryAbility 调试直通新增 `debugViz`/`debugWave`(频谱/波形开关绝对置位)与 `debugPlayer`(直开播放页)旗标,复现/验证路径免 UI 坐标注入。
+- 版本号 0.25.1 / versionCode 25001。
+
 ### Added(0.25.0 播放页附加区收口:频谱/波形条开关化,关闭即整区消失)
 
 - **播放页频谱区 × 直关钮移除**:右上角 × 遮挡频谱末端频段且与「更多」菜单开关重复,彻底删除(开关统一收口在「更多」菜单);频谱区由 Stack 覆盖层简化为纯 VizView。

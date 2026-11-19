@@ -111,6 +111,20 @@ async function runDebugCommands(ctx: common.UIAbilityContext, params: Record<str
     if (get('debugSkipSilence') === '1') {
       await player.toggleSkipSilence();
     }
+    const vizArg = get('debugViz');
+    if (vizArg.length > 0) {
+      await player.setVizEnabled(vizArg === '1'); // 频谱可视化绝对置位(模拟器验证直通)
+    }
+    const waveArg = get('debugWave');
+    if (waveArg.length > 0) {
+      await SettingsService.get().setWaveEnabled(waveArg === '1'); // 波形进度条开关(模拟器验证直通)
+    }
+    if (get('debugPlayer') === '1') {
+      const stack = AppStorage.get<NavPathStack>('navStack') ?? null;
+      if (stack !== null) {
+        stack.pushPathByName('FullPlayer', null); // 直开播放页(绕过迷你条点击)
+      }
+    }
     if (get('debugRg') === '1') {
       hilog.info(DBG_DOMAIN, DBG_TAG, 'debugRg trigger');
       RgScanner.get().scan(LibraryStore.get().songs);
