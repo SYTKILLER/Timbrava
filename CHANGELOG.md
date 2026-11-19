@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Added(0.25.0 播放页附加区收口:频谱/波形条开关化,关闭即整区消失)
+
+- **播放页频谱区 × 直关钮移除**:右上角 × 遮挡频谱末端频段且与「更多」菜单开关重复,彻底删除(开关统一收口在「更多」菜单);频谱区由 Stack 覆盖层简化为纯 VizView。
+- **频谱可视化关闭即整区卸载(修 0.24.0 遗留)**:此前菜单里关掉频谱只是停止帧更新,Canvas 冻在最后一帧不消失——`vizNow()` 直读 SettingsService 的条件是惰性的,无状态依赖不触发 build 重估。改 `@StorageProp('prefVizEnabled')`(token 本就有同步,只是播放页从未读它)注册依赖,开关切换即整区卸载/重现。
+- **波形进度条(响度包络条)开关化**:新设置 `waveEnabled`(持久化 + `prefWaveEnabled` token,默认开)——「更多」菜单新增「波形进度条」Toggle 行;关=进度条上方波形区彻底消失且 `loadWaveform` 守卫不再解码包络(省电省解码),开=当前曲包络补载(WaveformService 缓存命中即时上屏)。对标华为音乐播放页:进度条上方附加组件全部可关且关闭后完全消失。
+- 多语言:新增 1 键(`wave_toggle`,base 中文 + en_US)。版本号 0.25.0 / versionCode 25000。
+
 ### Added(0.24.0 实测反馈批量修复:电子音 P0 + 冻结 P0 + 歌单/播放页交互完善)
 
 - **歌单滑动删除**:歌单内容列表(`SongList` playlist 模式)`ListItem` 加 `swipeAction`——左滑露出红色圆底白色 trash symbol 删除钮(36vp 圆底 + 16vp symbol,无文字),点击弹确认对话框(标题/曲名),确认后按列表位次 `PlaylistRepo.removeSongAt` 移出歌单并 toast 回执;其余列表(专辑/艺人/曲库)不受影响。

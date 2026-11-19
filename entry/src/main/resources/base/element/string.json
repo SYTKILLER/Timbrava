@@ -1361,6 +1361,10 @@
       "value": "频谱可视化"
     },
     {
+      "name": "wave_toggle",
+      "value": "波形进度条"
+    },
+    {
       "name": "output_title",
       "value": "输出"
     },

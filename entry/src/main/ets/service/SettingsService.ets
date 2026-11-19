@@ -47,6 +47,7 @@ export class SettingsService {
   playerSkin: string = 'standard'; // standard 大封面 | minimal 极简 | immersive 沉浸模糊(#0.14.0)
   playerVolume: number = 1.0;    // 引擎音量 0~1(0.14.0 播放页音量条)
   vizEnabled: boolean = true;    // 频谱可视化(0.18.0;仅播放页打开+无损引擎+播放中轮询,其余时刻零开销)
+  waveEnabled: boolean = true;   // 波形进度条(0.19.0;0.25.0 起可关,关=播放页波形区彻底移除且不再解码包络)
   balancePct: number = 0;        // 声道平衡 -100~100(0.18.0;负偏左/正偏右,仅无损引擎)
   monoMode: boolean = false;     // 单声道合并(0.18.0;仅无损引擎)
   resumePerTrack: boolean = false; // 每曲进度记忆(0.19.0;有声书/播客场景,默认关)
@@ -90,6 +91,7 @@ export class SettingsService {
     const vol = parseFloat(await db.getSetting('playerVolume', '1.0'));
     this.playerVolume = Number.isFinite(vol) && vol >= 0 && vol <= 1 ? vol : 1.0;
     this.vizEnabled = (await db.getSetting('vizEnabled', '1')) === '1';
+    this.waveEnabled = (await db.getSetting('waveEnabled', '1')) === '1';
     const bal = parseFloat(await db.getSetting('balancePct', '0'));
     this.balancePct = Number.isFinite(bal) && bal >= -100 && bal <= 100 ? bal : 0;
     this.monoMode = (await db.getSetting('monoMode', '0')) === '1';
@@ -120,6 +122,7 @@ export class SettingsService {
     this.token('prefPlayerSkin', this.playerSkin);
     this.token('prefPlayerVolume', this.playerVolume);
     this.token('prefVizEnabled', this.vizEnabled);
+    this.token('prefWaveEnabled', this.waveEnabled);
     this.token('prefBalancePct', this.balancePct);
     this.token('prefMonoMode', this.monoMode);
     this.token('prefResumeTrack', this.resumePerTrack);
@@ -222,6 +225,14 @@ export class SettingsService {
     this.syncTokens();
     await this.save('vizEnabled', on ? '1' : '0');
     hilog.info(DOMAIN, TAG, 'viz -> %{public}s', String(on));
+  }
+
+  // 波形进度条开关(0.25.0):关=播放页进度条上方波形区整区移除,loadWaveform 守卫不再解码包络
+  async setWaveEnabled(on: boolean): Promise<void> {
+    this.waveEnabled = on;
+    this.syncTokens();
+    await this.save('waveEnabled', on ? '1' : '0');
+    hilog.info(DOMAIN, TAG, 'wave bar -> %{public}s', String(on));
   }
 
   // 声道平衡/单声道(0.18.0):persist 后由 PlayerController 即时下发无损引擎

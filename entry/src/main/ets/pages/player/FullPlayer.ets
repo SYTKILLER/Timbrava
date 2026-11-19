@@ -7,7 +7,9 @@
 // - 底部 ≥28vp 导航条避让。
 // 0.24.0:「更多」面板抽为 MoreSheetPanel 子组件——bindSheet 的 @Builder 内容对宿主 @State
 // 变化完全不重渲染(实测收藏/A-B label 永滞旧值),子组件自带 @StorageProp/@Watch 才有真响应式;
-// 菜单行全面改造:收藏/A-B toast 反馈、跳过静音/频谱/桌面歌词明确 Toggle、频谱区右上角 × 直关。
+// 菜单行全面改造:收藏/A-B toast 反馈、跳过静音/频谱/桌面歌词明确 Toggle。
+// 0.25.0:进度条上方附加区收口——频谱区 × 直关钮移除(遮挡频谱,开关统一在「更多」菜单);
+// 频谱/波形条开关读 @StorageProp token,关闭即整区卸载(此前仅停帧不消失)。
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
@@ -25,6 +27,7 @@ import { LyricsPanel } from '../../components/LyricsPanel';
 import { CoverSuperRes } from '../../service/CoverSuperRes';
 import { DesktopLyricsService } from '../../service/DesktopLyricsService';
 import { WaveformService } from '../../service/WaveformService';
+import { SettingsService } from '../../service/SettingsService';
 import { L } from '../../common/Lang';
 
 const TAG = '[Timbrava][FullPlayer]';
@@ -136,6 +139,7 @@ struct MoreSheetPanel {
   @State abLabelRes: ResourceStr = 'A-B';
   @State skipMirror: boolean = false;
   @State vizMirror: boolean = false;
+  @State waveMirror: boolean = false;
   @State lyricsMirror: boolean = false;
   @State sheetExpand: string = '';  // 展开区:'' | 'speed' | 'sleep'
   @State volMirror: number = 100;
@@ -159,6 +163,7 @@ struct MoreSheetPanel {
     const ab = PlayerController.get().abState();
     const skip = this.skipSilenceNow();
     const viz = PlayerController.get().vizOn();
+    const wave = SettingsService.get().waveEnabled;
     const lyrics = DesktopLyricsService.get().isOn();
     const abRes: ResourceStr = ab === 'a' ? $r('app.string.ab_set_a')
       : ab === 'ab' ? $r('app.string.ab_looping') : 'A-B';
@@ -167,6 +172,7 @@ struct MoreSheetPanel {
     this.abLabelRes = abRes;
     this.skipMirror = skip;
     this.vizMirror = viz;
+    this.waveMirror = wave;
     this.lyricsMirror = lyrics;
   }
 
@@ -252,6 +258,9 @@ struct MoreSheetPanel {
     if (kind === 'viz') {
       return this.vizMirror;
     }
+    if (kind === 'wave') {
+      return this.waveMirror;
+    }
     if (kind === 'lyrics') {
       return this.lyricsMirror;
     }
@@ -264,6 +273,8 @@ struct MoreSheetPanel {
       this.skipMirror = on;
     } else if (kind === 'viz') {
       this.vizMirror = on;
+    } else if (kind === 'wave') {
+      this.waveMirror = on;
     } else if (kind === 'lyrics') {
       this.lyricsMirror = on;
     }
@@ -275,6 +286,8 @@ struct MoreSheetPanel {
       PlayerController.get().setSkipSilenceOn(on);
     } else if (kind === 'viz') {
       PlayerController.get().setVizEnabled(on);
+    } else if (kind === 'wave') {
+      SettingsService.get().setWaveEnabled(on); // token 同步驱动播放页波形区整区卸载/补载
     } else if (kind === 'lyrics' && on !== DesktopLyricsService.get().isOn()) {
       this.toggleDesktopLyrics();
     }
@@ -485,11 +498,17 @@ struct MoreSheetPanel {
             false, (): void => {
             }, false, false, 'skip')
         }
-        // 频谱可视化(明确开关;播放页频谱区亦有 × 直关)
+        // 频谱可视化(明确开关;0.25.0 关=播放页频谱区整区卸载,× 直关钮已移除)
         ListItem() {
           this.SheetRow($r('sys.symbol.waveform'), $r('app.string.viz_toggle'),
             false, (): void => {
             }, false, false, 'viz')
+        }
+        // 波形进度条(0.19.0 波形包络;0.25.0 起明确开关:关=进度条上方波形区彻底移除)
+        ListItem() {
+          this.SheetRow($r('sys.symbol.waveform_1'), $r('app.string.wave_toggle'),
+            false, (): void => {
+            }, false, false, 'wave')
         }
         // 驾驶模式(0.22.0 车机适配预备):大钮横屏页,支架/超级桌面车机屏场景
         ListItem() {
@@ -592,6 +611,11 @@ export struct FullPlayerDest {
   @State favMirror: boolean = false;
   @State hasSong: boolean = false;
   @StorageProp('prefDblTapFav') dblTapFav: boolean = true; // 双击封面收藏开关(0.20.0)
+  // 频谱可视化开关(0.25.0 改 @StorageProp 读 token):方法直读 SettingsService 的条件是惰性的,
+  // 菜单里关掉只停帧不卸载(频谱冻在最后一帧);@StorageProp 才能让开关切换驱动 build 重估整区卸载
+  @StorageProp('prefVizEnabled') vizPref: boolean = true;
+  // 波形进度条开关(0.25.0):关=波形区整区移除且 loadWaveform 守卫不再解码;开=补载当前曲包络
+  @StorageProp('prefWaveEnabled') @Watch('onWavePrefChanged') wavePref: boolean = true;
   @State heartScale: number = 0;    // 红心爆裂动效(0.20.0)
   @State heartOpacity: number = 0;
   @State showGuide: boolean = false; // 首次手势引导(0.20.0;一次性,轻触关闭并记忆)
@@ -647,6 +671,12 @@ export struct FullPlayerDest {
     this.modeMirror = QueueService.get().playMode();
     this.refreshSongMirrors();
     this.loadCoverSr();
+    this.loadWaveform();
+  }
+
+  // 波形开关切换(0.25.0):开→当前曲包络缺则补载(WaveformService 缓存命中即时);
+  // 关→build 重估卸载波形区(loadWaveform 内守卫同步清态)
+  onWavePrefChanged(): void {
     this.loadWaveform();
   }
 
@@ -721,9 +751,10 @@ export struct FullPlayerDest {
   // ===== 波形进度条(0.19.0) =====
 
   // 切歌即拉取包络:缓存命中即时,未命中后台整曲解码(仅 flac/wav,完成且仍是本曲才上屏)
+  // 0.25.0:开关关时直接清态返回(不解码,进度条上方波形区彻底消失)
   private loadWaveform(): void {
     const s = this.song();
-    if (s === null || !WaveformService.get().supported(s.codec)) {
+    if (s === null || !this.wavePref || !WaveformService.get().supported(s.codec)) {
       this.waveData = null;
       this.waveFor = -1;
       this.waveVer++;
@@ -1240,8 +1271,8 @@ export struct FullPlayerDest {
   @Builder
   PlayerProgress() {
     Column({ space: 4 }) {
-      // waveVer 读入条件注册依赖(private waveData 变化不触发 build,waveVer 计数驱动上屏/隐藏)
-      if (this.waveVer > 0 && this.waveFor >= 0 && this.waveData !== null) {
+      // wavePref 读入条件注册开关依赖(关=波形区整区卸载);waveVer 计数驱动包络上屏/隐藏
+      if (this.wavePref && this.waveVer > 0 && this.waveFor >= 0 && this.waveData !== null) {
         Canvas(this.waveCtx)
           .width('88%')
           .height(44)
@@ -1441,27 +1472,12 @@ export struct FullPlayerDest {
       this.PlayerMeta()
 
       // 频谱可视化(0.18.0):开关开 + 无损引擎 + 有曲目时显示;0.22.0 悬停态隐藏(下半屏空间有限)
-      // 0.24.0:右上角 × 直关(反馈直达,不必进更多菜单)
-      if (!this.foldHover && this.vizNow()) {
-        Stack({ alignContent: Alignment.TopEnd }) {
-          VizView()
-            .width('100%')
-          Button({ stateEffect: true }) {
-            SymbolGlyph($r('sys.symbol.xmark'))
-              .fontSize(12)
-              .fontColor([$r('app.color.text_secondary')])
-          }
-          .width(28)
-          .height(28)
-          .borderRadius(14)
-          .backgroundColor(Color.Transparent)
-          .responseRegion({ x: -6, y: -6, width: 40, height: 40 }) // 最小可点目标 40vp(0.17.0)
-          .onClick(() => {
-            PlayerController.get().setVizEnabled(false);
-          })
-        }
-        .width('100%')
-        .padding({ left: 28, right: 20, top: 6, bottom: 2 })
+      // 0.25.0:右上角 × 直关钮移除(遮挡频谱末端频段,开关收口「更多」菜单);
+      // vizPref 经 @StorageProp 注册依赖,菜单里关掉即整区卸载(此前仅停帧,频谱冻在最后一帧)
+      if (!this.foldHover && this.vizPref && this.vizNow()) {
+        VizView()
+          .width('100%')
+          .padding({ left: 28, right: 20, top: 6, bottom: 2 })
       }
 
       // 进度条(0.22.0 抽 PlayerProgress 三形态共用;波形条前置逻辑不变)
@@ -1635,10 +1651,9 @@ export struct FullPlayerDest {
     return PlayerController.get().currentLyrics;
   }
 
-  // 频谱条显示条件:开关开 + 无损引擎 + 有曲目(更多菜单开关经 bumpPlayer 驱动重估)
+  // 频谱条引擎侧条件:无损引擎 + 有曲目(开关由 vizPref @StorageProp 承担:切换即 build 重估整区卸载)
   private vizNow(): boolean {
-    return PlayerController.get().vizOn() &&
-      PlayerController.get().engineKind === EngineKind.LOSSLESS &&
+    return PlayerController.get().engineKind === EngineKind.LOSSLESS &&
       PlayerController.get().currentSong !== null;
   }
 

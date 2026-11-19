@@ -1361,6 +1361,10 @@
       "value": "Spectrum"
     },
     {
+      "name": "wave_toggle",
+      "value": "Waveform bar"
+    },
+    {
       "name": "output_title",
       "value": "Output"
     },
